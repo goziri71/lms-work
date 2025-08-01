@@ -1,8 +1,9 @@
 import dotenv from "dotenv";
-dotenv.config();
+dotenv.config({ debug: false });
 
 export const Config = {
   port: process.env.PORT || 3000,
+  JWT_SECRET: process.env.JWT_SECRET,
 
   database: {
     name: process.env.DB_NAME,
@@ -11,14 +12,12 @@ export const Config = {
     host: process.env.DB_HOST,
     dialect: "postgres",
     port: process.env.DB_PORT,
+    url: process.env.DATABASE_URL,
     dialectOptions: {
-      ssl:
-        process.env.NODE_ENV === "production"
-          ? {
-              require: true,
-              rejectUnauthorized: false,
-            }
-          : false,
+      ssl: {
+        require: true,
+        rejectUnauthorized: false,
+      },
     },
     pool: {
       max: 5,
