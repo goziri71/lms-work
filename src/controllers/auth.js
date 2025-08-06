@@ -118,7 +118,7 @@ export const staffLogin = TryCatchFunction(async (req, res) => {
     });
 
     if (!staff) {
-      throw new ErrorClass("Invalid email or password", 401);
+      throw new ErrorClass("user must be a staff to login", 401);
     }
 
     // Compare password

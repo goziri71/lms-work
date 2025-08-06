@@ -26,7 +26,7 @@ export class AuthService {
   // OPTIMIZATION: Faster token generation with cached secrets
   async generateAccessToken(payload) {
     return this.jwt.sign(payload, JWT_SECRET, {
-      expiresIn: "15m",
+      expiresIn: "30m",
       algorithm: "HS256", // Explicit algorithm for speed
     });
   }
