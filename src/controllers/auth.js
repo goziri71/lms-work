@@ -171,7 +171,7 @@ export const staffLogin = TryCatchFunction(async (req, res) => {
   }
 });
 
-// Universal Login using Sequelize ORM - OPTIMIZED VERSION
+// Universal Login using Sequelize ORM - OPTIMIZED
 export const login = TryCatchFunction(async (req, res) => {
   const { email, password } = req.body;
 
@@ -180,42 +180,70 @@ export const login = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Email and password are required", 400);
   }
 
-  // OPTIMIZATION 1: Single query with UNION to check both tables at once
   const normalizedEmail = email.toLowerCase();
 
-  // Use raw SQL for maximum performance - single query instead of two
-  const [users] = await Students.sequelize.query(
-    `
-    SELECT 
-      id, email, password, 'student' as user_type,
-      fname, lname, gender, phone, level, matric_number,
-      faculty_id, program_id, study_mode, admin_status, wallet_balance
-    FROM students 
-    WHERE email = :email AND admin_status != 'inactive'
-    UNION ALL
-    SELECT 
-      id, email, password, 'staff' as user_type,
-      full_name as fname, '' as lname, '' as gender, phone, '' as level, '' as matric_number,
-      0 as faculty_id, 0 as program_id, '' as study_mode, 'Active' as admin_status, 0 as wallet_balance
-    FROM staff 
-    WHERE email = :email
-    LIMIT 1
-  `,
-    {
-      replacements: { email: normalizedEmail },
-      type: Students.sequelize.QueryTypes.SELECT,
-      raw: true,
-    }
-  );
+  // OPTIMIZATION 1: Parallel queries to both tables for maximum speed
+  const [student, staff] = await Promise.all([
+    Students.findOne({
+      where: { email: normalizedEmail },
+      attributes: [
+        "id",
+        "email",
+        "password",
+        "fname",
+        "lname",
+        "gender",
+        "phone",
+        "level",
+        "matric_number",
+        "faculty_id",
+        "program_id",
+        "study_mode",
+        "admin_status",
+        "wallet_balance",
+      ],
+    }),
+    Staff.findOne({
+      where: { email: normalizedEmail },
+      include: [{ association: "courses", required: false }],
+      attributes: [
+        "id",
+        "email",
+        "password",
+        "full_name",
+        "phone",
+        "linkedin",
+        "google_scholar",
+        "research_areas",
+      ],
+    }),
+  ]);
 
-  if (!users || users.length === 0) {
-    throw new ErrorClass("Invalid email or password", 401);
+  let user = null;
+  let userType = null;
+
+  // OPTIMIZATION 2: Fast user type determination
+  if (student) {
+    user = student;
+    userType = "student";
+  } else if (staff) {
+    user = staff;
+    userType = "staff";
   }
 
-  const user = users[0];
-  const userType = user.user_type;
+  if (!user) {
+    throw new ErrorClass("user not found", 401);
+  }
 
-  // OPTIMIZATION 2: Fast MD5 comparison (synchronous for speed)
+  // OPTIMIZATION 3: Fast status check
+  if (userType === "student" && user.admin_status === "inactive") {
+    throw new ErrorClass(
+      "Account is deactivated. Please contact administrator.",
+      401
+    );
+  }
+
+  // OPTIMIZATION 4: Synchronous password comparison for speed
   const crypto = await import("crypto");
   const md5Hash = crypto.createHash("md5").update(password).digest("hex");
 
@@ -223,38 +251,60 @@ export const login = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Invalid email or password", 401);
   }
 
-  // OPTIMIZATION 3: Minimal token payload for faster JWT generation
+  // OPTIMIZATION 5: Minimal token payload
   const tokenPayload = {
     id: user.id,
     userType,
     email: user.email,
   };
 
-  // OPTIMIZATION 4: Parallel token generation
+  if (userType === "student") {
+    tokenPayload.firstName = user.fname;
+    tokenPayload.lastName = user.lname;
+    tokenPayload.level = user.level;
+    tokenPayload.facultyId = user.faculty_id;
+  } else {
+    tokenPayload.fullName = user.full_name;
+    tokenPayload.phone = user.phone;
+  }
+
+  // OPTIMIZATION 6: Parallel token generation
   const [accessToken, refreshToken] = await Promise.all([
     authService.generateAccessToken(tokenPayload),
     authService.generateRefreshToken(user.id),
   ]);
 
-  // OPTIMIZATION 5: Pre-built response object
-  const userData = {
-    id: user.id,
-    email: user.email,
-    userType,
-    firstName: user.fname,
-    lastName: user.lname,
-    gender: user.gender,
-    phone: user.phone,
-    level: user.level,
-    matricNumber: user.matric_number,
-    facultyId: user.faculty_id,
-    programId: user.program_id,
-    studyMode: user.study_mode,
-    adminStatus: user.admin_status,
-    walletBalance: user.wallet_balance,
-  };
+  // OPTIMIZATION 7: Pre-built response object
+  const userData =
+    userType === "student"
+      ? {
+          id: user.id,
+          email: user.email,
+          userType,
+          firstName: user.fname,
+          lastName: user.lname,
+          gender: user.gender,
+          phone: user.phone,
+          level: user.level,
+          matricNumber: user.matric_number,
+          facultyId: user.faculty_id,
+          programId: user.program_id,
+          studyMode: user.study_mode,
+          adminStatus: user.admin_status,
+          walletBalance: user.wallet_balance,
+        }
+      : {
+          id: user.id,
+          email: user.email,
+          userType,
+          fullName: user.full_name,
+          phone: user.phone,
+          linkedin: user.linkedin,
+          googleScholar: user.google_scholar,
+          researchAreas: user.research_areas,
+          coursesCount: user.courses ? user.courses.length : 0,
+        };
 
-  // OPTIMIZATION 6: Direct response without extra processing
   res.status(200).json({
     success: true,
     message: "Login successful",
