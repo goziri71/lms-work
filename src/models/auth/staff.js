@@ -16,13 +16,6 @@ export const Staff = db.define(
     email: {
       type: DataTypes.STRING,
       allowNull: false,
-      // OPTIMIZATION: Add unique index for faster email lookups
-      indexes: [
-        {
-          unique: true,
-          fields: ["email"],
-        },
-      ],
     },
     phone: {
       type: DataTypes.STRING, // Changed from INTEGER to STRING
