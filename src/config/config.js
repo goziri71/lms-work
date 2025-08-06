@@ -26,4 +26,25 @@ export const Config = {
       idle: 10000,
     },
   },
+
+  databaseLibrary: {
+    name: process.env.DATABASE_N,
+    username: process.env.DATABASE_U,
+    password: process.env.DATABASE_P,
+    host: process.env.DATABASE_H,
+    dialect: "postgres",
+    port: process.env.DB_PORT,
+    dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false,
+      },
+    },
+    pool: {
+      max: 5,
+      min: 0,
+      acquire: 60000,
+      idle: 10000,
+    },
+  },
 };

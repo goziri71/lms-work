@@ -17,10 +17,27 @@ const db = new Sequelize(
   }
 );
 
+const dbLibrary = new Sequelize(
+  Config.databaseLibrary.name,
+  Config.databaseLibrary.username,
+  Config.databaseLibrary.password,
+  {
+    host: Config.databaseLibrary.host,
+    dialect: Config.databaseLibrary.dialect,
+    logging: process.env.NODE_ENV === "development" ? console.log : false,
+    dialectOptions: Config.databaseLibrary.dialectOptions,
+    pool: Config.databaseLibrary.pool,
+  }
+);
+
 export async function connectDB() {
   try {
     await db.authenticate();
-    console.log("✅ Database connection established successfully.");
+    console.log("✅ LMS Database connection established successfully.");
+
+    await dbLibrary.authenticate();
+    console.log("✅ Library Database connection established successfully.");
+
     return true;
   } catch (error) {
     console.error("❌ Database connection failed:", error.message);
@@ -31,4 +48,4 @@ export async function connectDB() {
   }
 }
 
-export { db };
+export { db, dbLibrary };
