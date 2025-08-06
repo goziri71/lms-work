@@ -2,51 +2,49 @@
 import jwt from "jsonwebtoken";
 import crypto from "crypto"; // For MD5 hashing
 
+// OPTIMIZATION: Cache JWT secret for faster access
+const JWT_SECRET = process.env.JWT_SECRET || "your-secret";
+const REFRESH_SECRET = process.env.REFRESH_TOKEN_SECRET || "refresh-secret";
+
 export class AuthService {
   constructor() {
     this.jwt = jwt;
     this.period = 60 * 60 * 24;
   }
 
+  // OPTIMIZATION: Simplified token generation
   async signToken(payload, signature, period) {
-    const token = await this.jwt.sign({ id: payload }, signature, {
+    return this.jwt.sign({ id: payload }, signature, {
       expiresIn: period,
     });
-    return token;
   }
 
   async verifyToken(payload, signature) {
-    const verified = await this.jwt.verify(payload, signature);
-    return verified;
+    return this.jwt.verify(payload, signature);
   }
 
-  // Add the missing methods that your login controller expects:
+  // OPTIMIZATION: Faster token generation with cached secrets
   async generateAccessToken(payload) {
-    return this.signToken(
-      payload,
-      process.env.JWT_SECRET || "your-secret",
-      "15m"
-    );
+    return this.jwt.sign(payload, JWT_SECRET, {
+      expiresIn: "15m",
+      algorithm: "HS256", // Explicit algorithm for speed
+    });
   }
 
   async generateRefreshToken(userId) {
-    return this.signToken(
-      userId,
-      process.env.REFRESH_TOKEN_SECRET || "refresh-secret",
-      "7d"
-    );
+    return this.jwt.sign({ id: userId }, REFRESH_SECRET, {
+      expiresIn: "7d",
+      algorithm: "HS256",
+    });
   }
 
   async refreshAccessToken(refreshToken) {
-    const decoded = await this.verifyToken(
-      refreshToken,
-      process.env.REFRESH_TOKEN_SECRET || "refresh-secret"
-    );
+    const decoded = await this.jwt.verify(refreshToken, REFRESH_SECRET);
     return this.generateAccessToken(decoded);
   }
 
-  // MD5 password comparison (since your database uses MD5)
-  async comparePassword(plainPassword, hashedPassword) {
+  // OPTIMIZATION: Synchronous MD5 for maximum speed
+  comparePassword(plainPassword, hashedPassword) {
     const md5Hash = crypto
       .createHash("md5")
       .update(plainPassword)

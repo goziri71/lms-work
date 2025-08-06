@@ -52,6 +52,13 @@ export const Students = db.define(
     email: {
       type: DataTypes.STRING,
       allowNull: true,
+      // OPTIMIZATION: Add index for faster email lookups
+      indexes: [
+        {
+          unique: true,
+          fields: ["email"],
+        },
+      ],
     },
     file: {
       type: DataTypes.STRING,
@@ -60,6 +67,12 @@ export const Students = db.define(
     admin_status: {
       type: DataTypes.STRING,
       allowNull: true,
+      // OPTIMIZATION: Add index for status filtering
+      indexes: [
+        {
+          fields: ["admin_status"],
+        },
+      ],
     },
     g_status: {
       type: DataTypes.STRING,
@@ -173,7 +186,6 @@ export const Students = db.define(
       type: DataTypes.STRING,
       allowNull: true,
     },
-
     application_fee: {
       type: DataTypes.STRING,
       allowNull: true,
@@ -192,9 +204,14 @@ export const Students = db.define(
     },
   },
   {
-    tableName: "students", // Make sure this matches your actual table name
-    timestamps: false, // Add this if your table doesn't have createdAt/updatedAt columns
-    freezeTableName: true, // Prevent Sequelize from pluralizing table names
-    logging: console.log,
+    tableName: "students",
+    timestamps: false,
+    freezeTableName: true,
+    // OPTIMIZATION: Add composite index for email + admin_status
+    indexes: [
+      {
+        fields: ["email", "admin_status"],
+      },
+    ],
   }
 );
