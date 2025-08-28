@@ -11,58 +11,62 @@ export const Courses = db.define(
     },
     faculty_id: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
+    },
+    program_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
     },
     title: {
-      type: DataTypes.STRING,
-      allowNull: false,
+      type: DataTypes.STRING(200),
+      allowNull: true,
     },
     course_unit: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
     },
     price: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
+      type: DataTypes.STRING(12),
+      allowNull: true,
     },
     course_type: {
-      type: DataTypes.STRING,
-      allowNull: false,
+      type: DataTypes.STRING(20),
+      allowNull: true,
     },
     course_level: {
-      type: DataTypes.STRING,
-      allowNull: false,
+      type: DataTypes.INTEGER,
+      allowNull: true,
     },
     semester: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
+      type: DataTypes.STRING(20),
+      allowNull: true,
     },
     user_id: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
     },
     course_code: {
-      type: DataTypes.STRING,
-      allowNull: false,
+      type: DataTypes.STRING(20),
+      allowNull: true,
     },
     token: {
-      type: DataTypes.STRING,
-      allowNull: false,
+      type: DataTypes.STRING(600),
+      allowNull: true,
     },
     exam_fee: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
     },
     currency: {
-      type: DataTypes.STRING,
-      allowNull: false,
+      type: DataTypes.STRING(5),
+      allowNull: true,
     },
     staff_id: {
       type: DataTypes.INTEGER,
       allowNull: false,
     },
     date: {
-      type: DataTypes.DATE,
+      type: DataTypes.DATE, // timestamp without time zone
       allowNull: false,
     },
   },

@@ -1,8 +1,8 @@
 // associations/index.js
-import { Students } from "../models/auth/student.js";
-import { Staff } from "../models/auth/staff.js";
-import { Courses } from "../models/auth/courses.js";
-import { Semester } from "../models/auth/semester.js";
+import { Students } from "./auth/student.js";
+import { Staff } from "./auth/staff.js";
+import { Courses } from "./course/courses.js";
+import { Semester } from "./auth/semester.js";
 // Import other models like Faculty, Program when you have them
 
 export const setupAssociations = () => {
@@ -30,4 +30,18 @@ export const setupAssociations = () => {
 
   // Student-Course enrollment (Many-to-Many)
   // You'll need to create an Enrollment junction table for this
+
+  // Student-Course registrations via junction table `course_reg`
+  Students.belongsToMany(Courses, {
+    through: "course_reg",
+    as: "courses",
+    foreignKey: "student_id",
+    otherKey: "course_id",
+  });
+  Courses.belongsToMany(Students, {
+    through: "course_reg",
+    as: "students",
+    foreignKey: "course_id",
+    otherKey: "student_id",
+  });
 };

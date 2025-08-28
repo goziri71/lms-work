@@ -5,7 +5,7 @@ import {
   staffLogin,
   logout,
   refreshToken,
-} from "../controllers/auth.js";
+} from "../controllers/auth/auth.js";
 import { authorize } from "../middlewares/authorize.js";
 
 const router = express.Router();

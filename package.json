@@ -8,7 +8,10 @@
     "start": "node app.js",
     "dev": "nodemon app.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "echo \"No build step needed for JS—just run npm start\""
+    "build": "echo \"No build step needed for JS—just run npm start\"",
+    "migrate:course-reg": "node src/scripts/migrateCourseReg.js",
+    "db:introspect": "node src/scripts/introspect.js",
+    "fix:course-reg": "node src/scripts/fixCourseRegIds.js"
   },
   "keywords": [],
   "author": "",

@@ -20,7 +20,12 @@ export class AuthService {
   }
 
   async verifyToken(payload, signature) {
-    return this.jwt.verify(payload, signature);
+    try {
+      return this.jwt.verify(payload, signature);
+    } catch (error) {
+      console.error("Token verification error:", error.message);
+      throw error;
+    }
   }
 
   // OPTIMIZATION: Faster token generation with cached secrets
@@ -40,7 +45,7 @@ export class AuthService {
 
   async refreshAccessToken(refreshToken) {
     const decoded = await this.jwt.verify(refreshToken, REFRESH_SECRET);
-    return this.generateAccessToken(decoded);
+    return decoded;
   }
 
   // OPTIMIZATION: Synchronous MD5 for maximum speed
