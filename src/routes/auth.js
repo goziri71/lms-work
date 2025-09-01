@@ -4,7 +4,6 @@ import {
   studentLogin,
   staffLogin,
   logout,
-  refreshToken,
 } from "../controllers/auth/auth.js";
 import { authorize } from "../middlewares/authorize.js";
 
@@ -17,8 +16,8 @@ router.post("/login", login);
 router.post("/student/login", studentLogin);
 router.post("/staff/login", staffLogin);
 
-// Refresh token endpoint
-router.post("/refresh", refreshToken);
+// Refresh token endpoint - DISABLED (no longer using refresh tokens)
+// router.post("/refresh", refreshToken);
 
 // Logout (requires authentication)
 router.post("/logout", authorize, logout);

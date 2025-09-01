@@ -1,4 +1,3 @@
-import { Op } from "sequelize";
 import { Courses } from "../models/course/courses.js";
 import { Staff } from "../models/auth/staff.js";
 import { Students } from "../models/auth/student.js";

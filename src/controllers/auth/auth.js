@@ -46,7 +46,7 @@ export const studentLogin = TryCatchFunction(async (req, res) => {
     // Update student record if needed (you can add a lastLogin field later)
     // await student.update({ lastLogin: new Date() });
 
-    // Generate tokens using your actual model fields
+    // Generate JWT token using your actual model fields
     const accessToken = await authService.generateAccessToken({
       id: student.id,
       userType: "student",
@@ -57,8 +57,6 @@ export const studentLogin = TryCatchFunction(async (req, res) => {
       programId: student.program_id,
       level: student.level,
     });
-
-    const refreshToken = await authService.generateRefreshToken(student.id);
 
     // Prepare student data (exclude password and sensitive fields)
     const studentData = {
@@ -83,9 +81,8 @@ export const studentLogin = TryCatchFunction(async (req, res) => {
       data: {
         user: studentData,
         accessToken,
-        refreshToken,
         userType: "student",
-        expiresIn: 900,
+        expiresIn: 14400, // 4 hours in seconds
       },
     });
   } catch (error) {
@@ -131,7 +128,7 @@ export const staffLogin = TryCatchFunction(async (req, res) => {
       throw new ErrorClass("Invalid email or password", 401);
     }
 
-    // Generate tokens
+    // Generate JWT token
     const accessToken = await authService.generateAccessToken({
       id: staff.id,
       userType: "staff",
@@ -139,8 +136,6 @@ export const staffLogin = TryCatchFunction(async (req, res) => {
       fullName: staff.full_name,
       phone: staff.phone,
     });
-
-    const refreshToken = await authService.generateRefreshToken(staff.id);
 
     // Prepare staff data (exclude password)
     const staffData = {
@@ -160,9 +155,8 @@ export const staffLogin = TryCatchFunction(async (req, res) => {
       data: {
         user: staffData,
         accessToken,
-        refreshToken,
         userType: "staff",
-        expiresIn: 900,
+        expiresIn: 14400, // 4 hours in seconds
       },
     });
   } catch (error) {
@@ -253,7 +247,6 @@ export const login = TryCatchFunction(async (req, res) => {
   }
 
   const accessToken = await authService.generateAccessToken(tokenPayload);
-  const refreshToken = await authService.generateRefreshToken(user.id);
 
   // Prepare user data based on type
   let userData = {
@@ -295,9 +288,8 @@ export const login = TryCatchFunction(async (req, res) => {
     data: {
       user: userData,
       accessToken,
-      refreshToken,
       userType,
-      expiresIn: 900,
+      expiresIn: 14400, // 4 hours in seconds
     },
   });
 });
@@ -338,99 +330,12 @@ export const getProfile = TryCatchFunction(async (req, res) => {
   });
 });
 
-// Refresh token endpoint
-export const refreshToken = TryCatchFunction(async (req, res) => {
-  const { refreshToken } = req.body;
-  console.log("Received refresh token:", refreshToken);
-
-  if (!refreshToken) {
-    throw new ErrorClass("Refresh token is required", 400);
-  }
-
-  try {
-    // Verify the refresh token
-    const decoded = await authService.verifyToken(
-      refreshToken,
-      process.env.REFRESH_TOKEN_SECRET || "refresh-secret"
-    );
-
-    console.log("Decoded token:", decoded);
-
-    if (!decoded || !decoded.id) {
-      throw new ErrorClass("Invalid refresh token", 401);
-    }
-
-    // Find the user to get their current data
-    let user = null;
-    let userType = null;
-
-    // Try to find user in students table first
-    const student = await Students.findByPk(decoded.id);
-    if (student) {
-      user = student;
-      userType = "student";
-    } else {
-      // Try staff table if not found in students
-      const staff = await Staff.findByPk(decoded.id);
-      if (staff) {
-        user = staff;
-        userType = "staff";
-      }
-    }
-
-    if (!user) {
-      throw new ErrorClass("User not found", 404);
-    }
-
-    // Create proper token payload with user data
-    const tokenPayload = {
-      id: user.id,
-      userType,
-      email: user.email,
-    };
-
-    if (userType === "student") {
-      tokenPayload.firstName = user.fname;
-      tokenPayload.lastName = user.lname;
-      tokenPayload.level = user.level;
-      tokenPayload.facultyId = user.faculty_id;
-    } else {
-      tokenPayload.fullName = user.full_name;
-      tokenPayload.phone = user.phone;
-    }
-
-    // Generate new access token
-    const newAccessToken = await authService.generateAccessToken(tokenPayload);
-
-    res.status(200).json({
-      success: true,
-      message: "Token refreshed successfully",
-      data: {
-        accessToken: newAccessToken,
-        expiresIn: 900,
-        userType,
-      },
-    });
-  } catch (error) {
-    console.error("Refresh token error:", error.message);
-    console.error("Full error:", error);
-
-    // Check if it's a JWT verification error
-    if (
-      error.name === "JsonWebTokenError" ||
-      error.name === "TokenExpiredError"
-    ) {
-      throw new ErrorClass("Invalid or expired refresh token", 401);
-    }
-
-    throw new ErrorClass("Invalid refresh token", 401);
-  }
-});
+// Refresh token endpoint - REMOVED (no longer using refresh tokens)
 
 // Logout
 export const logout = TryCatchFunction(async (req, res) => {
-  // Optional: You could invalidate the refresh token here
-  // by storing it in a blacklist or removing it from database
+  // Since we're using stateless JWT tokens, logout is handled client-side
+  // by simply removing the token from storage
 
   res.status(200).json({
     success: true,
