@@ -83,6 +83,7 @@ export const getStudentCourses = TryCatchFunction(async (req, res) => {
     ],
   });
   const data = studentWithCourses?.courses;
+  console.log(data);
   if (!data) {
     throw new ErrorClass("No courses found", 404);
   }
