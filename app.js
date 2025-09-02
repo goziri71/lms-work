@@ -3,6 +3,7 @@ import cors from "cors";
 import { connectDB } from "./src/database/database.js";
 import authRoutes from "./src/routes/auth.js";
 import courseRoutes from "./src/routes/courses.js";
+import semesterRoutes from "./src/routes/semesters.js";
 import { setupAssociations } from "./src/models/associations.js";
 
 const app = express();
@@ -16,6 +17,7 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/courses", courseRoutes);
+app.use("/api/semesters", semesterRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
