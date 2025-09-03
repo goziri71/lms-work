@@ -176,3 +176,82 @@ export const getStaffCourses = TryCatchFunction(async (req, res) => {
     data: data,
   });
 });
+
+// Get a single course by id for staff (owner) or student (enrolled)
+export const getCourseById = TryCatchFunction(async (req, res) => {
+  const courseId = Number(req.params.courseId || req.query.courseId);
+  if (!Number.isInteger(courseId) || courseId <= 0) {
+    throw new ErrorClass("Invalid course id", 400);
+  }
+
+  const userId = Number(req.user?.id ?? req.user);
+  let userType = req.user?.userType;
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ErrorClass("Unauthorized or invalid user id", 401);
+  }
+
+  // Backward compatibility: infer userType if missing in older tokens
+  if (!userType) {
+    const staff = await Staff.findByPk(userId, { attributes: ["id"] });
+    if (staff) {
+      userType = "staff";
+    } else {
+      const student = await Students.findByPk(userId, { attributes: ["id"] });
+      if (student) userType = "student";
+    }
+  }
+
+  let where = { id: courseId };
+  let include = [
+    {
+      model: Staff,
+      as: "instructor",
+      attributes: ["id", "full_name", "email", "phone"],
+      required: false,
+    },
+  ];
+
+  if (userType === "staff") {
+    where = { ...where, staff_id: userId };
+  } else if (userType === "student") {
+    include.push({
+      model: Students,
+      as: "students",
+      attributes: [],
+      through: { attributes: [] },
+      where: { id: userId },
+      required: true,
+    });
+  } else {
+    throw new ErrorClass("Unauthorized", 401);
+  }
+
+  const course = await Courses.findOne({
+    where,
+    include,
+    attributes: [
+      "id",
+      "title",
+      "course_code",
+      "course_unit",
+      "course_type",
+      "course_level",
+      "semester",
+      "price",
+      "exam_fee",
+      "currency",
+      "staff_id",
+    ],
+  });
+
+  if (!course) {
+    throw new ErrorClass("Course not found", 404);
+  }
+
+  res.status(200).json({
+    status: true,
+    code: 200,
+    message: "Course fetched successfully",
+    data: course,
+  });
+});

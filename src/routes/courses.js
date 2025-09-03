@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   getStudentCourses,
   getStaffCourses,
+  getCourseById,
 } from "../controllers/courses/courses.js";
 import { authorize } from "../middlewares/authorize.js";
 
@@ -24,5 +25,8 @@ router.get("/student/:startYear/:endYear", authorize, getStudentCourses);
 
 // Example: /api/courses/staff/2024/2025 (optional ?semester=1ST&includeStudents=true)
 router.get("/staff/:startYear/:endYear", authorize, getStaffCourses);
+
+// Get one course by id (staff owner or student enrolled)
+router.get("/single/:courseId", authorize, getCourseById);
 
 export default router;
