@@ -3,6 +3,8 @@ import { Students } from "./auth/student.js";
 import { Staff } from "./auth/staff.js";
 import { Courses } from "./course/courses.js";
 import { Semester } from "./auth/semester.js";
+import { Modules } from "./modules/modules.js";
+import { Units } from "./modules/units.js";
 // Import other models like Faculty, Program when you have them
 
 export const setupAssociations = () => {
@@ -43,5 +45,18 @@ export const setupAssociations = () => {
     as: "students",
     foreignKey: "course_id",
     otherKey: "student_id",
+  });
+
+  // Library DB associations (Modules -> Units)
+  // Note: These are on a separate connection (dbLibrary) and do not join to LMS models.
+  Modules.hasMany(Units, {
+    foreignKey: "module_id",
+    as: "units",
+    onDelete: "CASCADE",
+    hooks: true,
+  });
+  Units.belongsTo(Modules, {
+    foreignKey: "module_id",
+    as: "module",
   });
 };

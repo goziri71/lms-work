@@ -11,7 +11,8 @@
     "build": "echo \"No build step needed for JS—just run npm start\"",
     "migrate:course-reg": "node src/scripts/migrateCourseReg.js",
     "db:introspect": "node src/scripts/introspect.js",
-    "fix:course-reg": "node src/scripts/fixCourseRegIds.js"
+    "fix:course-reg": "node src/scripts/fixCourseRegIds.js",
+    "migrate:library": "node src/scripts/migrateLibrary.js"
   },
   "keywords": [],
   "author": "",
