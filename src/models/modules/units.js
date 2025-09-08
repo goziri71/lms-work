@@ -26,6 +26,14 @@ export const Units = dbLibrary.define(
       allowNull: false,
       defaultValue: "html",
     },
+    photo_url: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    video_url: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
     order: {
       type: DataTypes.INTEGER,
       allowNull: false,

@@ -7,10 +7,59 @@ import multer from "multer";
 import { supabase } from "../../utils/supabase.js";
 import { UnitNotes } from "../../models/modules/unit_notes.js";
 import { dbLibrary } from "../../database/database.js";
+import { Op } from "sequelize";
 import {
   Discussions,
   DiscussionMessages,
 } from "../../models/modules/discussions.js";
+
+// Helper function to extract base64 images from HTML and upload to Supabase
+const processHtmlImages = async (htmlContent, unitId) => {
+  if (!htmlContent) return htmlContent;
+
+  // Regex to find base64 images in HTML
+  const base64ImageRegex =
+    /<img[^>]+src="data:image\/([^;]+);base64,([^"]+)"[^>]*>/g;
+  let processedHtml = htmlContent;
+  const matches = [...htmlContent.matchAll(base64ImageRegex)];
+
+  for (let i = 0; i < matches.length; i++) {
+    const match = matches[i];
+    const [fullMatch, imageType, base64Data] = match;
+
+    try {
+      // Convert base64 to buffer
+      const imageBuffer = Buffer.from(base64Data, "base64");
+
+      // Upload to same bucket as videos but in images folder
+      const bucket = process.env.VIDEOS_BUCKET || "lmsvideo";
+      const objectPath = `images/units/${unitId}/image_${i}_${Date.now()}.${imageType}`;
+
+      const { error } = await supabase.storage
+        .from(bucket)
+        .upload(objectPath, imageBuffer, {
+          contentType: `image/${imageType}`,
+          upsert: true,
+        });
+
+      if (!error) {
+        const publicUrl = supabase.storage.from(bucket).getPublicUrl(objectPath)
+          .data.publicUrl;
+        // Replace base64 with URL in HTML
+        processedHtml = processedHtml.replace(
+          fullMatch,
+          fullMatch.replace(/src="[^"]*"/, `src="${publicUrl}"`)
+        );
+      } else {
+        console.error(`Failed to upload image ${i}:`, error);
+      }
+    } catch (err) {
+      console.error(`Error processing image ${i}:`, err);
+    }
+  }
+
+  return processedHtml;
+};
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -77,7 +126,17 @@ export const getModulesByCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("You do not own this course", 403);
   }
 
-  const modules = await Modules.findAll({ where: { course_id: courseId } });
+  const modules = await Modules.findAll({
+    where: { course_id: courseId },
+    include: [
+      {
+        model: Units,
+        as: "units",
+        required: false,
+        order: [["order", "ASC"]],
+      },
+    ],
+  });
   res.status(200).json({
     status: true,
     code: 200,
@@ -156,7 +215,48 @@ export const deleteModule = TryCatchFunction(async (req, res) => {
 
     if (unitIds.length > 0) {
       // Delete notes associated with units in this module
-      await UnitNotes.destroy({ where: { unit_id: unitIds }, transaction: t });
+      await UnitNotes.destroy({
+        where: { unit_id: { [Op.in]: unitIds } },
+        transaction: t,
+      });
+
+      // Cleanup Supabase storage for each unit (videos and images)
+      const bucket = process.env.VIDEOS_BUCKET || "lmsvideo";
+      for (const unit of units) {
+        // Remove video file if present
+        if (unit.video_url) {
+          try {
+            const url = unit.video_url;
+            const marker = `/storage/v1/object/public/${bucket}/`;
+            const idx = url.indexOf(marker);
+            if (idx !== -1) {
+              const objectPath = url.substring(idx + marker.length);
+              await supabase.storage.from(bucket).remove([objectPath]);
+            }
+          } catch (e) {
+            console.warn(
+              "Failed to remove unit video from storage:",
+              e?.message || e
+            );
+          }
+        }
+        // Remove any images under images/units/<unitId>/
+        try {
+          const folder = `images/units/${unit.id}`;
+          const { data: files } = await supabase.storage
+            .from(bucket)
+            .list(folder, { limit: 100 });
+          if (Array.isArray(files) && files.length > 0) {
+            const paths = files.map((f) => `${folder}/${f.name}`);
+            await supabase.storage.from(bucket).remove(paths);
+          }
+        } catch (e) {
+          console.warn(
+            "Failed to remove unit images from storage:",
+            e?.message || e
+          );
+        }
+      }
       // Delete units themselves
       await Units.destroy({ where: { module_id: moduleId }, transaction: t });
     }
@@ -172,7 +272,6 @@ export const deleteModule = TryCatchFunction(async (req, res) => {
   });
 });
 
-// Units Controllers
 export const createUnit = TryCatchFunction(async (req, res) => {
   const staffId = Number(req.user?.id ?? req.user);
   const { module_id, title, content, content_type, order, status } = req.body;
@@ -194,16 +293,26 @@ export const createUnit = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("You do not own this course", 403);
   }
 
+  // Create unit first to get ID for image uploads
   const unit = await Units.create({
     module_id,
     title,
-    content: content ?? null,
+    content: null, // We'll update this after processing images
     content_type: content_type ?? "html",
     order: order ?? 1,
     status: status ?? "draft",
     created_by: staffId,
     updated_by: staffId,
   });
+
+  // Process images if content exists and is HTML
+  let processedContent = content ?? null;
+  if (content && (content_type === "html" || !content_type)) {
+    processedContent = await processHtmlImages(content, unit.id);
+  }
+
+  // Update unit with processed content (with image URLs)
+  await unit.update({ content: processedContent });
 
   res.status(201).json({
     status: true,
@@ -212,6 +321,47 @@ export const createUnit = TryCatchFunction(async (req, res) => {
     data: unit,
   });
 });
+
+// // Units Controllers
+// export const createUnit = TryCatchFunction(async (req, res) => {
+//   const staffId = Number(req.user?.id ?? req.user);
+//   const { module_id, title, content, content_type, order, status } = req.body;
+
+//   if (!module_id || !title) {
+//     throw new ErrorClass("module_id and title are required", 400);
+//   }
+
+//   const moduleRecord = await Modules.findByPk(module_id);
+//   if (!moduleRecord) {
+//     throw new ErrorClass("Module not found", 404);
+//   }
+
+//   const course = await Courses.findByPk(moduleRecord.course_id);
+//   if (!course) {
+//     throw new ErrorClass("Course not found", 404);
+//   }
+//   if (course.staff_id !== staffId) {
+//     throw new ErrorClass("You do not own this course", 403);
+//   }
+
+//   const unit = await Units.create({
+//     module_id,
+//     title,
+//     content: content ?? null,
+//     content_type: content_type ?? "html",
+//     order: order ?? 1,
+//     status: status ?? "draft",
+//     created_by: staffId,
+//     updated_by: staffId,
+//   });
+
+//   res.status(201).json({
+//     status: true,
+//     code: 201,
+//     message: "Unit created",
+//     data: unit,
+//   });
+// });
 
 export const getUnitsByModule = TryCatchFunction(async (req, res) => {
   const staffId = Number(req.user?.id ?? req.user);
@@ -243,6 +393,7 @@ export const getUnitsByModule = TryCatchFunction(async (req, res) => {
   });
 });
 
+// Also update the updateUnit function to handle images
 export const updateUnit = TryCatchFunction(async (req, res) => {
   const staffId = Number(req.user?.id ?? req.user);
   const unitId = Number(req.params.unitId);
@@ -267,6 +418,16 @@ export const updateUnit = TryCatchFunction(async (req, res) => {
   delete updates.module_id;
   updates.updated_by = staffId;
 
+  // Process images if content is being updated and it's HTML
+  if (
+    updates.content &&
+    (updates.content_type === "html" ||
+      unit.content_type === "html" ||
+      (!updates.content_type && !unit.content_type))
+  ) {
+    updates.content = await processHtmlImages(updates.content, unitId);
+  }
+
   await unit.update(updates);
 
   res.status(200).json({
@@ -276,6 +437,40 @@ export const updateUnit = TryCatchFunction(async (req, res) => {
     data: unit,
   });
 });
+
+// export const updateUnit = TryCatchFunction(async (req, res) => {
+//   const staffId = Number(req.user?.id ?? req.user);
+//   const unitId = Number(req.params.unitId);
+//   const updates = req.body || {};
+
+//   if (!Number.isInteger(unitId) || unitId <= 0) {
+//     throw new ErrorClass("Invalid unit id", 400);
+//   }
+
+//   const unit = await Units.findByPk(unitId);
+//   if (!unit) {
+//     throw new ErrorClass("Unit not found", 404);
+//   }
+
+//   const moduleRecord = await Modules.findByPk(unit.module_id);
+//   const course = await Courses.findByPk(moduleRecord.course_id);
+//   if (course.staff_id !== staffId) {
+//     throw new ErrorClass("You do not own this course", 403);
+//   }
+
+//   delete updates.id;
+//   delete updates.module_id;
+//   updates.updated_by = staffId;
+
+//   await unit.update(updates);
+
+//   res.status(200).json({
+//     status: true,
+//     code: 200,
+//     message: "Unit updated",
+//     data: unit,
+//   });
+// });
 
 export const deleteUnit = TryCatchFunction(async (req, res) => {
   const staffId = Number(req.user?.id ?? req.user);
@@ -296,7 +491,47 @@ export const deleteUnit = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("You do not own this course", 403);
   }
 
-  await unit.destroy();
+  // Cleanup associated notes and storage
+  await dbLibrary.transaction(async (t) => {
+    await UnitNotes.destroy({ where: { unit_id: unitId }, transaction: t });
+
+    const bucket = process.env.VIDEOS_BUCKET || "lmsvideo";
+    // Remove video file if present
+    if (unit.video_url) {
+      try {
+        const url = unit.video_url;
+        const marker = `/storage/v1/object/public/${bucket}/`;
+        const idx = url.indexOf(marker);
+        if (idx !== -1) {
+          const objectPath = url.substring(idx + marker.length);
+          await supabase.storage.from(bucket).remove([objectPath]);
+        }
+      } catch (e) {
+        console.warn(
+          "Failed to remove unit video from storage:",
+          e?.message || e
+        );
+      }
+    }
+    // Remove any images under images/units/<unitId>/
+    try {
+      const folder = `images/units/${unit.id}`;
+      const { data: files } = await supabase.storage
+        .from(bucket)
+        .list(folder, { limit: 100 });
+      if (Array.isArray(files) && files.length > 0) {
+        const paths = files.map((f) => `${folder}/${f.name}`);
+        await supabase.storage.from(bucket).remove(paths);
+      }
+    } catch (e) {
+      console.warn(
+        "Failed to remove unit images from storage:",
+        e?.message || e
+      );
+    }
+
+    await unit.destroy({ transaction: t });
+  });
 
   res.status(200).json({
     status: true,

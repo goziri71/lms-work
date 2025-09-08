@@ -54,6 +54,17 @@ async function migrateLibrary() {
         END IF;
       END $$;
     `);
+    // Add photo_url to units if not present
+    await dbLibrary.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='units' AND column_name='photo_url'
+        ) THEN
+          ALTER TABLE units ADD COLUMN photo_url VARCHAR(1000) NULL;
+        END IF;
+      END $$;
+    `);
     await dbLibrary.query(`
       DO $$ BEGIN
         IF NOT EXISTS (
