@@ -1,4 +1,6 @@
 import express from "express";
+import http from "http";
+import { Server as SocketIOServer } from "socket.io";
 import cors from "cors";
 import { connectDB } from "./src/database/database.js";
 import authRoutes from "./src/routes/auth.js";
@@ -6,8 +8,11 @@ import courseRoutes from "./src/routes/courses.js";
 import semesterRoutes from "./src/routes/semesters.js";
 import modulesRoutes from "./src/routes/modules.js";
 import { setupAssociations } from "./src/models/associations.js";
+import { setupDiscussionsSocket } from "./src/realtime/discussions.js";
 
 const app = express();
+const server = http.createServer(app);
+const io = new SocketIOServer(server, { cors: { origin: "*" } });
 const PORT = process.env.PORT || 3000;
 
 // Middleware
@@ -52,7 +57,8 @@ connectDB().then((success) => {
     setupAssociations();
     console.log("🔗 Model associations established");
 
-    app.listen(PORT, () => {
+    setupDiscussionsSocket(io);
+    server.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log("📊 Connected to both LMS and Library databases");
     });
