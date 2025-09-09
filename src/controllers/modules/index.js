@@ -8,6 +8,7 @@ import { supabase } from "../../utils/supabase.js";
 import { UnitNotes } from "../../models/modules/unit_notes.js";
 import { dbLibrary } from "../../database/database.js";
 import { Op } from "sequelize";
+import { db } from "../../database/database.js";
 import {
   Discussions,
   DiscussionMessages,
@@ -110,7 +111,7 @@ export const createModule = TryCatchFunction(async (req, res) => {
 
 // List modules for a course (Library DB)
 export const getModulesByCourse = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id ?? req.user);
+  const userId = Number(req.user?.id ?? req.user);
   const courseId = Number(req.params.courseId);
 
   if (!Number.isInteger(courseId) || courseId <= 0) {
@@ -121,9 +122,27 @@ export const getModulesByCourse = TryCatchFunction(async (req, res) => {
   if (!course) {
     throw new ErrorClass("Course not found", 404);
   }
-  // Optional: restrict staff to own courses
-  if (Number.isInteger(staffId) && staffId > 0 && course.staff_id !== staffId) {
-    throw new ErrorClass("You do not own this course", 403);
+  // Authorization: support current middleware where req.user is numeric id
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ErrorClass("Unauthorized", 401);
+  }
+  let authorized = false;
+  // Staff path: owner of the course
+  if (course.staff_id === userId) {
+    authorized = true;
+  }
+  // Student path: enrolled via course_reg
+  if (!authorized) {
+    const [rows] = await db.query(
+      "SELECT 1 FROM course_reg WHERE course_id = :courseId AND student_id = :studentId LIMIT 1",
+      { replacements: { courseId, studentId: userId } }
+    );
+    if (Array.isArray(rows) && rows.length > 0) {
+      authorized = true;
+    }
+  }
+  if (!authorized) {
+    throw new ErrorClass("Unauthorized", 401);
   }
 
   const modules = await Modules.findAll({
