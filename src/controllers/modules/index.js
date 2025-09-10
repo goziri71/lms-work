@@ -615,43 +615,75 @@ export const uploadUnitVideo = TryCatchFunction(async (req, res) => {
   });
 });
 
-// ========== Unit Notes (student) ==========
-export const upsertUnitNote = TryCatchFunction(async (req, res) => {
+// ========== Module Notes (student) ==========
+export const upsertModuleNote = TryCatchFunction(async (req, res) => {
   const studentId = Number(req.user?.id ?? req.user);
-  const unitId = Number(req.params.unitId || req.body.unit_id);
+  const moduleId = Number(req.params.moduleId || req.body.module_id);
   const { note_text } = req.body;
   if (!Number.isInteger(studentId) || studentId <= 0) {
     throw new ErrorClass("Unauthorized or invalid user id", 401);
   }
-  if (!Number.isInteger(unitId) || unitId <= 0 || !note_text) {
-    throw new ErrorClass("unit_id and note_text are required", 400);
+  if (!Number.isInteger(moduleId) || moduleId <= 0 || !note_text) {
+    throw new ErrorClass("module_id and note_text are required", 400);
   }
-  const [note] = await UnitNotes.upsert({
-    unit_id: unitId,
+  const note = await UnitNotes.create({
+    module_id: moduleId,
     student_id: studentId,
     note_text,
   });
-  res
-    .status(200)
-    .json({ status: true, code: 200, message: "Note saved", data: note });
+  res.status(200).json({
+    status: true,
+    code: 200,
+    message: "Note saved",
+    data: note,
+  });
 });
 
-export const getUnitNote = TryCatchFunction(async (req, res) => {
+export const updateModuleNote = TryCatchFunction(async (req, res) => {
   const studentId = Number(req.user?.id ?? req.user);
-  const unitId = Number(req.params.unitId);
-  const note = await UnitNotes.findOne({
-    where: { unit_id: unitId, student_id: studentId },
+  const noteId = Number(req.params.noteId);
+  const { note_text } = req.body;
+  if (!Number.isInteger(studentId) || studentId <= 0) {
+    throw new ErrorClass("Unauthorized or invalid user id", 401);
+  }
+  if (!Number.isInteger(noteId) || noteId <= 0 || !note_text) {
+    throw new ErrorClass("note_id and note_text are required", 400);
+  }
+  const [affectedRows] = await UnitNotes.update(
+    { note_text },
+    { where: { id: noteId, student_id: studentId } }
+  );
+
+  if (affectedRows === 0) {
+    throw new ErrorClass("Note not found", 404);
+  }
+
+  const updatedNote = await UnitNotes.findByPk(noteId);
+  res.status(200).json({
+    status: true,
+    code: 200,
+    message: "Note updated",
+    data: updatedNote,
+  });
+});
+
+export const getModuleNote = TryCatchFunction(async (req, res) => {
+  const studentId = Number(req.user?.id ?? req.user);
+  const moduleId = Number(req.params.moduleId);
+  const notes = await UnitNotes.findAll({
+    where: { module_id: moduleId, student_id: studentId },
+    order: [["updated_at", "DESC"]],
   });
   res
     .status(200)
-    .json({ status: true, code: 200, message: "Note fetched", data: note });
+    .json({ status: true, code: 200, message: "Notes fetched", data: notes });
 });
 
-export const deleteUnitNote = TryCatchFunction(async (req, res) => {
+export const deleteModuleNote = TryCatchFunction(async (req, res) => {
   const studentId = Number(req.user?.id ?? req.user);
-  const unitId = Number(req.params.unitId);
+  const moduleId = Number(req.params.moduleId);
   await UnitNotes.destroy({
-    where: { unit_id: unitId, student_id: studentId },
+    where: { module_id: moduleId, student_id: studentId },
   });
   res.status(200).json({ status: true, code: 200, message: "Note deleted" });
 });

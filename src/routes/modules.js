@@ -11,13 +11,14 @@ import {
   deleteUnit,
   uploadUnitVideo,
   uploadMiddleware,
-  upsertUnitNote,
-  getUnitNote,
-  deleteUnitNote,
+  upsertModuleNote,
+  getModuleNote,
+  deleteModuleNote,
   listDiscussions,
   createDiscussion,
   listDiscussionMessages,
   postDiscussionMessage,
+  updateModuleNote,
 } from "../controllers/modules/index.js";
 
 const router = Router();
@@ -44,10 +45,11 @@ router.post(
 
 export default router;
 
-// Notes (student)
-router.put("/units/:unitId/note", authorize, upsertUnitNote);
-router.get("/units/:unitId/note", authorize, getUnitNote);
-router.delete("/units/:unitId/note", authorize, deleteUnitNote);
+// Notes (student) - module scoped
+router.put("/modules/:moduleId/note", authorize, upsertModuleNote);
+router.patch("/modules/:moduleId/notes/:noteId", authorize, updateModuleNote);
+router.get("/modules/:moduleId/note", authorize, getModuleNote);
+router.delete("/modules/:moduleId/note", authorize, deleteModuleNote);
 
 // Discussions
 router.get("/discussions", authorize, listDiscussions);
