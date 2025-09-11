@@ -3,8 +3,15 @@ import { dbLibrary } from "../database/database.js";
 const sql = `
 BEGIN;
 
--- Drop unique constraint to allow multiple notes per student per module
-ALTER TABLE unit_notes DROP CONSTRAINT IF EXISTS uq_module_notes;
+-- Add title column to unit_notes if not exists
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='unit_notes' AND column_name='title'
+  ) THEN
+    ALTER TABLE unit_notes ADD COLUMN title VARCHAR(255) NULL;
+  END IF;
+END $$;
 
 COMMIT;
 `;

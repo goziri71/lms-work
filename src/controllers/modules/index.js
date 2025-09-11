@@ -619,16 +619,24 @@ export const uploadUnitVideo = TryCatchFunction(async (req, res) => {
 export const upsertModuleNote = TryCatchFunction(async (req, res) => {
   const studentId = Number(req.user?.id ?? req.user);
   const moduleId = Number(req.params.moduleId || req.body.module_id);
-  const { note_text } = req.body;
+  const { note_text, title } = req.body;
+
   if (!Number.isInteger(studentId) || studentId <= 0) {
     throw new ErrorClass("Unauthorized or invalid user id", 401);
   }
+
   if (!Number.isInteger(moduleId) || moduleId <= 0 || !note_text) {
     throw new ErrorClass("module_id and note_text are required", 400);
   }
+
+  if (!title || !note_text) {
+    throw new ErrorClass("title and note_text are required", 400);
+  }
+
   const note = await UnitNotes.create({
     module_id: moduleId,
     student_id: studentId,
+    title,
     note_text,
   });
   res.status(200).json({
@@ -642,7 +650,7 @@ export const upsertModuleNote = TryCatchFunction(async (req, res) => {
 export const updateModuleNote = TryCatchFunction(async (req, res) => {
   const studentId = Number(req.user?.id ?? req.user);
   const noteId = Number(req.params.noteId);
-  const { note_text } = req.body;
+  const { note_text, title } = req.body;
   if (!Number.isInteger(studentId) || studentId <= 0) {
     throw new ErrorClass("Unauthorized or invalid user id", 401);
   }
@@ -650,7 +658,7 @@ export const updateModuleNote = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("note_id and note_text are required", 400);
   }
   const [affectedRows] = await UnitNotes.update(
-    { note_text },
+    { note_text, title },
     { where: { id: noteId, student_id: studentId } }
   );
 
@@ -682,8 +690,20 @@ export const getModuleNote = TryCatchFunction(async (req, res) => {
 export const deleteModuleNote = TryCatchFunction(async (req, res) => {
   const studentId = Number(req.user?.id ?? req.user);
   const moduleId = Number(req.params.moduleId);
+  const noteId = Number(req.params.noteId);
+
+  if (!Number.isInteger(studentId)) {
+    throw new ErrorClass("Unauthorized or invalid user id", 401);
+  }
+  if (!Number.isInteger(moduleId)) {
+    throw new ErrorClass("Invalid module id", 400);
+  }
+  if (!Number.isInteger(noteId)) {
+    throw new ErrorClass("Invalid note id", 400);
+  }
+
   await UnitNotes.destroy({
-    where: { module_id: moduleId, student_id: studentId },
+    where: { module_id: moduleId, student_id: studentId, id: noteId },
   });
   res.status(200).json({ status: true, code: 200, message: "Note deleted" });
 });

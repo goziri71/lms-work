@@ -49,7 +49,7 @@ export default router;
 router.put("/modules/:moduleId/note", authorize, upsertModuleNote);
 router.patch("/modules/:moduleId/notes/:noteId", authorize, updateModuleNote);
 router.get("/modules/:moduleId/note", authorize, getModuleNote);
-router.delete("/modules/:moduleId/note", authorize, deleteModuleNote);
+router.delete("/modules/:moduleId/notes/:noteId", authorize, deleteModuleNote);
 
 // Discussions
 router.get("/discussions", authorize, listDiscussions);
