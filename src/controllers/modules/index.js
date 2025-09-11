@@ -71,7 +71,7 @@ export const uploadMiddleware = upload.single("video");
 
 // Create a module (Library DB) tied to an LMS course
 export const createModule = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id ?? req.user);
+  const staffId = Number(req.user?.id);
   console.log(staffId);
   const { course_id, title, description, status } = req.body;
 
@@ -111,7 +111,7 @@ export const createModule = TryCatchFunction(async (req, res) => {
 
 // List modules for a course (Library DB)
 export const getModulesByCourse = TryCatchFunction(async (req, res) => {
-  const userId = Number(req.user?.id ?? req.user);
+  const userId = Number(req.user?.id);
   const courseId = Number(req.params.courseId);
 
   if (!Number.isInteger(courseId) || courseId <= 0) {
@@ -166,7 +166,7 @@ export const getModulesByCourse = TryCatchFunction(async (req, res) => {
 
 // Update a module
 export const updateModule = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id ?? req.user);
+  const staffId = Number(req.user?.id);
   const moduleId = Number(req.params.moduleId);
   const updates = req.body || {};
 
@@ -204,7 +204,7 @@ export const updateModule = TryCatchFunction(async (req, res) => {
 
 // Delete a module (will cascade to units via Library DB association)
 export const deleteModule = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id ?? req.user);
+  const staffId = Number(req.user?.id);
   const moduleId = Number(req.params.moduleId);
 
   if (!Number.isInteger(moduleId) || moduleId <= 0) {
@@ -292,7 +292,7 @@ export const deleteModule = TryCatchFunction(async (req, res) => {
 });
 
 export const createUnit = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id ?? req.user);
+  const staffId = Number(req.user?.id);
   const { module_id, title, content, content_type, order, status } = req.body;
 
   if (!module_id || !title) {
@@ -343,7 +343,7 @@ export const createUnit = TryCatchFunction(async (req, res) => {
 
 // // Units Controllers
 // export const createUnit = TryCatchFunction(async (req, res) => {
-//   const staffId = Number(req.user?.id ?? req.user);
+//   const staffId = Number(req.user?.id);
 //   const { module_id, title, content, content_type, order, status } = req.body;
 
 //   if (!module_id || !title) {
@@ -383,7 +383,7 @@ export const createUnit = TryCatchFunction(async (req, res) => {
 // });
 
 export const getUnitsByModule = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id ?? req.user);
+  const staffId = Number(req.user?.id);
   const moduleId = Number(req.params.moduleId);
 
   if (!Number.isInteger(moduleId) || moduleId <= 0) {
@@ -414,7 +414,7 @@ export const getUnitsByModule = TryCatchFunction(async (req, res) => {
 
 // Also update the updateUnit function to handle images
 export const updateUnit = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id ?? req.user);
+  const staffId = Number(req.user?.id);
   const unitId = Number(req.params.unitId);
   const updates = req.body || {};
 
@@ -458,7 +458,7 @@ export const updateUnit = TryCatchFunction(async (req, res) => {
 });
 
 // export const updateUnit = TryCatchFunction(async (req, res) => {
-//   const staffId = Number(req.user?.id ?? req.user);
+//   const staffId = Number(req.user?.id);
 //   const unitId = Number(req.params.unitId);
 //   const updates = req.body || {};
 
@@ -492,7 +492,7 @@ export const updateUnit = TryCatchFunction(async (req, res) => {
 // });
 
 export const deleteUnit = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id ?? req.user);
+  const staffId = Number(req.user?.id);
   const unitId = Number(req.params.unitId);
 
   if (!Number.isInteger(unitId) || unitId <= 0) {
@@ -561,7 +561,7 @@ export const deleteUnit = TryCatchFunction(async (req, res) => {
 
 // Upload video to Supabase and set unit.video_url
 export const uploadUnitVideo = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id ?? req.user);
+  const staffId = Number(req.user?.id);
   const moduleId = Number(req.params.moduleId);
   const unitId = Number(req.params.unitId);
 
@@ -617,7 +617,7 @@ export const uploadUnitVideo = TryCatchFunction(async (req, res) => {
 
 // ========== Module Notes (student) ==========
 export const upsertModuleNote = TryCatchFunction(async (req, res) => {
-  const studentId = Number(req.user?.id ?? req.user);
+  const studentId = Number(req.user?.id);
   const moduleId = Number(req.params.moduleId || req.body.module_id);
   const { note_text, title } = req.body;
 
@@ -648,7 +648,7 @@ export const upsertModuleNote = TryCatchFunction(async (req, res) => {
 });
 
 export const updateModuleNote = TryCatchFunction(async (req, res) => {
-  const studentId = Number(req.user?.id ?? req.user);
+  const studentId = Number(req.user?.id);
   const noteId = Number(req.params.noteId);
   const { note_text, title } = req.body;
   if (!Number.isInteger(studentId) || studentId <= 0) {
@@ -676,7 +676,7 @@ export const updateModuleNote = TryCatchFunction(async (req, res) => {
 });
 
 export const getModuleNote = TryCatchFunction(async (req, res) => {
-  const studentId = Number(req.user?.id ?? req.user);
+  const studentId = Number(req.user?.id);
   const moduleId = Number(req.params.moduleId);
   const notes = await UnitNotes.findAll({
     where: { module_id: moduleId, student_id: studentId },
@@ -688,7 +688,7 @@ export const getModuleNote = TryCatchFunction(async (req, res) => {
 });
 
 export const deleteModuleNote = TryCatchFunction(async (req, res) => {
-  const studentId = Number(req.user?.id ?? req.user);
+  const studentId = Number(req.user?.id);
   const moduleId = Number(req.params.moduleId);
   const noteId = Number(req.params.noteId);
 
@@ -729,7 +729,7 @@ export const listDiscussions = TryCatchFunction(async (req, res) => {
 });
 
 export const createDiscussion = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id ?? req.user);
+  const staffId = Number(req.user?.id);
   const { course_id, academic_year, semester } = req.body;
   if (!course_id || !academic_year || !semester) {
     throw new ErrorClass(

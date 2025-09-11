@@ -53,7 +53,7 @@ export function setupDiscussionsSocket(io) {
           }
           if (!allowed) throw new Error("Forbidden");
 
-          // Ensure discussion exists
+          // Ensure discussion exists - use actual staff ID when creating
           const [discussion] = await Discussions.findOrCreate({
             where: {
               course_id: courseId,
@@ -64,7 +64,7 @@ export function setupDiscussionsSocket(io) {
               course_id: courseId,
               academic_year: academicYear,
               semester,
-              created_by_staff_id: 0,
+              created_by_staff_id: userType === "staff" ? userId : 1, // Use actual staff ID or default to 1
             },
           });
 
@@ -89,9 +89,26 @@ export function setupDiscussionsSocket(io) {
       async ({ courseId, academicYear, semester, message_text }, cb) => {
         try {
           const userId = Number(socket.user?.id);
-          const sender_type =
-            socket.user?.userType === "staff" ? "staff" : "student";
+          const userType = socket.user?.userType;
+          const sender_type = userType === "staff" ? "staff" : "student";
           if (!message_text) throw new Error("message_text required");
+
+          // Re-verify access for security
+          let allowed = false;
+          if (userType === "staff") {
+            const [rows] = await db.query(
+              "SELECT 1 FROM courses WHERE id = ? AND staff_id = ?",
+              { replacements: [courseId, userId] }
+            );
+            allowed = rows.length > 0;
+          } else if (userType === "student") {
+            const [rows] = await db.query(
+              "SELECT 1 FROM course_reg WHERE course_id = ? AND student_id = ? AND academic_year = ? AND semester = ?",
+              { replacements: [courseId, userId, academicYear, semester] }
+            );
+            allowed = rows.length > 0;
+          }
+          if (!allowed) throw new Error("Forbidden");
 
           const discussion = await Discussions.findOne({
             where: {

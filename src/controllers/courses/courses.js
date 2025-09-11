@@ -12,7 +12,7 @@ export const getStudentCourses = TryCatchFunction(async (req, res) => {
       ? `${req.params.startYear}/${req.params.endYear}`
       : req.params.academicYear);
   const semester = req.query.semester || req.params.semester;
-  const parsedStudentId = Number(req.user?.id ?? req.user);
+  const parsedStudentId = Number(req.user?.id);
   if (!Number.isInteger(parsedStudentId) || parsedStudentId <= 0) {
     throw new ErrorClass("Unauthorized or invalid user id", 401);
   }
@@ -102,7 +102,7 @@ export const getStaffCourses = TryCatchFunction(async (req, res) => {
       ? `${req.params.startYear}/${req.params.endYear}`
       : req.params.academicYear);
   const { semester, includeStudents } = req.query;
-  const parsedStaffId = Number(req.user);
+  const parsedStaffId = Number(req.user.id);
   if (!Number.isInteger(parsedStaffId) || parsedStaffId <= 0) {
     throw new ErrorClass("Unauthorized or invalid user id", 401);
   }
@@ -184,7 +184,7 @@ export const getCourseById = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Invalid course id", 400);
   }
 
-  const userId = Number(req.user?.id ?? req.user);
+  const userId = Number(req.user?.id);
   let userType = req.user?.userType;
   if (!Number.isInteger(userId) || userId <= 0) {
     throw new ErrorClass("Unauthorized or invalid user id", 401);

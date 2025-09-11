@@ -11,7 +11,7 @@ export const authorize = async (req, res, next) => {
       Config.JWT_SECRET
     );
     console.log(verifiedToken);
-    req.user = verifiedToken.id;
+    req.user = verifiedToken; // Store full token payload, not just id
     next();
   } catch (error) {
     res.status(401).json({

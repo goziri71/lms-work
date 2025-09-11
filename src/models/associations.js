@@ -5,6 +5,11 @@ import { Courses } from "./course/courses.js";
 import { Semester } from "./auth/semester.js";
 import { Modules } from "./modules/modules.js";
 import { Units } from "./modules/units.js";
+import { Quiz } from "./modules/quiz.js";
+import { QuizQuestions } from "./modules/quiz_questions.js";
+import { QuizOptions } from "./modules/quiz_options.js";
+import { QuizAttempts } from "./modules/quiz_attempts.js";
+import { QuizAnswers } from "./modules/quiz_answers.js";
 // Import other models like Faculty, Program when you have them
 
 export const setupAssociations = () => {
@@ -58,5 +63,60 @@ export const setupAssociations = () => {
   Units.belongsTo(Modules, {
     foreignKey: "module_id",
     as: "module",
+  });
+
+  // Quiz associations - Modules -> Quiz (One-to-Many)
+  Modules.hasMany(Quiz, {
+    foreignKey: "module_id",
+    as: "quizzes",
+    onDelete: "CASCADE",
+  });
+  Quiz.belongsTo(Modules, {
+    foreignKey: "module_id",
+    as: "module",
+  });
+
+  // Quiz -> QuizQuestions (One-to-Many)
+  Quiz.hasMany(QuizQuestions, {
+    foreignKey: "quiz_id",
+    as: "questions",
+    onDelete: "CASCADE",
+  });
+  QuizQuestions.belongsTo(Quiz, {
+    foreignKey: "quiz_id",
+    as: "quiz",
+  });
+
+  // QuizQuestions -> QuizOptions (One-to-Many)
+  QuizQuestions.hasMany(QuizOptions, {
+    foreignKey: "question_id",
+    as: "options",
+    onDelete: "CASCADE",
+  });
+  QuizOptions.belongsTo(QuizQuestions, {
+    foreignKey: "question_id",
+    as: "question",
+  });
+
+  // Quiz -> QuizAttempts (One-to-Many)
+  Quiz.hasMany(QuizAttempts, {
+    foreignKey: "quiz_id",
+    as: "attempts",
+    onDelete: "CASCADE",
+  });
+  QuizAttempts.belongsTo(Quiz, {
+    foreignKey: "quiz_id",
+    as: "quiz",
+  });
+
+  // QuizAttempts -> QuizAnswers (One-to-Many)
+  QuizAttempts.hasMany(QuizAnswers, {
+    foreignKey: "attempt_id",
+    as: "answers",
+    onDelete: "CASCADE",
+  });
+  QuizAnswers.belongsTo(QuizAttempts, {
+    foreignKey: "attempt_id",
+    as: "attempt",
   });
 };

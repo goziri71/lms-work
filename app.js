@@ -7,6 +7,7 @@ import authRoutes from "./src/routes/auth.js";
 import courseRoutes from "./src/routes/courses.js";
 import semesterRoutes from "./src/routes/semesters.js";
 import modulesRoutes from "./src/routes/modules.js";
+import quizRoutes from "./src/routes/quiz.js";
 import { setupAssociations } from "./src/models/associations.js";
 import { setupDiscussionsSocket } from "./src/realtime/discussions.js";
 
@@ -24,6 +25,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api/auth", authRoutes);
 app.use("/api/courses", courseRoutes);
 app.use("/api/semesters", semesterRoutes);
+app.use("/api/quiz", quizRoutes);
 app.use("/api", modulesRoutes);
 
 // Health check endpoint
