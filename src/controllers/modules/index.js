@@ -766,7 +766,7 @@ export const listDiscussionMessages = TryCatchFunction(async (req, res) => {
 });
 
 export const postDiscussionMessage = TryCatchFunction(async (req, res) => {
-  const user = req.user;
+  const user = req.user?.id;
   const discussionId = Number(req.params.discussionId);
   const { message_text } = req.body;
   if (!message_text) throw new ErrorClass("message_text is required", 400);

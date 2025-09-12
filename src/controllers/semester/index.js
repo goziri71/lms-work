@@ -5,8 +5,7 @@ import { Students } from "../../models/auth/student.js";
 import { Staff } from "../../models/auth/staff.js";
 
 export const getSemester = TryCatchFunction(async (req, res) => {
-  const userId = Number(req.user);
-  console.log(userId);
+  const userId = Number(req.user?.id);
   if (!userId) {
     throw new ErrorClass("Invalid user id", 400);
   }
