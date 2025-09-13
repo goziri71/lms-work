@@ -180,15 +180,22 @@ export const addQuizQuestionsBatch = TryCatchFunction(async (req, res) => {
 });
 
 export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
-  const studentId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
 
-  if (userType !== "student") {
-    throw new ErrorClass("Only students can view quiz list", 403);
+  // Allow both students and staff to access quizzes
+  if (userType !== "student" && userType !== "staff") {
+    throw new ErrorClass("Only students and staff can view quiz list", 403);
   }
 
-  // Get all quizzes with questions and options for students to take
+  // Build query based on user type
+  const whereClause =
+    userType === "staff"
+      ? { created_by: userId } // Staff sees only their quizzes
+      : {}; // Students see all quizzes
+
   const quizzes = await Quiz.findAll({
+    where: whereClause,
     include: [
       {
         model: Modules,
@@ -202,35 +209,40 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
           {
             model: QuizOptions,
             as: "options",
-            attributes: ["id", "option_text"], // Hide correct answers from students
+            attributes:
+              userType === "staff"
+                ? ["id", "option_text", "is_correct"] // Staff sees correct answers
+                : ["id", "option_text"], // Students don't see correct answers
           },
         ],
       },
     ],
   });
 
-  // Get student's attempts
-  const quizIds = quizzes.map((q) => q.id);
-  const attempts = await QuizAttempts.findAll({
-    where: { student_id: studentId, quiz_id: quizIds },
-    order: [["submitted_at", "DESC"]],
-  });
+  // Get attempts only for students
+  let attemptsByQuiz = {};
+  if (userType === "student") {
+    const quizIds = quizzes.map((q) => q.id);
+    const attempts = await QuizAttempts.findAll({
+      where: { student_id: userId, quiz_id: quizIds },
+      order: [["submitted_at", "DESC"]],
+    });
 
-  // Group attempts by quiz
-  const attemptsByQuiz = {};
-  attempts.forEach((attempt) => {
-    if (
-      !attemptsByQuiz[attempt.quiz_id] ||
-      (attempt.submitted_at && !attemptsByQuiz[attempt.quiz_id].submitted_at)
-    ) {
-      attemptsByQuiz[attempt.quiz_id] = attempt;
-    }
-  });
+    // Group attempts by quiz
+    attempts.forEach((attempt) => {
+      if (
+        !attemptsByQuiz[attempt.quiz_id] ||
+        (attempt.submitted_at && !attemptsByQuiz[attempt.quiz_id].submitted_at)
+      ) {
+        attemptsByQuiz[attempt.quiz_id] = attempt;
+      }
+    });
+  }
 
-  // Format response with questions for students to take
+  // Format response based on user type
   const quizList = quizzes.map((quiz) => {
     const attempt = attemptsByQuiz[quiz.id];
-    return {
+    const baseResponse = {
       id: quiz.id,
       title: quiz.title,
       description: quiz.description,
@@ -239,17 +251,6 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
       duration_minutes: quiz.duration_minutes,
       attempts_allowed: quiz.attempts_allowed,
       status: quiz.status,
-      has_attempted: !!attempt,
-      latest_attempt: attempt
-        ? {
-            id: attempt.id,
-            status: attempt.status,
-            score: attempt.total_score,
-            max_score: attempt.max_possible_score,
-            submitted_at: attempt.submitted_at,
-          }
-        : null,
-      // Include questions for students to take the quiz
       questions:
         quiz.questions?.map((q) => ({
           id: q.id,
@@ -259,16 +260,41 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
           options: q.options?.map((opt) => ({
             id: opt.id,
             text: opt.option_text,
-            // Note: is_correct is hidden from students
+            ...(userType === "staff" && { is_correct: opt.is_correct }), // Staff sees correct answers
           })),
         })) || [],
     };
+
+    // Add role-specific data
+    if (userType === "student") {
+      return {
+        ...baseResponse,
+        has_attempted: !!attempt,
+        latest_attempt: attempt
+          ? {
+              id: attempt.id,
+              status: attempt.status,
+              score: attempt.total_score,
+              max_score: attempt.max_possible_score,
+              submitted_at: attempt.submitted_at,
+            }
+          : null,
+      };
+    } else {
+      // Staff sees additional management info
+      return {
+        ...baseResponse,
+        created_by: quiz.created_by,
+        created_at: quiz.created_at,
+        // TODO: Add quiz statistics (total attempts, average score, etc.)
+      };
+    }
   });
 
   res.status(200).json({
     status: true,
     code: 200,
-    message: "Student quizzes retrieved successfully",
+    message: "Quizzes retrieved successfully",
     data: quizList,
   });
 });
