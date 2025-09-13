@@ -65,6 +65,16 @@ export const setupAssociations = () => {
     as: "module",
   });
 
+  // Modules -> Courses association (for quiz queries)
+  Modules.belongsTo(Courses, {
+    foreignKey: "course_id",
+    as: "course",
+  });
+  Courses.hasMany(Modules, {
+    foreignKey: "course_id",
+    as: "modules",
+  });
+
   // Quiz associations - Modules -> Quiz (One-to-Many)
   Modules.hasMany(Quiz, {
     foreignKey: "module_id",

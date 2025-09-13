@@ -102,7 +102,7 @@ export const getStaffCourses = TryCatchFunction(async (req, res) => {
       ? `${req.params.startYear}/${req.params.endYear}`
       : req.params.academicYear);
   const { semester, includeStudents } = req.query;
-  const parsedStaffId = Number(req.user.id);
+  const parsedStaffId = Number(req.user?.id);
   if (!Number.isInteger(parsedStaffId) || parsedStaffId <= 0) {
     throw new ErrorClass("Unauthorized or invalid user id", 401);
   }

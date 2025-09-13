@@ -107,10 +107,11 @@ export const addQuizQuestionsBatch = TryCatchFunction(async (req, res) => {
     const createdQuestions = [];
 
     for (const q of questions) {
-      const { text, type = "single_choice", points = 1, options } = q;
-      if (!text || !Array.isArray(options) || options.length < 2) {
+      const { html, text, type = "single_choice", points = 1, options } = q;
+      const questionText = html || text; // HTML preferred, fallback to plain text
+      if (!questionText || !Array.isArray(options) || options.length < 2) {
         throw new ErrorClass(
-          "Each question requires text and at least 2 options",
+          "Each question requires html (preferred) or text, and at least 2 options",
           400
         );
       }
@@ -143,7 +144,7 @@ export const addQuizQuestionsBatch = TryCatchFunction(async (req, res) => {
       const question = await QuizQuestions.create(
         {
           quiz_id: quizId,
-          question_text: text,
+          question_text: questionText,
           question_type,
           points,
           created_by: staffId,
@@ -176,6 +177,100 @@ export const addQuizQuestionsBatch = TryCatchFunction(async (req, res) => {
     await trx.rollback();
     throw err;
   }
+});
+
+export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
+  const studentId = Number(req.user?.id);
+  const userType = req.user?.userType;
+
+  if (userType !== "student") {
+    throw new ErrorClass("Only students can view quiz list", 403);
+  }
+
+  // Get all quizzes with questions and options for students to take
+  const quizzes = await Quiz.findAll({
+    include: [
+      {
+        model: Modules,
+        as: "module",
+        attributes: ["id", "title", "course_id"],
+      },
+      {
+        model: QuizQuestions,
+        as: "questions",
+        include: [
+          {
+            model: QuizOptions,
+            as: "options",
+            attributes: ["id", "option_text"], // Hide correct answers from students
+          },
+        ],
+      },
+    ],
+  });
+
+  // Get student's attempts
+  const quizIds = quizzes.map((q) => q.id);
+  const attempts = await QuizAttempts.findAll({
+    where: { student_id: studentId, quiz_id: quizIds },
+    order: [["submitted_at", "DESC"]],
+  });
+
+  // Group attempts by quiz
+  const attemptsByQuiz = {};
+  attempts.forEach((attempt) => {
+    if (
+      !attemptsByQuiz[attempt.quiz_id] ||
+      (attempt.submitted_at && !attemptsByQuiz[attempt.quiz_id].submitted_at)
+    ) {
+      attemptsByQuiz[attempt.quiz_id] = attempt;
+    }
+  });
+
+  // Format response with questions for students to take
+  const quizList = quizzes.map((quiz) => {
+    const attempt = attemptsByQuiz[quiz.id];
+    return {
+      id: quiz.id,
+      title: quiz.title,
+      description: quiz.description,
+      module_id: quiz.module_id,
+      module_title: quiz.module?.title || "Unknown Module",
+      duration_minutes: quiz.duration_minutes,
+      attempts_allowed: quiz.attempts_allowed,
+      status: quiz.status,
+      has_attempted: !!attempt,
+      latest_attempt: attempt
+        ? {
+            id: attempt.id,
+            status: attempt.status,
+            score: attempt.total_score,
+            max_score: attempt.max_possible_score,
+            submitted_at: attempt.submitted_at,
+          }
+        : null,
+      // Include questions for students to take the quiz
+      questions:
+        quiz.questions?.map((q) => ({
+          id: q.id,
+          question_text: q.question_text,
+          question_type: q.question_type,
+          points: q.points,
+          options: q.options?.map((opt) => ({
+            id: opt.id,
+            text: opt.option_text,
+            // Note: is_correct is hidden from students
+          })),
+        })) || [],
+    };
+  });
+
+  res.status(200).json({
+    status: true,
+    code: 200,
+    message: "Student quizzes retrieved successfully",
+    data: quizList,
+  });
 });
 
 export const getQuiz = TryCatchFunction(async (req, res) => {
@@ -250,5 +345,212 @@ export const getQuiz = TryCatchFunction(async (req, res) => {
     code: 200,
     message: "Quiz retrieved successfully",
     data: quiz,
+  });
+});
+
+export const startQuizAttempt = TryCatchFunction(async (req, res) => {
+  const studentId = Number(req.user?.id);
+  const userType = req.user?.userType;
+  const quizId = Number(req.params.quizId);
+
+  if (userType !== "student") {
+    throw new ErrorClass("Only students can start attempts", 403);
+  }
+  if (!Number.isInteger(studentId) || studentId <= 0) {
+    throw new ErrorClass("Unauthorized or invalid user id", 401);
+  }
+  if (!Number.isInteger(quizId) || quizId <= 0) {
+    throw new ErrorClass("Invalid quiz id", 400);
+  }
+
+  const quiz = await Quiz.findByPk(quizId);
+  if (!quiz) throw new ErrorClass("Quiz not found", 404);
+
+  const existing = await QuizAttempts.findOne({
+    where: { quiz_id: quizId, student_id: studentId, status: "in_progress" },
+  });
+  if (existing) {
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: "Attempt already in progress",
+      data: existing,
+    });
+  }
+
+  const attempt = await QuizAttempts.create({
+    quiz_id: quizId,
+    student_id: studentId,
+    status: "in_progress",
+    started_at: new Date(),
+  });
+
+  res.status(201).json({
+    status: true,
+    code: 201,
+    message: "Attempt started",
+    data: attempt,
+  });
+});
+
+export const saveQuizAnswers = TryCatchFunction(async (req, res) => {
+  const studentId = Number(req.user?.id);
+  const userType = req.user?.userType;
+  const attemptId = Number(req.params.attemptId);
+  const { answers } = req.body; // [{question_id, selected_option_ids?: number[], answer_text?: string}]
+
+  if (userType !== "student") {
+    throw new ErrorClass("Only students can save answers", 403);
+  }
+  if (!Number.isInteger(studentId) || studentId <= 0) {
+    throw new ErrorClass("Unauthorized or invalid user id", 401);
+  }
+  if (!Number.isInteger(attemptId) || attemptId <= 0) {
+    throw new ErrorClass("Invalid attempt id", 400);
+  }
+  if (!Array.isArray(answers) || answers.length === 0) {
+    throw new ErrorClass("answers must be a non-empty array", 400);
+  }
+
+  const attempt = await QuizAttempts.findByPk(attemptId);
+  if (!attempt || attempt.student_id !== studentId) {
+    throw new ErrorClass("Attempt not found or not yours", 404);
+  }
+  if (attempt.status !== "in_progress") {
+    throw new ErrorClass("Attempt is not in progress", 400);
+  }
+
+  const trx = await dbLibrary.transaction();
+  try {
+    for (const a of answers) {
+      const { question_id, selected_option_ids, answer_text } = a;
+      if (!Number.isInteger(question_id)) {
+        throw new ErrorClass("Invalid question_id", 400);
+      }
+
+      // Upsert pattern per question
+      if (
+        Array.isArray(selected_option_ids) &&
+        selected_option_ids.length > 0
+      ) {
+        // Delete previous selections for this question
+        await QuizAnswers.destroy({
+          where: { attempt_id: attemptId, question_id },
+          transaction: trx,
+        });
+        // Insert one row per selected option
+        const rows = selected_option_ids.map((optId) => ({
+          attempt_id: attemptId,
+          question_id,
+          selected_option_id: Number(optId),
+        }));
+        await QuizAnswers.bulkCreate(rows, { transaction: trx });
+      } else {
+        // Free-text answer
+        const existing = await QuizAnswers.findOne({
+          where: { attempt_id: attemptId, question_id },
+          transaction: trx,
+        });
+        if (existing) {
+          await existing.update({ answer_text }, { transaction: trx });
+        } else {
+          await QuizAnswers.create(
+            { attempt_id: attemptId, question_id, answer_text },
+            { transaction: trx }
+          );
+        }
+      }
+    }
+
+    await trx.commit();
+    res.status(200).json({
+      status: true,
+      code: 200,
+      message: "Answers saved",
+    });
+  } catch (err) {
+    await trx.rollback();
+    throw err;
+  }
+});
+
+export const submitQuizAttempt = TryCatchFunction(async (req, res) => {
+  const studentId = Number(req.user?.id);
+  const userType = req.user?.userType;
+  const attemptId = Number(req.params.attemptId);
+
+  if (userType !== "student") {
+    throw new ErrorClass("Only students can submit attempts", 403);
+  }
+  if (!Number.isInteger(studentId) || studentId <= 0) {
+    throw new ErrorClass("Unauthorized or invalid user id", 401);
+  }
+  if (!Number.isInteger(attemptId) || attemptId <= 0) {
+    throw new ErrorClass("Invalid attempt id", 400);
+  }
+
+  const attempt = await QuizAttempts.findByPk(attemptId);
+  if (!attempt || attempt.student_id !== studentId) {
+    throw new ErrorClass("Attempt not found or not yours", 404);
+  }
+  if (attempt.status !== "in_progress") {
+    throw new ErrorClass("Attempt is not in progress", 400);
+  }
+
+  // Fetch all questions and options for grading
+  const questions = await QuizQuestions.findAll({
+    where: { quiz_id: attempt.quiz_id },
+    include: [{ model: QuizOptions, as: "options" }],
+  });
+
+  const answers = await QuizAnswers.findAll({
+    where: { attempt_id: attemptId },
+  });
+
+  let total = 0;
+  let max = 0;
+
+  const questionIdToAnswers = new Map();
+  for (const ans of answers) {
+    const arr = questionIdToAnswers.get(ans.question_id) || [];
+    arr.push(ans);
+    questionIdToAnswers.set(ans.question_id, arr);
+  }
+
+  for (const q of questions) {
+    max += Number(q.points || 0);
+    const selected = (questionIdToAnswers.get(q.id) || []).map(
+      (a) => a.selected_option_id
+    );
+    const correctOptionIds = q.options
+      .filter((o) => o.is_correct)
+      .map((o) => o.id);
+
+    // Simple grading: full points only if sets match exactly
+    const selectedSet = new Set(selected);
+    const correctSet = new Set(correctOptionIds);
+    const isCorrect =
+      selected.length === correctOptionIds.length &&
+      [...selectedSet].every((id) => correctSet.has(id));
+
+    if (isCorrect) total += Number(q.points || 0);
+  }
+
+  await attempt.update({
+    status: "submitted",
+    total_score: total,
+    max_possible_score: max,
+    submitted_at: new Date(),
+  });
+
+  res.status(200).json({
+    status: true,
+    code: 200,
+    message: "Attempt submitted",
+    data: {
+      attempt_id: attempt.id,
+      total_score: total,
+      max_possible_score: max,
+    },
   });
 });
