@@ -10,6 +10,7 @@ import { Courses } from "../../models/course/courses.js";
 import { Modules } from "../../models/modules/modules.js";
 import { Staff } from "../../models/auth/staff.js";
 import { Students } from "../../models/auth/student.js";
+import { Op } from "sequelize";
 
 export const createQuiz = TryCatchFunction(async (req, res) => {
   const staffId = Number(req.user?.id);
@@ -182,25 +183,79 @@ export const addQuizQuestionsBatch = TryCatchFunction(async (req, res) => {
 export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
   const userId = Number(req.user?.id);
   const userType = req.user?.userType;
+  const courseIdParam = Number(req.query?.course_id);
+  const moduleIdParam = Number(req.query?.module_id);
 
   // Allow both students and staff to access quizzes
   if (userType !== "student" && userType !== "staff") {
     throw new ErrorClass("Only students and staff can view quiz list", 403);
   }
 
-  // Build query based on user type
-  const whereClause =
-    userType === "staff"
-      ? { created_by: userId } // Staff sees only their quizzes
-      : {}; // Students see all quizzes
+  // Build base quiz filter
+  const quizWhere = userType === "staff" ? { created_by: userId } : {};
+
+  // Resolve allowed course ids based on role
+  let allowedCourseIds = [];
+  if (userType === "staff") {
+    const staffCourses = await Courses.findAll({
+      where: { staff_id: userId },
+      attributes: ["id"],
+    });
+    allowedCourseIds = staffCourses.map((c) => c.id);
+  } else {
+    const enrolledCourses = await Courses.findAll({
+      where: {},
+      attributes: ["id"],
+      include: [
+        {
+          model: Students,
+          as: "students",
+          where: { id: userId },
+          required: true,
+          attributes: [],
+        },
+      ],
+    });
+    allowedCourseIds = enrolledCourses.map((c) => c.id);
+  }
+
+  // Compute module include filter
+  const moduleWhere = {};
+  if (allowedCourseIds.length > 0) {
+    moduleWhere.course_id = { [Op.in]: allowedCourseIds };
+  } else {
+    // No allowed courses -> return empty list early
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: "Quizzes retrieved successfully",
+      data: [],
+    });
+  }
+  if (Number.isInteger(courseIdParam) && courseIdParam > 0) {
+    moduleWhere.course_id = courseIdParam;
+    // Ensure filter is within allowed set for safety
+    if (!allowedCourseIds.includes(courseIdParam)) {
+      return res.status(200).json({
+        status: true,
+        code: 200,
+        message: "Quizzes retrieved successfully",
+        data: [],
+      });
+    }
+  }
+  if (Number.isInteger(moduleIdParam) && moduleIdParam > 0) {
+    moduleWhere.id = moduleIdParam;
+  }
 
   const quizzes = await Quiz.findAll({
-    where: whereClause,
+    where: quizWhere,
     include: [
       {
         model: Modules,
         as: "module",
         attributes: ["id", "title", "course_id"],
+        where: moduleWhere,
       },
       {
         model: QuizQuestions,
@@ -224,7 +279,7 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
   if (userType === "student") {
     const quizIds = quizzes.map((q) => q.id);
     const attempts = await QuizAttempts.findAll({
-      where: { student_id: userId, quiz_id: quizIds },
+      where: { student_id: userId, quiz_id: { [Op.in]: quizIds } },
       order: [["submitted_at", "DESC"]],
     });
 
