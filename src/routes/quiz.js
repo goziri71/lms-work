@@ -8,6 +8,8 @@ import {
   startQuizAttempt,
   saveQuizAnswers,
   submitQuizAttempt,
+  updateQuizAttempt,
+  deleteQuiz,
 } from "../controllers/quiz/quiz.js";
 
 const router = Router();
@@ -19,5 +21,7 @@ router.get("/:quizId", authorize, getQuiz);
 router.post("/:quizId/attempts", authorize, startQuizAttempt);
 router.post("/attempts/:attemptId/answers", authorize, saveQuizAnswers);
 router.post("/attempts/:attemptId/submit", authorize, submitQuizAttempt);
+router.patch("/:quizId/update", authorize, updateQuizAttempt);
+router.delete("/:quizId", authorize, deleteQuiz);
 
 export default router;

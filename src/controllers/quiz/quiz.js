@@ -580,3 +580,304 @@ export const submitQuizAttempt = TryCatchFunction(async (req, res) => {
     },
   });
 });
+
+export const updateQuizAttempt = TryCatchFunction(async (req, res) => {
+  const userId = Number(req.user?.id);
+  const userType = req.user?.userType;
+  const quizId = Number(req.params.quizId);
+
+  if (userType !== "staff") {
+    throw new ErrorClass("Only staff can update quizzes", 403);
+  }
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ErrorClass("Unauthorized or invalid user id", 401);
+  }
+  if (!Number.isInteger(quizId) || quizId <= 0) {
+    throw new ErrorClass("Invalid quiz id", 400);
+  }
+
+  const { quiz: quizPayload, questions } = req.body || {};
+
+  const quiz = await Quiz.findByPk(quizId);
+  if (!quiz) {
+    throw new ErrorClass("Quiz not found", 404);
+  }
+
+  // Verify the staff owns the course that contains this quiz's module
+  const module = await Modules.findByPk(quiz.module_id);
+  if (!module) {
+    throw new ErrorClass("Module not found", 404);
+  }
+  const course = await Courses.findOne({
+    where: { id: module.course_id, staff_id: userId },
+  });
+  if (!course) {
+    throw new ErrorClass("You don't have permission to modify this quiz", 403);
+  }
+
+  const trx = await dbLibrary.transaction();
+  try {
+    // 1) Update quiz metadata if provided
+    if (quizPayload && typeof quizPayload === "object") {
+      const updatable = {};
+      if (typeof quizPayload.title === "string")
+        updatable.title = quizPayload.title;
+      if (typeof quizPayload.description !== "undefined")
+        updatable.description = quizPayload.description;
+      if (typeof quizPayload.duration_minutes !== "undefined")
+        updatable.duration_minutes = quizPayload.duration_minutes;
+      if (typeof quizPayload.status === "string")
+        updatable.status = quizPayload.status;
+      if (Object.keys(updatable).length > 0) {
+        await quiz.update(updatable, { transaction: trx });
+      }
+    }
+
+    // 2) Upsert questions and options if provided
+    if (Array.isArray(questions) && questions.length > 0) {
+      for (const q of questions) {
+        const {
+          id: questionId,
+          delete: deleteQuestion,
+          html,
+          text,
+          question_type,
+          type, // allow alias from creation flow
+          points,
+          options,
+        } = q || {};
+
+        if (deleteQuestion === true && questionId) {
+          // Delete question and cascade delete options
+          const existingQ = await QuizQuestions.findOne({
+            where: { id: questionId, quiz_id: quizId },
+            transaction: trx,
+          });
+          if (existingQ) {
+            await QuizOptions.destroy({
+              where: { question_id: existingQ.id },
+              transaction: trx,
+            });
+            await existingQ.destroy({ transaction: trx });
+          }
+          continue;
+        }
+
+        // Determine target question_type aligned with DB enum
+        let targetType = question_type;
+        if (!targetType) {
+          if (type === "true_false") targetType = "true_false";
+          else if (type === "short_answer") targetType = "short_answer";
+          else if (type === "essay") targetType = "essay";
+          else if (type === "multiple_choice" || type === "single_choice")
+            targetType = "multiple_choice";
+        }
+        if (!targetType) targetType = "multiple_choice";
+
+        // Build question text (prefer html)
+        const questionText = html || text;
+
+        let questionRecord;
+        if (questionId) {
+          // Update existing question
+          questionRecord = await QuizQuestions.findOne({
+            where: { id: questionId, quiz_id: quizId },
+            transaction: trx,
+          });
+          if (!questionRecord) {
+            throw new ErrorClass(
+              `Question ${questionId} not found in this quiz`,
+              404
+            );
+          }
+          const updateFields = {};
+          if (typeof questionText !== "undefined")
+            updateFields.question_text = questionText;
+          if (typeof targetType === "string")
+            updateFields.question_type = targetType;
+          if (typeof points !== "undefined") updateFields.points = points;
+          if (Object.keys(updateFields).length > 0) {
+            await questionRecord.update(updateFields, { transaction: trx });
+          }
+        } else {
+          // Create new question
+          if (!questionText) {
+            throw new ErrorClass("New questions require html or text", 400);
+          }
+          questionRecord = await QuizQuestions.create(
+            {
+              quiz_id: quizId,
+              question_text: questionText,
+              question_type: targetType,
+              points: typeof points !== "undefined" ? points : 1,
+              created_by: userId,
+            },
+            { transaction: trx }
+          );
+        }
+
+        // Handle options for choice questions
+        if (targetType === "multiple_choice" || targetType === "true_false") {
+          if (Array.isArray(options)) {
+            // Validate correctness rules
+            const providedCorrect = options.filter((o) => !!o?.is_correct);
+            if (targetType === "true_false") {
+              // Must have exactly one correct
+              if (providedCorrect.length !== 1) {
+                throw new ErrorClass(
+                  "true_false must have exactly one correct option",
+                  400
+                );
+              }
+            } else {
+              // multiple_choice allows one or more correct
+              if (providedCorrect.length < 1) {
+                throw new ErrorClass(
+                  "multiple_choice must have at least one correct option",
+                  400
+                );
+              }
+            }
+
+            for (const opt of options) {
+              const {
+                id: optionId,
+                delete: deleteOption,
+                option_text,
+                text: textAlias,
+                is_correct,
+              } = opt || {};
+              if (deleteOption === true && optionId) {
+                await QuizOptions.destroy({
+                  where: { id: optionId, question_id: questionRecord.id },
+                  transaction: trx,
+                });
+                continue;
+              }
+
+              const optionPayload = {
+                option_text:
+                  typeof option_text !== "undefined" ? option_text : textAlias,
+                is_correct: !!is_correct,
+              };
+
+              if (optionId) {
+                const existingOpt = await QuizOptions.findOne({
+                  where: { id: optionId, question_id: questionRecord.id },
+                  transaction: trx,
+                });
+                if (!existingOpt) {
+                  throw new ErrorClass(
+                    `Option ${optionId} not found for question ${questionRecord.id}`,
+                    404
+                  );
+                }
+                const updateOpt = {};
+                if (typeof optionPayload.option_text !== "undefined")
+                  updateOpt.option_text = optionPayload.option_text;
+                if (typeof is_correct !== "undefined")
+                  updateOpt.is_correct = !!is_correct;
+                if (Object.keys(updateOpt).length > 0) {
+                  await existingOpt.update(updateOpt, { transaction: trx });
+                }
+              } else {
+                // Create new option
+                if (!optionPayload.option_text) {
+                  throw new ErrorClass("New options require option_text", 400);
+                }
+                await QuizOptions.create(
+                  {
+                    question_id: questionRecord.id,
+                    option_text: optionPayload.option_text,
+                    is_correct: optionPayload.is_correct,
+                  },
+                  { transaction: trx }
+                );
+              }
+            }
+          }
+        } else {
+          // Non-choice questions: ignore options if sent
+          // Optionally, could delete any existing options to keep data clean
+          // await QuizOptions.destroy({ where: { question_id: questionRecord.id }, transaction: trx });
+        }
+      }
+    }
+
+    await trx.commit();
+
+    // Return updated quiz with questions/options (staff view includes is_correct)
+    const updated = await Quiz.findByPk(quizId, {
+      include: [
+        {
+          model: QuizQuestions,
+          as: "questions",
+          include: [
+            {
+              model: QuizOptions,
+              as: "options",
+            },
+          ],
+        },
+      ],
+    });
+
+    res.status(200).json({
+      status: true,
+      code: 200,
+      message: "Quiz updated successfully",
+      data: updated,
+    });
+  } catch (err) {
+    await trx.rollback();
+    throw err;
+  }
+});
+
+export const deleteQuiz = TryCatchFunction(async (req, res) => {
+  const userId = Number(req.user?.id);
+  const userType = req.user?.userType;
+  const quizId = Number(req.params.quizId);
+
+  if (userType !== "staff") {
+    throw new ErrorClass("Only staff can delete quizzes", 403);
+  }
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ErrorClass("Unauthorized or invalid user id", 401);
+  }
+  if (!Number.isInteger(quizId) || quizId <= 0) {
+    throw new ErrorClass("Invalid quiz id", 400);
+  }
+
+  const quiz = await Quiz.findByPk(quizId);
+  if (!quiz) {
+    throw new ErrorClass("Quiz not found", 404);
+  }
+
+  // Verify staff owns the course that contains the module for this quiz
+  const module = await Modules.findByPk(quiz.module_id);
+  if (!module) {
+    throw new ErrorClass("Module not found", 404);
+  }
+  const course = await Courses.findOne({
+    where: { id: module.course_id, staff_id: userId },
+  });
+  if (!course) {
+    throw new ErrorClass("You don't have permission to delete this quiz", 403);
+  }
+
+  const trx = await dbLibrary.transaction();
+  try {
+    await Quiz.destroy({ where: { id: quizId }, transaction: trx });
+    await trx.commit();
+  } catch (err) {
+    await trx.rollback();
+    throw err;
+  }
+
+  res.status(200).json({
+    status: true,
+    code: 200,
+    message: "Quiz deleted successfully",
+  });
+});
