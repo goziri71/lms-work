@@ -186,6 +186,10 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
   const courseIdParam = Number(req.query?.course_id);
   const moduleIdParam = Number(req.query?.module_id);
 
+  // console.log("[getStudentQuizzes] user:", { userId, userType });
+  // console.log("[getStudentQuizzes] courseIdParam:", courseIdParam);
+  // console.log("[getStudentQuizzes] moduleIdParam:", moduleIdParam);
+
   // Allow both students and staff to access quizzes
   if (userType !== "student" && userType !== "staff") {
     throw new ErrorClass("Only students and staff can view quiz list", 403);
@@ -203,6 +207,7 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
     });
     allowedCourseIds = staffCourses.map((c) => c.id);
   } else {
+    // For students, get enrolled courses via the junction table
     const enrolledCourses = await Courses.findAll({
       where: {},
       attributes: ["id"],
@@ -219,7 +224,7 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
     allowedCourseIds = enrolledCourses.map((c) => c.id);
   }
 
-  // Compute module include filter
+  // Step 1: Get modules that belong to allowed courses
   const moduleWhere = {};
   if (allowedCourseIds.length > 0) {
     moduleWhere.course_id = { [Op.in]: allowedCourseIds };
@@ -248,31 +253,60 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
     moduleWhere.id = moduleIdParam;
   }
 
-  const quizzes = await Quiz.findAll({
-    where: quizWhere,
-    include: [
-      {
-        model: Modules,
-        as: "module",
-        attributes: ["id", "title", "course_id"],
-        where: moduleWhere,
-      },
-      {
-        model: QuizQuestions,
-        as: "questions",
-        include: [
-          {
-            model: QuizOptions,
-            as: "options",
-            attributes:
-              userType === "staff"
-                ? ["id", "option_text", "is_correct"] // Staff sees correct answers
-                : ["id", "option_text"], // Students don't see correct answers
-          },
-        ],
-      },
-    ],
+  console.log("[getStudentQuizzes] user:", { userId, userType });
+  console.log("[getStudentQuizzes] allowedCourseIds:", allowedCourseIds);
+  console.log("[getStudentQuizzes] moduleWhere:", moduleWhere);
+
+  // Step 2: Get modules from dbLibrary that match our criteria
+  const modules = await Modules.findAll({
+    where: moduleWhere,
+    attributes: ["id", "title", "course_id"],
   });
+
+  if (modules.length === 0) {
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: "Quizzes retrieved successfully",
+      data: [],
+    });
+  }
+
+  const moduleIds = modules.map((m) => m.id);
+  const moduleMap = new Map(modules.map((m) => [m.id, m]));
+
+  // Step 3: Get quizzes for these modules
+  const finalQuizWhere = {
+    ...quizWhere,
+    module_id: { [Op.in]: moduleIds },
+  };
+
+  let quizzes;
+  try {
+    console.log("[getStudentQuizzes] finalQuizWhere:", finalQuizWhere);
+    quizzes = await Quiz.findAll({
+      where: finalQuizWhere,
+      include: [
+        {
+          model: QuizQuestions,
+          as: "questions",
+          include: [
+            {
+              model: QuizOptions,
+              as: "options",
+              attributes:
+                userType === "staff"
+                  ? ["id", "option_text", "is_correct"]
+                  : ["id", "option_text"],
+            },
+          ],
+        },
+      ],
+    });
+  } catch (err) {
+    console.error("[getStudentQuizzes] Query failed:", err?.message, err);
+    throw err;
+  }
 
   // Get attempts only for students
   let attemptsByQuiz = {};
@@ -300,12 +334,14 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
   // Format response based on user type
   const quizList = quizzes.map((quiz) => {
     const attempt = attemptsByQuiz[quiz.id];
+    const module = moduleMap.get(quiz.module_id);
     const baseResponse = {
       id: quiz.id,
       title: quiz.title,
       description: quiz.description,
       module_id: quiz.module_id,
-      module_title: quiz.module?.title || "Unknown Module",
+      module_title: module?.title || "Unknown Module",
+      course_id: module?.course_id || null,
       duration_minutes: quiz.duration_minutes,
       attempts_allowed: quiz.attempts_allowed,
       status: quiz.status,

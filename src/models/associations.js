@@ -2,6 +2,7 @@
 import { Students } from "./auth/student.js";
 import { Staff } from "./auth/staff.js";
 import { Courses } from "./course/courses.js";
+import { CourseReg } from "./course_reg.js";
 import { Semester } from "./auth/semester.js";
 import { Modules } from "./modules/modules.js";
 import { Units } from "./modules/units.js";
@@ -40,13 +41,13 @@ export const setupAssociations = () => {
 
   // Student-Course registrations via junction table `course_reg`
   Students.belongsToMany(Courses, {
-    through: "course_reg",
+    through: CourseReg,
     as: "courses",
     foreignKey: "student_id",
     otherKey: "course_id",
   });
   Courses.belongsToMany(Students, {
-    through: "course_reg",
+    through: CourseReg,
     as: "students",
     foreignKey: "course_id",
     otherKey: "student_id",
