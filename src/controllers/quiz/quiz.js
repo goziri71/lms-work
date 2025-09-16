@@ -278,20 +278,23 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
   let attemptsByQuiz = {};
   if (userType === "student") {
     const quizIds = quizzes.map((q) => q.id);
-    const attempts = await QuizAttempts.findAll({
-      where: { student_id: userId, quiz_id: { [Op.in]: quizIds } },
-      order: [["submitted_at", "DESC"]],
-    });
+    if (quizIds.length > 0) {
+      const attempts = await QuizAttempts.findAll({
+        where: { student_id: userId, quiz_id: { [Op.in]: quizIds } },
+        order: [["submitted_at", "DESC"]],
+      });
 
-    // Group attempts by quiz
-    attempts.forEach((attempt) => {
-      if (
-        !attemptsByQuiz[attempt.quiz_id] ||
-        (attempt.submitted_at && !attemptsByQuiz[attempt.quiz_id].submitted_at)
-      ) {
-        attemptsByQuiz[attempt.quiz_id] = attempt;
-      }
-    });
+      // Group attempts by quiz
+      attempts.forEach((attempt) => {
+        if (
+          !attemptsByQuiz[attempt.quiz_id] ||
+          (attempt.submitted_at &&
+            !attemptsByQuiz[attempt.quiz_id].submitted_at)
+        ) {
+          attemptsByQuiz[attempt.quiz_id] = attempt;
+        }
+      });
+    }
   }
 
   // Format response based on user type
