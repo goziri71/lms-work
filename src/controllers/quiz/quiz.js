@@ -416,13 +416,15 @@ export const getQuiz = TryCatchFunction(async (req, res) => {
             as: "options",
             attributes:
               userType === "staff"
-                ? ["id", "text", "is_correct"]
-                : ["id", "text"], // Hide correct answers from students
+                ? ["id", "option_text", "is_correct"]
+                : ["id", "option_text"], // Hide correct answers from students
           },
         ],
       },
     ],
   });
+
+  console.log("quiz", quiz);
 
   if (!quiz) {
     throw new ErrorClass("Quiz not found", 404);

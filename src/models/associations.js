@@ -24,21 +24,6 @@ export const setupAssociations = () => {
     as: "instructor",
   });
 
-  // Students belong to Faculty (assuming you have Faculty model)
-  // Students.belongsTo(Faculty, { foreignKey: 'faculty_id' });
-  // Faculty.hasMany(Students, { foreignKey: 'faculty_id' });
-
-  // Students belong to Program (assuming you have Program model)
-  // Students.belongsTo(Program, { foreignKey: 'program_id' });
-  // Program.hasMany(Students, { foreignKey: 'program_id' });
-
-  // Courses belong to Faculty
-  // Courses.belongsTo(Faculty, { foreignKey: 'faculty_id' });
-  // Faculty.hasMany(Courses, { foreignKey: 'faculty_id' });
-
-  // Student-Course enrollment (Many-to-Many)
-  // You'll need to create an Enrollment junction table for this
-
   // Student-Course registrations via junction table `course_reg`
   Students.belongsToMany(Courses, {
     through: CourseReg,
