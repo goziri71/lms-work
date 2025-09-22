@@ -9,6 +9,7 @@ import {
   saveQuizAnswers,
   submitQuizAttempt,
   updateQuizAttempt,
+  getQuizStats,
   deleteQuiz,
 } from "../controllers/quiz/quiz.js";
 
@@ -21,6 +22,7 @@ router.get("/:quizId", authorize, getQuiz);
 router.post("/:quizId/attempts", authorize, startQuizAttempt);
 router.post("/attempts/:attemptId/answers", authorize, saveQuizAnswers);
 router.post("/attempts/:attemptId/submit", authorize, submitQuizAttempt);
+router.get("/:quizId/stats", authorize, getQuizStats);
 router.patch("/:quizId/update", authorize, updateQuizAttempt);
 router.delete("/:quizId", authorize, deleteQuiz);
 

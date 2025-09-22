@@ -462,11 +462,29 @@ export const getQuiz = TryCatchFunction(async (req, res) => {
     }
   }
 
+  // Compute remaining time for students with an in-progress attempt
+  let remainingSeconds = null;
+  if (userType === "student") {
+    const inProgressAttempt = await QuizAttempts.findOne({
+      where: { quiz_id: quizId, student_id: userId, status: "in_progress" },
+    });
+    if (inProgressAttempt) {
+      const durationMinutes = quiz.duration_minutes;
+      if (typeof durationMinutes === "number" && durationMinutes > 0) {
+        const nowMs = Date.now();
+        const startedMs = new Date(inProgressAttempt.started_at).getTime();
+        const elapsed = Math.floor((nowMs - startedMs) / 1000);
+        remainingSeconds = Math.max(durationMinutes * 60 - elapsed, 0);
+      }
+    }
+  }
+
   res.status(200).json({
     status: true,
     code: 200,
     message: "Quiz retrieved successfully",
     data: quiz,
+    remaining_seconds: remainingSeconds,
   });
 });
 
@@ -507,11 +525,18 @@ export const startQuizAttempt = TryCatchFunction(async (req, res) => {
     started_at: new Date(),
   });
 
+  // Compute remaining time at start
+  let remainingSeconds = null;
+  if (typeof quiz.duration_minutes === "number" && quiz.duration_minutes > 0) {
+    remainingSeconds = quiz.duration_minutes * 60;
+  }
+
   res.status(201).json({
     status: true,
     code: 201,
     message: "Attempt started",
     data: attempt,
+    remaining_seconds: remainingSeconds,
   });
 });
 
@@ -540,6 +565,23 @@ export const saveQuizAnswers = TryCatchFunction(async (req, res) => {
   }
   if (attempt.status !== "in_progress") {
     throw new ErrorClass("Attempt is not in progress", 400);
+  }
+
+  // Enforce time limit (server-side)
+  let remainingSeconds = null;
+  const quiz = await Quiz.findByPk(attempt.quiz_id);
+  if (
+    quiz &&
+    typeof quiz.duration_minutes === "number" &&
+    quiz.duration_minutes > 0
+  ) {
+    const nowMs = Date.now();
+    const startedMs = new Date(attempt.started_at).getTime();
+    const elapsed = Math.floor((nowMs - startedMs) / 1000);
+    remainingSeconds = Math.max(quiz.duration_minutes * 60 - elapsed, 0);
+    if (remainingSeconds <= 0) {
+      throw new ErrorClass("Time limit exceeded", 400);
+    }
   }
 
   const trx = await dbLibrary.transaction();
@@ -589,6 +631,7 @@ export const saveQuizAnswers = TryCatchFunction(async (req, res) => {
       status: true,
       code: 200,
       message: "Answers saved",
+      remaining_seconds: remainingSeconds,
     });
   } catch (err) {
     await trx.rollback();
@@ -620,6 +663,22 @@ export const submitQuizAttempt = TryCatchFunction(async (req, res) => {
   }
 
   // Fetch all questions and options for grading
+  // Compute remaining time and note expiry
+  const quiz = await Quiz.findByPk(attempt.quiz_id);
+  let remainingSeconds = null;
+  let expired = false;
+  if (
+    quiz &&
+    typeof quiz.duration_minutes === "number" &&
+    quiz.duration_minutes > 0
+  ) {
+    const nowMs = Date.now();
+    const startedMs = new Date(attempt.started_at).getTime();
+    const elapsed = Math.floor((nowMs - startedMs) / 1000);
+    remainingSeconds = Math.max(quiz.duration_minutes * 60 - elapsed, 0);
+    expired = remainingSeconds <= 0;
+  }
+
   const questions = await QuizQuestions.findAll({
     where: { quiz_id: attempt.quiz_id },
     include: [{ model: QuizOptions, as: "options" }],
@@ -673,6 +732,61 @@ export const submitQuizAttempt = TryCatchFunction(async (req, res) => {
       attempt_id: attempt.id,
       total_score: total,
       max_possible_score: max,
+    },
+    remaining_seconds: remainingSeconds,
+    expired,
+  });
+});
+
+export const getQuizStats = TryCatchFunction(async (req, res) => {
+  const userId = Number(req.user?.id);
+  const userType = req.user?.userType;
+  const quizId = Number(req.params.quizId);
+
+  if (userType !== "staff") {
+    throw new ErrorClass("Only staff can view quiz stats", 403);
+  }
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ErrorClass("Unauthorized or invalid user id", 401);
+  }
+  if (!Number.isInteger(quizId) || quizId <= 0) {
+    throw new ErrorClass("Invalid quiz id", 400);
+  }
+
+  const quiz = await Quiz.findByPk(quizId);
+  if (!quiz) {
+    throw new ErrorClass("Quiz not found", 404);
+  }
+
+  // Basic stats over submitted attempts
+  const submittedAttempts = await QuizAttempts.findAll({
+    where: { quiz_id: quizId, status: "submitted" },
+    attributes: ["id", "total_score", "max_possible_score", "submitted_at"],
+    order: [["submitted_at", "DESC"]],
+  });
+
+  const countSubmitted = submittedAttempts.length;
+  const avgScore =
+    countSubmitted > 0
+      ? submittedAttempts.reduce(
+          (acc, a) => acc + Number(a.total_score || 0),
+          0
+        ) / countSubmitted
+      : 0;
+  const maxPossible = submittedAttempts.reduce(
+    (acc, a) => Math.max(acc, Number(a.max_possible_score || 0)),
+    0
+  );
+
+  res.status(200).json({
+    status: true,
+    code: 200,
+    message: "Quiz stats retrieved successfully",
+    data: {
+      quiz_id: quizId,
+      submitted_attempts: countSubmitted,
+      average_score: avgScore,
+      max_possible_score: maxPossible,
     },
   });
 });
