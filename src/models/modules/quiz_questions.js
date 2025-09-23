@@ -18,7 +18,13 @@ export const QuizQuestions = dbLibrary.define(
       allowNull: false,
     },
     question_type: {
-      type: DataTypes.ENUM("multiple_choice", "true_false", "short_answer", "essay"),
+      type: DataTypes.ENUM(
+        "single_choice",
+        "multiple_choice",
+        "true_false",
+        "short_answer",
+        "essay"
+      ),
       allowNull: false,
     },
     points: {

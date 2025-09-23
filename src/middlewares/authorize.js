@@ -10,10 +10,10 @@ export const authorize = async (req, res, next) => {
       authToken,
       Config.JWT_SECRET
     );
-    console.log(verifiedToken);
     req.user = verifiedToken; // Store full token payload, not just id
     next();
   } catch (error) {
+    console.error("Authorization error:", error.message);
     res.status(401).json({
       status: false,
       message: error.message,

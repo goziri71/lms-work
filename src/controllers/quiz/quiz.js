@@ -130,9 +130,11 @@ export const addQuizQuestionsBatch = TryCatchFunction(async (req, res) => {
         );
       }
       // Map request type to DB enum question_type
-      // DB supports: "multiple_choice", "true_false", "short_answer", "essay"
+      // DB supports: "single_choice", "multiple_choice", "true_false", "short_answer", "essay"
       let question_type = "multiple_choice";
-      if (type === "multiple_choice" || type === "single_choice") {
+      if (type === "single_choice") {
+        question_type = "single_choice";
+      } else if (type === "multiple_choice") {
         question_type = "multiple_choice";
       } else if (type === "true_false") {
         question_type = "true_false";
@@ -627,6 +629,7 @@ export const saveQuizAnswers = TryCatchFunction(async (req, res) => {
   if (!attempt || attempt.student_id !== studentId) {
     throw new ErrorClass("Attempt not found or not yours", 404);
   }
+  console.log("attempt", attempt);
   if (attempt.status !== "in_progress") {
     throw new ErrorClass("Attempt is not in progress", 400);
   }
