@@ -506,16 +506,74 @@ export const startQuizAttempt = TryCatchFunction(async (req, res) => {
   const quiz = await Quiz.findByPk(quizId);
   if (!quiz) throw new ErrorClass("Quiz not found", 404);
 
+  // Optional: only allow published quizzes
+  if (quiz.status && quiz.status !== "published") {
+    throw new ErrorClass("Quiz is not available", 403);
+  }
+
+  // Validate student enrollment for quiz's course
+  const module = await Modules.findByPk(quiz.module_id);
+  if (!module) throw new ErrorClass("Module not found", 404);
+  const enrollment = await Courses.findOne({
+    where: { id: module.course_id },
+    include: [
+      {
+        model: Students,
+        as: "students",
+        where: { id: studentId },
+        required: true,
+      },
+    ],
+  });
+  if (!enrollment) {
+    throw new ErrorClass("You are not enrolled in this course", 403);
+  }
+
   const existing = await QuizAttempts.findOne({
     where: { quiz_id: quizId, student_id: studentId, status: "in_progress" },
   });
+
+  console.log("existing", existing);
+
   if (existing) {
+    // If there's an in-progress attempt, compute remaining time
+    let remainingSeconds = null;
+    if (
+      typeof quiz.duration_minutes === "number" &&
+      quiz.duration_minutes > 0 &&
+      existing.started_at
+    ) {
+      const nowMs = Date.now();
+      const startedMs = new Date(existing.started_at).getTime();
+      const elapsed = Math.floor((nowMs - startedMs) / 1000);
+      remainingSeconds = Math.max(quiz.duration_minutes * 60 - elapsed, 0);
+    }
+
+    if (remainingSeconds !== null && remainingSeconds <= 0) {
+      // Time expired: require submit to finalize before starting a new attempt
+      throw new ErrorClass(
+        "Time limit exceeded for existing attempt. Please submit.",
+        400
+      );
+    }
+
     return res.status(200).json({
       status: true,
       code: 200,
       message: "Attempt already in progress",
       data: existing,
+      remaining_seconds: remainingSeconds,
     });
+  }
+
+  // Enforce attempts_allowed limit against submitted attempts
+  if (typeof quiz.attempts_allowed === "number" && quiz.attempts_allowed > 0) {
+    const submittedCount = await QuizAttempts.count({
+      where: { quiz_id: quizId, student_id: studentId, status: "submitted" },
+    });
+    if (submittedCount >= quiz.attempts_allowed) {
+      throw new ErrorClass("Maximum attempts reached", 403);
+    }
   }
 
   const attempt = await QuizAttempts.create({
@@ -539,6 +597,12 @@ export const startQuizAttempt = TryCatchFunction(async (req, res) => {
     remaining_seconds: remainingSeconds,
   });
 });
+
+// export const getQuizAtempt = TryCatchFunction(async (req, res) => {
+//   const studentId = Number(req.user?.id);
+//   const userType = req.user?.userType;
+
+// });
 
 export const saveQuizAnswers = TryCatchFunction(async (req, res) => {
   const studentId = Number(req.user?.id);
