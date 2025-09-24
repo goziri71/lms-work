@@ -707,6 +707,11 @@ export const saveQuizAnswers = TryCatchFunction(async (req, res) => {
 });
 
 export const submitQuizAttempt = TryCatchFunction(async (req, res) => {
+  console.log("=== SUBMIT QUIZ ATTEMPT CALLED ===");
+  console.log("Request params:", req.params);
+  console.log("Request body:", req.body);
+  console.log("User:", req.user);
+
   const studentId = Number(req.user?.id);
   const userType = req.user?.userType;
   const attemptId = Number(req.params.attemptId);
@@ -732,6 +737,7 @@ export const submitQuizAttempt = TryCatchFunction(async (req, res) => {
   // Fetch all questions and options for grading
   // Compute remaining time and note expiry
   const quiz = await Quiz.findByPk(attempt.quiz_id);
+  console.log("quiz", quiz);
   let remainingSeconds = null;
   let expired = false;
   if (
@@ -751,9 +757,15 @@ export const submitQuizAttempt = TryCatchFunction(async (req, res) => {
     include: [{ model: QuizOptions, as: "options" }],
   });
 
+  console.log("questions", questions);
+
   const answers = await QuizAnswers.findAll({
     where: { attempt_id: attemptId },
   });
+
+  console.log("answers", answers);
+  console.log("Answers length:", answers ? answers.length : "null");
+  console.log("About to start grading process...");
 
   let total = 0;
   let max = 0;
@@ -784,12 +796,20 @@ export const submitQuizAttempt = TryCatchFunction(async (req, res) => {
     if (isCorrect) total += Number(q.points || 0);
   }
 
+  console.log("Grading complete - Total:", total, "Max:", max);
+  console.log("Attempt object:", attempt ? "exists" : "null");
+  console.log("Attempt ID:", attempt?.id);
+
   await attempt.update({
     status: "submitted",
     total_score: total,
     max_possible_score: max,
     submitted_at: new Date(),
   });
+
+  console.log("Attempt updated successfully");
+
+  console.log("attempt", attempt);
 
   res.status(200).json({
     status: true,
