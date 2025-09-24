@@ -653,24 +653,34 @@ export const saveQuizAnswers = TryCatchFunction(async (req, res) => {
 
   const trx = await dbLibrary.transaction();
   try {
+    console.log("[saveQuizAnswers] payload:", JSON.stringify(answers));
     for (const a of answers) {
-      const { question_id, selected_option_ids, answer_text } = a;
+      const {
+        question_id,
+        selected_option_ids,
+        selected_option_id,
+        answer_text,
+      } = a || {};
       if (!Number.isInteger(question_id)) {
         throw new ErrorClass("Invalid question_id", 400);
       }
 
       // Upsert pattern per question
-      if (
-        Array.isArray(selected_option_ids) &&
-        selected_option_ids.length > 0
-      ) {
+      const optionIds = Array.isArray(selected_option_ids)
+        ? selected_option_ids
+        : typeof selected_option_id !== "undefined" &&
+          selected_option_id !== null
+        ? [selected_option_id]
+        : [];
+
+      if (optionIds.length > 0) {
         // Delete previous selections for this question
         await QuizAnswers.destroy({
           where: { attempt_id: attemptId, question_id },
           transaction: trx,
         });
         // Insert one row per selected option
-        const rows = selected_option_ids.map((optId) => ({
+        const rows = optionIds.map((optId) => ({
           attempt_id: attemptId,
           question_id,
           selected_option_id: Number(optId),
@@ -701,6 +711,7 @@ export const saveQuizAnswers = TryCatchFunction(async (req, res) => {
       remaining_seconds: remainingSeconds,
     });
   } catch (err) {
+    console.error("[saveQuizAnswers] error:", err?.message, err);
     await trx.rollback();
     throw err;
   }

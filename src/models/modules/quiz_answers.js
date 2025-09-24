@@ -25,27 +25,7 @@ export const QuizAnswers = dbLibrary.define(
       type: DataTypes.INTEGER,
       allowNull: true, // For multiple choice
     },
-    points_earned: {
-      type: DataTypes.DECIMAL(5, 2),
-      allowNull: true,
-    },
-    is_correct: {
-      type: DataTypes.BOOLEAN,
-      allowNull: true,
-    },
-    answered_at: {
-      type: DataTypes.DATE,
-      allowNull: false,
-      defaultValue: DataTypes.NOW,
-    },
-    graded_at: {
-      type: DataTypes.DATE,
-      allowNull: true,
-    },
-    feedback: {
-      type: DataTypes.TEXT,
-      allowNull: true, // Staff feedback for essay questions
-    },
+    // Keep model aligned strictly to existing DB columns
   },
   {
     tableName: "quiz_answers",
