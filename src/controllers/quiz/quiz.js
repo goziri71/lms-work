@@ -840,6 +840,11 @@ export const getQuizStats = TryCatchFunction(async (req, res) => {
   const userId = Number(req.user?.id);
   const userType = req.user?.userType;
   const quizId = Number(req.params.quizId);
+  const filterStudentId = Number(req.query?.student_id);
+  const page = Math.max(1, Number(req.query?.page) || 1);
+  const limit = Math.min(200, Math.max(1, Number(req.query?.limit) || 50));
+  const sort = (req.query?.sort || "date").toString(); // 'score' | 'date'
+  const search = (req.query?.search || "").toString().trim().toLowerCase();
 
   if (userType !== "staff") {
     throw new ErrorClass("Only staff can view quiz stats", 403);
@@ -852,30 +857,242 @@ export const getQuizStats = TryCatchFunction(async (req, res) => {
   }
 
   const quiz = await Quiz.findByPk(quizId);
-  console.log("quiz", quiz);
   if (!quiz) {
     throw new ErrorClass("Quiz not found", 404);
   }
 
-  // Basic stats over submitted attempts
+  // Focused per-student view
+  if (Number.isInteger(filterStudentId) && filterStudentId > 0) {
+    const attempts = await QuizAttempts.findAll({
+      where: { quiz_id: quizId, student_id: filterStudentId },
+      attributes: [
+        "id",
+        "status",
+        "total_score",
+        "max_possible_score",
+        "started_at",
+        "submitted_at",
+      ],
+      order: [["submitted_at", "DESC"]],
+    });
+
+    const attempts_count = attempts.length;
+    const latest_attempt = attempts_count > 0 ? attempts[0] : null;
+    const best_attempt =
+      attempts_count > 0
+        ? attempts.reduce((best, a) =>
+            Number(a.total_score || 0) > Number(best.total_score || 0)
+              ? a
+              : best
+          )
+        : null;
+    const average_score =
+      attempts_count > 0
+        ? attempts.reduce((acc, a) => acc + Number(a.total_score || 0), 0) /
+          attempts_count
+        : 0;
+    const max_possible_score = attempts.reduce(
+      (acc, a) => Math.max(acc, Number(a.max_possible_score || 0)),
+      0
+    );
+
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: "Quiz stats retrieved successfully",
+      data: {
+        quiz_id: quizId,
+        student_id: filterStudentId,
+        attempts_count,
+        average_score,
+        max_possible_score,
+        latest_attempt,
+        best_attempt,
+        attempts,
+      },
+    });
+  }
+
+  // Overall stats over submitted attempts
   const submittedAttempts = await QuizAttempts.findAll({
     where: { quiz_id: quizId, status: "submitted" },
-    attributes: ["id", "total_score", "max_possible_score", "submitted_at"],
+    attributes: [
+      "id",
+      "student_id",
+      "total_score",
+      "max_possible_score",
+      "started_at",
+      "submitted_at",
+    ],
     order: [["submitted_at", "DESC"]],
   });
 
-  const countSubmitted = submittedAttempts.length;
-  const avgScore =
-    countSubmitted > 0
+  const submitted_attempts = submittedAttempts.length;
+  const average_score =
+    submitted_attempts > 0
       ? submittedAttempts.reduce(
           (acc, a) => acc + Number(a.total_score || 0),
           0
-        ) / countSubmitted
+        ) / submitted_attempts
       : 0;
-  const maxPossible = submittedAttempts.reduce(
+  const max_possible_score = submittedAttempts.reduce(
     (acc, a) => Math.max(acc, Number(a.max_possible_score || 0)),
     0
   );
+
+  // Participation
+  const moduleRecord = await Modules.findByPk(quiz.module_id);
+  let enrolledStudents = [];
+  if (moduleRecord) {
+    const course = await Courses.findByPk(moduleRecord.course_id, {
+      include: [
+        {
+          model: Students,
+          as: "students",
+          attributes: ["id", "firstName", "lastName", "email"],
+        },
+      ],
+    });
+    enrolledStudents = course?.students || [];
+  }
+  const total_enrolled = enrolledStudents.length;
+  const attemptedStudentIds = Array.from(
+    new Set(submittedAttempts.map((a) => a.student_id))
+  );
+  const total_attempted = attemptedStudentIds.length;
+  const completion_rate =
+    total_enrolled > 0
+      ? Math.round((total_attempted / total_enrolled) * 100)
+      : 0;
+
+  // Latest attempt per student -> rows
+  const latestByStudent = new Map();
+  for (const a of submittedAttempts) {
+    const prev = latestByStudent.get(a.student_id);
+    if (
+      !prev ||
+      new Date(a.submitted_at).getTime() > new Date(prev.submitted_at).getTime()
+    ) {
+      latestByStudent.set(a.student_id, a);
+    }
+  }
+  const studentInfoById = new Map(enrolledStudents.map((s) => [s.id, s]));
+  let studentsRows = Array.from(latestByStudent.entries()).map(
+    ([student_id, att]) => {
+      const stu = studentInfoById.get(student_id) || {};
+      const total_score = Number(att.total_score || 0);
+      const max_score = Number(att.max_possible_score || 0);
+      const percentage =
+        max_score > 0 ? Math.round((total_score / max_score) * 100) : 0;
+      return {
+        student_id,
+        full_name:
+          [stu.firstName, stu.lastName].filter(Boolean).join(" ") || null,
+        email: stu.email || null,
+        attempt_id: att.id,
+        total_score,
+        max_score,
+        percentage,
+        started_at: att.started_at,
+        submitted_at: att.submitted_at,
+      };
+    }
+  );
+
+  if (search) {
+    studentsRows = studentsRows.filter(
+      (r) =>
+        (r.full_name || "").toLowerCase().includes(search) ||
+        (r.email || "").toLowerCase().includes(search)
+    );
+  }
+  if (sort === "score") {
+    studentsRows.sort((a, b) => b.total_score - a.total_score);
+  } else {
+    studentsRows.sort(
+      (a, b) =>
+        new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()
+    );
+  }
+  const totalRows = studentsRows.length;
+  const start = (page - 1) * limit;
+  const end = start + limit;
+  const students = studentsRows.slice(start, end);
+
+  // Distribution
+  const distribution = {
+    "0-39": 0,
+    "40-49": 0,
+    "50-59": 0,
+    "60-69": 0,
+    "70-100": 0,
+  };
+  for (const a of submittedAttempts) {
+    const s = Number(a.total_score || 0);
+    const m = Number(a.max_possible_score || 0);
+    const pct = m > 0 ? (s / m) * 100 : 0;
+    if (pct < 40) distribution["0-39"]++;
+    else if (pct < 50) distribution["40-49"]++;
+    else if (pct < 60) distribution["50-59"]++;
+    else if (pct < 70) distribution["60-69"]++;
+    else distribution["70-100"]++;
+  }
+
+  // Question insights (correct rate)
+  const questions = await QuizQuestions.findAll({ where: { quiz_id: quizId } });
+  const questionIds = questions.map((q) => q.id);
+  let questions_insights = [];
+  if (questionIds.length > 0 && submittedAttempts.length > 0) {
+    const options = await QuizOptions.findAll({
+      where: { question_id: { [Op.in]: questionIds } },
+    });
+    const optsByQ = new Map();
+    for (const o of options) {
+      const list = optsByQ.get(o.question_id) || [];
+      list.push(o);
+      optsByQ.set(o.question_id, list);
+    }
+    const attemptIds = submittedAttempts.map((a) => a.id);
+    const answers = await QuizAnswers.findAll({
+      where: { attempt_id: { [Op.in]: attemptIds } },
+    });
+    const answersByAttemptQ = new Map();
+    for (const ans of answers) {
+      const key = `${ans.attempt_id}-${ans.question_id}`;
+      const list = answersByAttemptQ.get(key) || [];
+      if (typeof ans.selected_option_id === "number")
+        list.push(ans.selected_option_id);
+      answersByAttemptQ.set(key, list);
+    }
+    for (const q of questions) {
+      const correctIds = (optsByQ.get(q.id) || [])
+        .filter((o) => o.is_correct)
+        .map((o) => o.id);
+      const correctSet = new Set(correctIds);
+      let totalSeen = 0;
+      let correctCount = 0;
+      for (const a of submittedAttempts) {
+        const key = `${a.id}-${q.id}`;
+        const sel = answersByAttemptQ.get(key) || [];
+        if (sel.length === 0 && correctIds.length === 0) {
+          totalSeen++;
+          correctCount++;
+          continue;
+        }
+        if (sel.length > 0) {
+          totalSeen++;
+          const selSet = new Set(sel);
+          const isCorrect =
+            sel.length === correctIds.length &&
+            [...selSet].every((id) => correctSet.has(id));
+          if (isCorrect) correctCount++;
+        }
+      }
+      const correct_rate =
+        totalSeen > 0 ? Math.round((correctCount / totalSeen) * 100) : 0;
+      questions_insights.push({ question_id: q.id, correct_rate });
+    }
+  }
 
   res.status(200).json({
     status: true,
@@ -883,9 +1100,18 @@ export const getQuizStats = TryCatchFunction(async (req, res) => {
     message: "Quiz stats retrieved successfully",
     data: {
       quiz_id: quizId,
-      submitted_attempts: countSubmitted,
-      average_score: avgScore,
-      max_possible_score: maxPossible,
+      submitted_attempts,
+      average_score,
+      max_possible_score,
+      participation: {
+        total_enrolled,
+        total_attempted,
+        completion_rate,
+      },
+      distribution,
+      students,
+      pagination: { page, limit, total: totalRows },
+      questions_insights,
     },
   });
 });
@@ -930,15 +1156,11 @@ export const getMyLatestQuizAttempt = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("No attempt found for this quiz", 404);
   }
 
-  console.log("attempt", attempt);
-
   // Load questions only (ordered)
   const questions = await QuizQuestions.findAll({
     where: { quiz_id: quizId },
     order: [["order", "ASC"]],
   });
-
-  console.log("questions count", questions?.length || 0);
 
   // Load options separately and group by question_id
   const questionIds = questions.map((q) => q.id);
@@ -960,8 +1182,6 @@ export const getMyLatestQuizAttempt = TryCatchFunction(async (req, res) => {
     where: { attempt_id: attempt.id },
   });
 
-  console.log("answers", answers);
-
   const questionIdToSelected = new Map();
   for (const ans of answers) {
     const arr = questionIdToSelected.get(ans.question_id) || [];
@@ -969,8 +1189,6 @@ export const getMyLatestQuizAttempt = TryCatchFunction(async (req, res) => {
       arr.push(ans.selected_option_id);
     questionIdToSelected.set(ans.question_id, arr);
   }
-
-  console.log("questionIdToSelected", questionIdToSelected);
 
   let totalScore = 0;
   let maxPossible = 0;
