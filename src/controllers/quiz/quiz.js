@@ -852,6 +852,7 @@ export const getQuizStats = TryCatchFunction(async (req, res) => {
   }
 
   const quiz = await Quiz.findByPk(quizId);
+  console.log("quiz", quiz);
   if (!quiz) {
     throw new ErrorClass("Quiz not found", 404);
   }
@@ -885,6 +886,155 @@ export const getQuizStats = TryCatchFunction(async (req, res) => {
       submitted_attempts: countSubmitted,
       average_score: avgScore,
       max_possible_score: maxPossible,
+    },
+  });
+});
+
+export const getMyLatestQuizAttempt = TryCatchFunction(async (req, res) => {
+  const studentId = Number(req.user?.id);
+  const userType = req.user?.userType;
+  const quizId = Number(req.params.quizId);
+
+  if (userType !== "student") {
+    throw new ErrorClass(
+      "Only students can view their latest quiz attempt",
+      403
+    );
+  }
+  if (!Number.isInteger(studentId) || studentId <= 0) {
+    throw new ErrorClass("Unauthorized or invalid user id", 401);
+  }
+  if (!Number.isInteger(quizId) || quizId <= 0) {
+    throw new ErrorClass("Invalid quiz id", 400);
+  }
+
+  // Ensure quiz exists and student has access (enrolled via module->course)
+  const quiz = await Quiz.findByPk(quizId);
+  if (!quiz) {
+    throw new ErrorClass("Quiz not found", 404);
+  }
+
+  // Get latest attempt for this student+quiz (prefer submitted, else in_progress by most recent start)
+  let attempt = await QuizAttempts.findOne({
+    where: { quiz_id: quizId, student_id: studentId, status: "submitted" },
+    order: [["submitted_at", "DESC"]],
+  });
+
+  if (!attempt) {
+    attempt = await QuizAttempts.findOne({
+      where: { quiz_id: quizId, student_id: studentId },
+      order: [["started_at", "DESC"]],
+    });
+  }
+  if (!attempt) {
+    throw new ErrorClass("No attempt found for this quiz", 404);
+  }
+
+  console.log("attempt", attempt);
+
+  // Load questions only (ordered)
+  const questions = await QuizQuestions.findAll({
+    where: { quiz_id: quizId },
+    order: [["order", "ASC"]],
+  });
+
+  console.log("questions count", questions?.length || 0);
+
+  // Load options separately and group by question_id
+  const questionIds = questions.map((q) => q.id);
+  const optionsByQuestionId = new Map();
+  if (questionIds.length > 0) {
+    const opts = await QuizOptions.findAll({
+      where: { question_id: { [Op.in]: questionIds } },
+      order: [["order", "ASC"]],
+    });
+    for (const opt of opts) {
+      const list = optionsByQuestionId.get(opt.question_id) || [];
+      list.push(opt);
+      optionsByQuestionId.set(opt.question_id, list);
+    }
+  }
+
+  // Load student's saved answers for the attempt
+  const answers = await QuizAnswers.findAll({
+    where: { attempt_id: attempt.id },
+  });
+
+  console.log("answers", answers);
+
+  const questionIdToSelected = new Map();
+  for (const ans of answers) {
+    const arr = questionIdToSelected.get(ans.question_id) || [];
+    if (typeof ans.selected_option_id === "number")
+      arr.push(ans.selected_option_id);
+    questionIdToSelected.set(ans.question_id, arr);
+  }
+
+  console.log("questionIdToSelected", questionIdToSelected);
+
+  let totalScore = 0;
+  let maxPossible = 0;
+
+  const questionViews = questions.map((q) => {
+    const optionList = optionsByQuestionId.get(q.id) || [];
+    const correctIds = optionList.filter((o) => o.is_correct).map((o) => o.id);
+    const selectedIds = questionIdToSelected.get(q.id) || [];
+    const selectedSet = new Set(selectedIds);
+    const correctSet = new Set(correctIds);
+    const isCorrect =
+      selectedIds.length === correctIds.length &&
+      [...selectedSet].every((id) => correctSet.has(id));
+
+    const points = Number(q.points || 0);
+    maxPossible += points;
+    const earned = isCorrect ? points : 0;
+    totalScore += earned;
+
+    return {
+      id: q.id,
+      question_text: q.question_text,
+      question_type: q.question_type,
+      points: points,
+      options: optionList.map((opt) => ({
+        id: opt.id,
+        option_text: opt.option_text,
+        is_correct: !!opt.is_correct,
+      })),
+      student_selected_option_ids: selectedIds,
+      is_student_correct: isCorrect,
+      points_earned: earned,
+    };
+  });
+
+  const percentage =
+    maxPossible > 0 ? Math.round((totalScore / maxPossible) * 100) : 0;
+
+  res.status(200).json({
+    status: true,
+    code: 200,
+    message: "Latest attempt",
+    data: {
+      quiz: {
+        id: quiz.id,
+        title: quiz.title,
+        module_id: quiz.module_id,
+        duration_minutes: quiz.duration_minutes,
+        attempts_allowed: quiz.attempts_allowed,
+      },
+      attempt: {
+        id: attempt.id,
+        status: attempt.status,
+        total_score: attempt.total_score ?? totalScore,
+        max_possible_score: attempt.max_possible_score ?? maxPossible,
+        started_at: attempt.started_at,
+        submitted_at: attempt.submitted_at,
+      },
+      questions: questionViews,
+      summary: {
+        total_score: totalScore,
+        max_possible_score: maxPossible,
+        percentage,
+      },
     },
   });
 });

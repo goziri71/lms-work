@@ -89,6 +89,7 @@ export const setupAssociations = () => {
     as: "options",
     onDelete: "CASCADE",
   });
+
   QuizOptions.belongsTo(QuizQuestions, {
     foreignKey: "question_id",
     as: "question",
