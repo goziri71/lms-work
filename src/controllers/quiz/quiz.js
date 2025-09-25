@@ -949,7 +949,7 @@ export const getQuizStats = TryCatchFunction(async (req, res) => {
         {
           model: Students,
           as: "students",
-          attributes: ["id", "firstName", "lastName", "email"],
+          attributes: ["id", "fname", "lname", "email"],
         },
       ],
     });
@@ -986,8 +986,7 @@ export const getQuizStats = TryCatchFunction(async (req, res) => {
         max_score > 0 ? Math.round((total_score / max_score) * 100) : 0;
       return {
         student_id,
-        full_name:
-          [stu.firstName, stu.lastName].filter(Boolean).join(" ") || null,
+        full_name: [stu.fname, stu.lname].filter(Boolean).join(" ") || null,
         email: stu.email || null,
         attempt_id: att.id,
         total_score,
@@ -1544,7 +1543,49 @@ export const deleteQuiz = TryCatchFunction(async (req, res) => {
 
   const trx = await dbLibrary.transaction();
   try {
+    // 1) Load related entity ids
+    const questions = await QuizQuestions.findAll({
+      where: { quiz_id: quizId },
+      attributes: ["id"],
+      transaction: trx,
+    });
+    const questionIds = questions.map((q) => q.id);
+
+    const attempts = await QuizAttempts.findAll({
+      where: { quiz_id: quizId },
+      attributes: ["id"],
+      transaction: trx,
+    });
+    const attemptIds = attempts.map((a) => a.id);
+
+    // 2) Delete children in correct order
+    if (attemptIds.length > 0) {
+      await QuizAnswers.destroy({
+        where: { attempt_id: { [Op.in]: attemptIds } },
+        transaction: trx,
+      });
+    }
+
+    await QuizAttempts.destroy({
+      where: { quiz_id: quizId },
+      transaction: trx,
+    });
+
+    if (questionIds.length > 0) {
+      await QuizOptions.destroy({
+        where: { question_id: { [Op.in]: questionIds } },
+        transaction: trx,
+      });
+    }
+
+    await QuizQuestions.destroy({
+      where: { quiz_id: quizId },
+      transaction: trx,
+    });
+
+    // 3) Finally, delete the quiz
     await Quiz.destroy({ where: { id: quizId }, transaction: trx });
+
     await trx.commit();
   } catch (err) {
     await trx.rollback();
