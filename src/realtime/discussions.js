@@ -144,5 +144,68 @@ export function setupDiscussionsSocket(io) {
         }
       }
     );
+
+    socket.on(
+      "loadMoreMessages",
+      async (
+        { courseId, academicYear, semester, beforeMessageId, limit = 50 },
+        cb
+      ) => {
+        try {
+          const userId = Number(socket.user?.id);
+          const userType = socket.user?.userType;
+          if (!Number.isInteger(userId) || userId <= 0)
+            throw new Error("Unauthorized");
+
+          // Access control
+          let allowed = false;
+          if (userType === "staff") {
+            const [rows] = await db.query(
+              "SELECT 1 FROM courses WHERE id = ? AND staff_id = ?",
+              { replacements: [courseId, userId] }
+            );
+            allowed = rows.length > 0;
+          } else if (userType === "student") {
+            const [rows] = await db.query(
+              "SELECT 1 FROM course_reg WHERE course_id = ? AND student_id = ? AND academic_year = ? AND semester = ?",
+              { replacements: [courseId, userId, academicYear, semester] }
+            );
+            allowed = rows.length > 0;
+          }
+          if (!allowed) throw new Error("Forbidden");
+
+          // Find the discussion
+          const discussion = await Discussions.findOne({
+            where: {
+              course_id: courseId,
+              academic_year: academicYear,
+              semester,
+            },
+          });
+          if (!discussion) throw new Error("Discussion not found");
+
+          // Build where clause for pagination
+          const whereClause = { discussion_id: discussion.id };
+          if (beforeMessageId) {
+            whereClause.id = { [db.Sequelize.Op.lt]: beforeMessageId };
+          }
+
+          // Fetch older messages
+          const messages = await DiscussionMessages.findAll({
+            where: whereClause,
+            order: [["created_at", "ASC"]],
+            limit: Math.min(limit, 100), // Cap at 100 messages per request
+          });
+
+          cb?.({
+            ok: true,
+            messages,
+            hasMore: messages.length === limit, // Indicates if there might be more messages
+          });
+        } catch (err) {
+          cb?.({ ok: false, error: err.message });
+        }
+      }
+    );
   });
 }
