@@ -91,6 +91,19 @@ export function setupDiscussionsSocket(io) {
           const userId = Number(socket.user?.id);
           const userType = socket.user?.userType;
           const sender_type = userType === "staff" ? "staff" : "student";
+
+          // Debug logging
+          console.log("🔍 DEBUG postMessage:", {
+            userId,
+            userType,
+            courseId,
+            academicYear,
+            semester,
+            message_text: message_text?.substring(0, 50) + "...",
+            userIdType: typeof userId,
+            courseIdType: typeof courseId,
+          });
+
           if (!message_text) throw new Error("message_text required");
 
           // Re-verify access for security
@@ -101,12 +114,26 @@ export function setupDiscussionsSocket(io) {
               { replacements: [courseId, userId] }
             );
             allowed = rows.length > 0;
+            console.log("🔍 DEBUG staff access check:", {
+              courseId,
+              userId,
+              rowsFound: rows.length,
+              allowed,
+            });
           } else if (userType === "student") {
             const [rows] = await db.query(
               "SELECT 1 FROM course_reg WHERE course_id = ? AND student_id = ? AND academic_year = ? AND semester = ?",
               { replacements: [courseId, userId, academicYear, semester] }
             );
             allowed = rows.length > 0;
+            console.log("🔍 DEBUG student access check:", {
+              courseId,
+              userId,
+              academicYear,
+              semester,
+              rowsFound: rows.length,
+              allowed,
+            });
           }
           if (!allowed) throw new Error("Forbidden");
 
