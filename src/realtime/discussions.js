@@ -71,6 +71,14 @@ export function setupDiscussionsSocket(io) {
           const room = roomName(courseId, academicYear, semester);
           socket.join(room);
 
+          console.log("🔍 DEBUG User joined room:", {
+            userId,
+            userType,
+            room,
+            socketId: socket.id,
+            roomClients: io.sockets.adapter.rooms.get(room)?.size || 0,
+          });
+
           // Load recent history
           const messages = await DiscussionMessages.findAll({
             where: { discussion_id: discussion.id },
@@ -161,10 +169,15 @@ export function setupDiscussionsSocket(io) {
             message_text,
             created_at: msg.created_at,
           };
-          io.to(roomName(courseId, academicYear, semester)).emit(
-            "newMessage",
-            payload
-          );
+
+          const room = roomName(courseId, academicYear, semester);
+          console.log("🔍 DEBUG Broadcasting message:", {
+            room,
+            payload,
+            roomClients: io.sockets.adapter.rooms.get(room)?.size || 0,
+          });
+
+          io.to(room).emit("newMessage", payload);
           cb?.({ ok: true, message: payload });
         } catch (err) {
           cb?.({ ok: false, error: err.message });
