@@ -9,8 +9,10 @@ import semesterRoutes from "./src/routes/semesters.js";
 import modulesRoutes from "./src/routes/modules.js";
 import quizRoutes from "./src/routes/quiz.js";
 import studentRoutes from "./src/routes/student.js";
+import videoRoutes from "./src/routes/video.js";
 import { setupAssociations } from "./src/models/associations.js";
 import { setupDiscussionsSocket } from "./src/realtime/discussions.js";
+import { setupDirectChatSocket } from "./src/realtime/directChat.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -28,6 +30,7 @@ app.use("/api/courses", courseRoutes);
 app.use("/api/semesters", semesterRoutes);
 app.use("/api/quiz", quizRoutes);
 app.use("/api/students", studentRoutes);
+app.use("/api/video", videoRoutes);
 app.use("/api", modulesRoutes);
 
 // Health check endpoint
@@ -62,6 +65,7 @@ connectDB().then((success) => {
     console.log("🔗 Model associations established");
 
     setupDiscussionsSocket(io);
+    setupDirectChatSocket(io);
     server.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log("📊 Connected to both LMS and Library databases");

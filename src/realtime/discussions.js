@@ -1,10 +1,8 @@
 import { AuthService } from "../service/authservice.js";
 import { Config } from "../config/config.js";
 import { db } from "../database/database.js";
-import {
-  Discussions,
-  DiscussionMessages,
-} from "../models/modules/discussions.js";
+import { Discussions } from "../models/modules/discussions.js";
+import { DiscussionMessage } from "../models/chat/discussionMessage.js";
 
 const authService = new AuthService();
 
@@ -79,12 +77,25 @@ export function setupDiscussionsSocket(io) {
             roomClients: io.sockets.adapter.rooms.get(room)?.size || 0,
           });
 
-          // Load recent history
-          const messages = await DiscussionMessages.findAll({
-            where: { discussion_id: discussion.id },
-            order: [["created_at", "ASC"]],
-            limit: 100,
-          });
+          // Load recent history from Mongo
+          const mongoMessages = await DiscussionMessage.find({
+            courseId,
+            academicYear,
+            semester,
+          })
+            .sort({ created_at: 1 })
+            .limit(100)
+            .lean();
+
+          const messages = mongoMessages.map((m) => ({
+            id: m._id,
+            discussion_id: discussion.id,
+            sender_type: m.senderType,
+            sender_id: m.senderId,
+            message_text: m.messageText,
+            created_at: m.created_at,
+          }));
+
           cb?.({ ok: true, discussionId: discussion.id, messages });
         } catch (err) {
           cb?.({ ok: false, error: err.message });
@@ -154,20 +165,23 @@ export function setupDiscussionsSocket(io) {
           });
           if (!discussion) throw new Error("Discussion not found");
 
-          const msg = await DiscussionMessages.create({
-            discussion_id: discussion.id,
-            sender_type,
-            sender_id: userId,
-            message_text,
+          // Persist to Mongo
+          const created = await DiscussionMessage.create({
+            courseId,
+            academicYear,
+            semester,
+            senderType: sender_type,
+            senderId: userId,
+            messageText: message_text,
           });
 
           const payload = {
-            id: msg.id,
+            id: created._id,
             discussion_id: discussion.id,
             sender_type,
             sender_id: userId,
-            message_text,
-            created_at: msg.created_at,
+            message_text: message_text,
+            created_at: created.created_at,
           };
 
           const room = roomName(courseId, academicYear, semester);
@@ -224,24 +238,31 @@ export function setupDiscussionsSocket(io) {
           });
           if (!discussion) throw new Error("Discussion not found");
 
-          // Build where clause for pagination
-          const whereClause = { discussion_id: discussion.id };
+          // Pagination via Mongo
+          const query = {
+            courseId,
+            academicYear,
+            semester,
+          };
           if (beforeMessageId) {
-            whereClause.id = { [db.Sequelize.Op.lt]: beforeMessageId };
+            query._id = { $lt: beforeMessageId };
           }
 
-          // Fetch older messages
-          const messages = await DiscussionMessages.findAll({
-            where: whereClause,
-            order: [["created_at", "ASC"]],
-            limit: Math.min(limit, 100), // Cap at 100 messages per request
-          });
+          const mongoMessages = await DiscussionMessage.find(query)
+            .sort({ created_at: 1 })
+            .limit(Math.min(limit, 100))
+            .lean();
 
-          cb?.({
-            ok: true,
-            messages,
-            hasMore: messages.length === limit, // Indicates if there might be more messages
-          });
+          const messages = mongoMessages.map((m) => ({
+            id: m._id,
+            discussion_id: discussion.id,
+            sender_type: m.senderType,
+            sender_id: m.senderId,
+            message_text: m.messageText,
+            created_at: m.created_at,
+          }));
+
+          cb?.({ ok: true, messages, hasMore: mongoMessages.length === limit });
         } catch (err) {
           cb?.({ ok: false, error: err.message });
         }

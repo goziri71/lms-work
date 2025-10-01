@@ -1,4 +1,5 @@
 import { Sequelize } from "sequelize";
+import mongoose from "mongoose";
 import dotenv from "dotenv";
 import { Config } from "../config/config.js";
 
@@ -37,6 +38,17 @@ export async function connectDB() {
 
     await dbLibrary.authenticate();
     console.log("✅ Library Database connection established successfully.");
+
+    // Connect MongoDB (for chat)
+    const mongoUri = process.env.MONGO_URI;
+    if (mongoUri) {
+      await mongoose.connect(mongoUri);
+      console.log("✅ MongoDB connection established successfully.");
+    } else {
+      console.warn(
+        "⚠️  MONGO_URI not set. Chat features will be disabled until configured."
+      );
+    }
 
     return true;
   } catch (error) {
