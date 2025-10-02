@@ -3,6 +3,7 @@ import { Config } from "../config/config.js";
 import { db } from "../database/database.js";
 import { Discussions } from "../models/modules/discussions.js";
 import { DiscussionMessage } from "../models/chat/discussionMessage.js";
+import mongoose from "mongoose";
 
 const authService = new AuthService();
 
@@ -77,31 +78,32 @@ export function setupDiscussionsSocket(io) {
             roomClients: io.sockets.adapter.rooms.get(room)?.size || 0,
           });
 
-          // Load recent history from Mongo
-          let messages = [];
-          try {
-            const mongoMessages = await DiscussionMessage.find({
-              courseId,
-              academicYear,
-              semester,
-            })
-              .sort({ created_at: 1 })
-              .limit(100)
-              .maxTimeMS(5000) // 5 second timeout
-              .lean();
-
-            messages = mongoMessages.map((m) => ({
-              id: m._id,
-              discussion_id: discussion.id,
-              sender_type: m.senderType,
-              sender_id: m.senderId,
-              message_text: m.messageText,
-              created_at: m.created_at,
-            }));
-          } catch (mongoError) {
-            console.error("❌ MongoDB query error:", mongoError.message);
-            // Continue without messages if MongoDB fails
+          // Check MongoDB connection
+          if (mongoose.connection.readyState !== 1) {
+            throw new Error(
+              "MongoDB not connected. Check MONGO_URI and restart server."
+            );
           }
+
+          // Load recent history from MongoDB
+          const mongoMessages = await DiscussionMessage.find({
+            courseId,
+            academicYear,
+            semester,
+          })
+            .sort({ created_at: 1 })
+            .limit(100)
+            .maxTimeMS(2000)
+            .lean();
+
+          const messages = mongoMessages.map((m) => ({
+            id: m._id,
+            discussion_id: discussion.id,
+            sender_type: m.senderType,
+            sender_id: m.senderId,
+            message_text: m.messageText,
+            created_at: m.created_at,
+          }));
 
           cb?.({ ok: true, discussionId: discussion.id, messages });
         } catch (err) {
@@ -172,21 +174,22 @@ export function setupDiscussionsSocket(io) {
           });
           if (!discussion) throw new Error("Discussion not found");
 
-          // Persist to Mongo
-          let created;
-          try {
-            created = await DiscussionMessage.create({
-              courseId,
-              academicYear,
-              semester,
-              senderType: sender_type,
-              senderId: userId,
-              messageText: message_text,
-            });
-          } catch (mongoError) {
-            console.error("❌ MongoDB create error:", mongoError.message);
-            throw new Error("Failed to save message");
+          // Check MongoDB connection
+          if (mongoose.connection.readyState !== 1) {
+            throw new Error(
+              "MongoDB not connected. Check MONGO_URI and restart server."
+            );
           }
+
+          // Persist message to MongoDB
+          const created = await DiscussionMessage.create({
+            courseId,
+            academicYear,
+            semester,
+            senderType: sender_type,
+            senderId: userId,
+            messageText: message_text,
+          });
 
           const payload = {
             id: created._id,
@@ -251,39 +254,39 @@ export function setupDiscussionsSocket(io) {
           });
           if (!discussion) throw new Error("Discussion not found");
 
-          // Pagination via Mongo
-          let messages = [];
-          let hasMore = false;
-          try {
-            const query = {
-              courseId,
-              academicYear,
-              semester,
-            };
-            if (beforeMessageId) {
-              query._id = { $lt: beforeMessageId };
-            }
-
-            const mongoMessages = await DiscussionMessage.find(query)
-              .sort({ created_at: 1 })
-              .limit(Math.min(limit, 100))
-              .maxTimeMS(5000) // 5 second timeout
-              .lean();
-
-            messages = mongoMessages.map((m) => ({
-              id: m._id,
-              discussion_id: discussion.id,
-              sender_type: m.senderType,
-              sender_id: m.senderId,
-              message_text: m.messageText,
-              created_at: m.created_at,
-            }));
-            hasMore = mongoMessages.length === limit;
-          } catch (mongoError) {
-            console.error("❌ MongoDB loadMore error:", mongoError.message);
+          // Check MongoDB connection
+          if (mongoose.connection.readyState !== 1) {
+            throw new Error(
+              "MongoDB not connected. Check MONGO_URI and restart server."
+            );
           }
 
-          cb?.({ ok: true, messages, hasMore });
+          // Pagination via MongoDB
+          const query = {
+            courseId,
+            academicYear,
+            semester,
+          };
+          if (beforeMessageId) {
+            query._id = { $lt: beforeMessageId };
+          }
+
+          const mongoMessages = await DiscussionMessage.find(query)
+            .sort({ created_at: 1 })
+            .limit(Math.min(limit, 100))
+            .maxTimeMS(2000)
+            .lean();
+
+          const messages = mongoMessages.map((m) => ({
+            id: m._id,
+            discussion_id: discussion.id,
+            sender_type: m.senderType,
+            sender_id: m.senderId,
+            message_text: m.messageText,
+            created_at: m.created_at,
+          }));
+
+          cb?.({ ok: true, messages, hasMore: mongoMessages.length === limit });
         } catch (err) {
           cb?.({ ok: false, error: err.message });
         }

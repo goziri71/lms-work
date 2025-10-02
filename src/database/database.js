@@ -42,16 +42,25 @@ export async function connectDB() {
     // Connect MongoDB (for chat)
     const mongoUri = process.env.MONGO_URI;
     if (mongoUri) {
-      await mongoose.connect(mongoUri, {
-        serverSelectionTimeoutMS: 5000, // 5 second timeout
-        socketTimeoutMS: 45000,
-      });
-      console.log("✅ MongoDB connection established successfully.");
-      console.log(`   Database: ${mongoose.connection.db.databaseName}`);
+      try {
+        await mongoose.connect(mongoUri, {
+          serverSelectionTimeoutMS: 10000, // 10 second timeout
+          socketTimeoutMS: 45000,
+          maxPoolSize: 10,
+          minPoolSize: 2,
+        });
+        console.log("✅ MongoDB connection established successfully.");
+        console.log(`   Database: ${mongoose.connection.db.databaseName}`);
+      } catch (mongoError) {
+        console.error("❌ MongoDB connection failed:", mongoError.message);
+        console.error(
+          "   Make sure MONGO_URI is correct and IP is whitelisted in MongoDB Atlas"
+        );
+        throw new Error("MongoDB connection required for chat features");
+      }
     } else {
-      console.warn(
-        "⚠️  MONGO_URI not set. Chat features will be disabled until configured."
-      );
+      console.error("❌ MONGO_URI not set in .env");
+      throw new Error("MONGO_URI required for chat features");
     }
 
     return true;
