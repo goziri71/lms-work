@@ -78,23 +78,30 @@ export function setupDiscussionsSocket(io) {
           });
 
           // Load recent history from Mongo
-          const mongoMessages = await DiscussionMessage.find({
-            courseId,
-            academicYear,
-            semester,
-          })
-            .sort({ created_at: 1 })
-            .limit(100)
-            .lean();
+          let messages = [];
+          try {
+            const mongoMessages = await DiscussionMessage.find({
+              courseId,
+              academicYear,
+              semester,
+            })
+              .sort({ created_at: 1 })
+              .limit(100)
+              .maxTimeMS(5000) // 5 second timeout
+              .lean();
 
-          const messages = mongoMessages.map((m) => ({
-            id: m._id,
-            discussion_id: discussion.id,
-            sender_type: m.senderType,
-            sender_id: m.senderId,
-            message_text: m.messageText,
-            created_at: m.created_at,
-          }));
+            messages = mongoMessages.map((m) => ({
+              id: m._id,
+              discussion_id: discussion.id,
+              sender_type: m.senderType,
+              sender_id: m.senderId,
+              message_text: m.messageText,
+              created_at: m.created_at,
+            }));
+          } catch (mongoError) {
+            console.error("❌ MongoDB query error:", mongoError.message);
+            // Continue without messages if MongoDB fails
+          }
 
           cb?.({ ok: true, discussionId: discussion.id, messages });
         } catch (err) {
@@ -166,14 +173,20 @@ export function setupDiscussionsSocket(io) {
           if (!discussion) throw new Error("Discussion not found");
 
           // Persist to Mongo
-          const created = await DiscussionMessage.create({
-            courseId,
-            academicYear,
-            semester,
-            senderType: sender_type,
-            senderId: userId,
-            messageText: message_text,
-          });
+          let created;
+          try {
+            created = await DiscussionMessage.create({
+              courseId,
+              academicYear,
+              semester,
+              senderType: sender_type,
+              senderId: userId,
+              messageText: message_text,
+            });
+          } catch (mongoError) {
+            console.error("❌ MongoDB create error:", mongoError.message);
+            throw new Error("Failed to save message");
+          }
 
           const payload = {
             id: created._id,
@@ -239,30 +252,38 @@ export function setupDiscussionsSocket(io) {
           if (!discussion) throw new Error("Discussion not found");
 
           // Pagination via Mongo
-          const query = {
-            courseId,
-            academicYear,
-            semester,
-          };
-          if (beforeMessageId) {
-            query._id = { $lt: beforeMessageId };
+          let messages = [];
+          let hasMore = false;
+          try {
+            const query = {
+              courseId,
+              academicYear,
+              semester,
+            };
+            if (beforeMessageId) {
+              query._id = { $lt: beforeMessageId };
+            }
+
+            const mongoMessages = await DiscussionMessage.find(query)
+              .sort({ created_at: 1 })
+              .limit(Math.min(limit, 100))
+              .maxTimeMS(5000) // 5 second timeout
+              .lean();
+
+            messages = mongoMessages.map((m) => ({
+              id: m._id,
+              discussion_id: discussion.id,
+              sender_type: m.senderType,
+              sender_id: m.senderId,
+              message_text: m.messageText,
+              created_at: m.created_at,
+            }));
+            hasMore = mongoMessages.length === limit;
+          } catch (mongoError) {
+            console.error("❌ MongoDB loadMore error:", mongoError.message);
           }
 
-          const mongoMessages = await DiscussionMessage.find(query)
-            .sort({ created_at: 1 })
-            .limit(Math.min(limit, 100))
-            .lean();
-
-          const messages = mongoMessages.map((m) => ({
-            id: m._id,
-            discussion_id: discussion.id,
-            sender_type: m.senderType,
-            sender_id: m.senderId,
-            message_text: m.messageText,
-            created_at: m.created_at,
-          }));
-
-          cb?.({ ok: true, messages, hasMore: mongoMessages.length === limit });
+          cb?.({ ok: true, messages, hasMore });
         } catch (err) {
           cb?.({ ok: false, error: err.message });
         }

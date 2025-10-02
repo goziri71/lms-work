@@ -42,8 +42,12 @@ export async function connectDB() {
     // Connect MongoDB (for chat)
     const mongoUri = process.env.MONGO_URI;
     if (mongoUri) {
-      await mongoose.connect(mongoUri);
+      await mongoose.connect(mongoUri, {
+        serverSelectionTimeoutMS: 5000, // 5 second timeout
+        socketTimeoutMS: 45000,
+      });
       console.log("✅ MongoDB connection established successfully.");
+      console.log(`   Database: ${mongoose.connection.db.databaseName}`);
     } else {
       console.warn(
         "⚠️  MONGO_URI not set. Chat features will be disabled until configured."
