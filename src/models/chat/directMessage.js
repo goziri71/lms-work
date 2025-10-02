@@ -6,6 +6,8 @@ const DirectMessageSchema = new mongoose.Schema(
     senderId: { type: Number, required: true, index: true },
     receiverId: { type: Number, required: true, index: true },
     messageText: { type: String, required: true },
+    deliveredAt: { type: Date, default: null },
+    readAt: { type: Date, default: null },
   },
   { timestamps: { createdAt: "created_at", updatedAt: false } }
 );
