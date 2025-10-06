@@ -3,6 +3,8 @@ import {
   getStudentCourses,
   getStaffCourses,
   getCourseById,
+  getCourseParticipants,
+  getMyCourseParticipants,
 } from "../controllers/courses/courses.js";
 import { authorize } from "../middlewares/authorize.js";
 
@@ -28,5 +30,11 @@ router.get("/staff/:startYear/:endYear", authorize, getStaffCourses);
 
 // Get one course by id (staff owner or student enrolled)
 router.get("/single/:courseId", authorize, getCourseById);
+
+// Student-accessible participants (lecturer + classmates) for a course
+router.get("/:courseId/participants", authorize, getCourseParticipants);
+
+// Student-accessible participants for ALL their enrolled courses (no courseId)
+router.get("/participants", authorize, getMyCourseParticipants);
 
 export default router;
