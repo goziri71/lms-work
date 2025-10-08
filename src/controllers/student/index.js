@@ -203,7 +203,7 @@ export const getAllStudents = TryCatchFunction(async (req, res) => {
     message: "Students retrieved successfully",
     data: {
       students,
-      pagination: {
+      meta: {
         current_page: page,
         per_page: limit,
         total: totalCount,
