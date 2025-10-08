@@ -17,7 +17,7 @@ export const getAllStudents = TryCatchFunction(async (req, res) => {
   // Query parameters
   const page = Number(req.query.page) || 1;
   const limit = Math.min(Number(req.query.limit) || 20, 100); // Max 100 per page
-  const search = (req.query.search || "").toLowerCase();
+  const searchRaw = (req.query.search || "").trim();
   const sort = req.query.sort || "date"; // 'date', 'name', 'email', 'level'
   const status = req.query.status; // Filter by admin_status
   const level = req.query.level; // Filter by level
@@ -26,14 +26,23 @@ export const getAllStudents = TryCatchFunction(async (req, res) => {
   // Build where clause
   const whereClause = {};
 
-  if (search) {
-    whereClause[Op.or] = [
-      { fname: { [Op.iLike]: `%${search}%` } },
-      { lname: { [Op.iLike]: `%${search}%` } },
-      { email: { [Op.iLike]: `%${search}%` } },
-      { matric_number: { [Op.iLike]: `%${search}%` } },
-      { phone: { [Op.iLike]: `%${search}%` } },
-    ];
+  // Flexible multi-token search across common fields (AND of ORs)
+  if (searchRaw) {
+    const tokens = searchRaw
+      .split(/\s+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (tokens.length > 0) {
+      whereClause[Op.and] = tokens.map((token) => ({
+        [Op.or]: [
+          { fname: { [Op.iLike]: `%${token}%` } },
+          { lname: { [Op.iLike]: `%${token}%` } },
+          { email: { [Op.iLike]: `%${token}%` } },
+          { matric_number: { [Op.iLike]: `%${token}%` } },
+          { phone: { [Op.iLike]: `%${token}%` } },
+        ],
+      }));
+    }
   }
 
   if (status) {
@@ -94,7 +103,7 @@ export const getAllStudents = TryCatchFunction(async (req, res) => {
             has_prev_page: false,
           },
           filters: {
-            search: search || null,
+            search: searchRaw || null,
             sort,
             status: status || null,
             level: level || null,
@@ -130,7 +139,7 @@ export const getAllStudents = TryCatchFunction(async (req, res) => {
             has_prev_page: false,
           },
           filters: {
-            search: search || null,
+            search: searchRaw || null,
             sort,
             status: status || null,
             level: level || null,
@@ -203,7 +212,7 @@ export const getAllStudents = TryCatchFunction(async (req, res) => {
         has_prev_page: hasPrevPage,
       },
       filters: {
-        search: search || null,
+        search: searchRaw || null,
         sort,
         status: status || null,
         level: level || null,

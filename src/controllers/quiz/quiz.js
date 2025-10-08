@@ -629,7 +629,7 @@ export const saveQuizAnswers = TryCatchFunction(async (req, res) => {
   if (!attempt || attempt.student_id !== studentId) {
     throw new ErrorClass("Attempt not found or not yours", 404);
   }
-  console.log("attempt", attempt);
+
   if (attempt.status !== "in_progress") {
     throw new ErrorClass("Attempt is not in progress", 400);
   }
