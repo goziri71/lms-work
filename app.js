@@ -10,6 +10,7 @@ import modulesRoutes from "./src/routes/modules.js";
 import quizRoutes from "./src/routes/quiz.js";
 import studentRoutes from "./src/routes/student.js";
 import videoRoutes from "./src/routes/video.js";
+import chatRoutes from "./src/routes/chat.js";
 import { setupAssociations } from "./src/models/associations.js";
 import { setupDiscussionsSocket } from "./src/realtime/discussions.js";
 import { setupDirectChatSocket } from "./src/realtime/directChat.js";
@@ -31,6 +32,7 @@ app.use("/api/semesters", semesterRoutes);
 app.use("/api/quiz", quizRoutes);
 app.use("/api/students", studentRoutes);
 app.use("/api/video", videoRoutes);
+app.use("/api/chat", chatRoutes);
 app.use("/api", modulesRoutes);
 
 // Health check endpoint

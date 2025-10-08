@@ -9,10 +9,10 @@ export const getAllStudents = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const staffId = Number(req.user?.id);
 
-  // Only staff can view all students
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can view all students", 403);
-  }
+  // // Only staff can view all students
+  // if (userType !== "staff") {
+  //   throw new ErrorClass("Only staff can view all students", 403);
+  // }
 
   // Query parameters
   const page = Number(req.query.page) || 1;
