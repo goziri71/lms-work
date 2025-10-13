@@ -11,6 +11,10 @@ import { Modules } from "../../models/modules/modules.js";
 import { Staff } from "../../models/auth/staff.js";
 import { Students } from "../../models/auth/student.js";
 import { Op } from "sequelize";
+import {
+  syncQuizQuestionToBank,
+  deleteQuizQuestionFromBank,
+} from "../../services/examBankSync.js";
 
 export const createQuiz = TryCatchFunction(async (req, res) => {
   const staffId = Number(req.user?.id);
@@ -170,6 +174,15 @@ export const addQuizQuestionsBatch = TryCatchFunction(async (req, res) => {
     }
 
     await trx.commit();
+
+    // Sync all created questions to exam bank (async, non-blocking)
+    console.log("Questions created, syncing to exam bank...");
+    for (const q of createdQuestions) {
+      syncQuizQuestionToBank(q, q.options || []).catch((err) =>
+        console.error("Failed to sync question to bank:", err)
+      );
+    }
+
     res.status(201).json({
       status: true,
       code: 201,
@@ -1309,6 +1322,9 @@ export const updateQuizAttempt = TryCatchFunction(async (req, res) => {
     }
 
     // 2) Upsert questions and options if provided
+    const deletedQuestionIds = [];
+    const upsertedQuestions = [];
+
     if (Array.isArray(questions) && questions.length > 0) {
       for (const q of questions) {
         const {
@@ -1329,6 +1345,7 @@ export const updateQuizAttempt = TryCatchFunction(async (req, res) => {
             transaction: trx,
           });
           if (existingQ) {
+            deletedQuestionIds.push(existingQ.id);
             await QuizOptions.destroy({
               where: { question_id: existingQ.id },
               transaction: trx,
@@ -1476,10 +1493,32 @@ export const updateQuizAttempt = TryCatchFunction(async (req, res) => {
           // Optionally, could delete any existing options to keep data clean
           // await QuizOptions.destroy({ where: { question_id: questionRecord.id }, transaction: trx });
         }
+
+        // Track upserted questions for sync
+        upsertedQuestions.push(questionRecord.id);
       }
     }
 
     await trx.commit();
+
+    // Sync deleted questions (remove from exam bank)
+    for (const qId of deletedQuestionIds) {
+      deleteQuizQuestionFromBank(qId).catch((err) =>
+        console.error("Failed to delete question from bank:", err)
+      );
+    }
+
+    // Sync upserted questions (add/update in exam bank)
+    for (const qId of upsertedQuestions) {
+      const q = await QuizQuestions.findByPk(qId, {
+        include: [{ model: QuizOptions, as: "options" }],
+      });
+      if (q) {
+        syncQuizQuestionToBank(q, q.options || []).catch((err) =>
+          console.error("Failed to sync question to bank:", err)
+        );
+      }
+    }
 
     // Return updated quiz with questions/options (staff view includes is_correct)
     const updated = await Quiz.findByPk(quizId, {
@@ -1587,6 +1626,13 @@ export const deleteQuiz = TryCatchFunction(async (req, res) => {
     await Quiz.destroy({ where: { id: quizId }, transaction: trx });
 
     await trx.commit();
+
+    // Sync deleted questions (remove from exam bank)
+    for (const qId of questionIds) {
+      deleteQuizQuestionFromBank(qId).catch((err) =>
+        console.error("Failed to delete question from bank:", err)
+      );
+    }
   } catch (err) {
     await trx.rollback();
     throw err;

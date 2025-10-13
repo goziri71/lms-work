@@ -4,18 +4,26 @@ import { DirectMessage } from "../models/chat/directMessage.js";
 
 const authService = new AuthService();
 
-function dmRoom(userAId, userBId) {
-  const a = Number(userAId);
-  const b = Number(userBId);
-  const [minId, maxId] = a < b ? [a, b] : [b, a];
-  return `dm:${minId}-${maxId}`;
+function composite(userType, userId) {
+  return `${String(userType)}:${Number(userId)}`;
 }
 
-function dmRoomKey(userAId, userBId) {
-  const a = Number(userAId);
-  const b = Number(userBId);
-  const [minId, maxId] = a < b ? [a, b] : [b, a];
-  return `${minId}-${maxId}`;
+function sortComposite(a, b) {
+  return a.localeCompare(b) <= 0 ? [a, b] : [b, a];
+}
+
+function dmRoom(userAType, userAId, userBType, userBId) {
+  const ca = composite(userAType, userAId);
+  const cb = composite(userBType, userBId);
+  const [minC, maxC] = sortComposite(ca, cb);
+  return `dm:${minC}-${maxC}`;
+}
+
+function dmRoomKey(userAType, userAId, userBType, userBId) {
+  const ca = composite(userAType, userAId);
+  const cb = composite(userBType, userBId);
+  const [minC, maxC] = sortComposite(ca, cb);
+  return `${minC}-${maxC}`;
 }
 
 export function setupDirectChatSocket(io) {
@@ -41,15 +49,16 @@ export function setupDirectChatSocket(io) {
       }
     } catch {}
 
-    socket.on("dm:join", async ({ peerUserId }, cb) => {
+    socket.on("dm:join", async ({ peerUserId, peerUserType }, cb) => {
       try {
         const userId = Number(socket.user?.id);
+        const userType = socket.user?.userType;
         if (!Number.isInteger(userId) || userId <= 0)
           throw new Error("Unauthorized");
-        const room = dmRoom(userId, peerUserId);
+        const room = dmRoom(userType, userId, peerUserType, peerUserId);
         socket.join(room);
 
-        const roomKey = dmRoomKey(userId, peerUserId);
+        const roomKey = dmRoomKey(userType, userId, peerUserType, peerUserId);
         const messages = await DirectMessage.find({ roomKey })
           .sort({ created_at: 1 })
           .limit(100)
@@ -62,52 +71,63 @@ export function setupDirectChatSocket(io) {
     });
 
     // Typing indicator
-    socket.on("dm:typing", ({ peerUserId, isTyping = true }) => {
+    socket.on("dm:typing", ({ peerUserId, peerUserType, isTyping = true }) => {
       try {
         const userId = Number(socket.user?.id);
+        const userType = socket.user?.userType;
         if (!Number.isInteger(userId) || userId <= 0) return;
-        const room = dmRoom(userId, peerUserId);
+        const room = dmRoom(userType, userId, peerUserType, peerUserId);
         // Notify the peer only
         socket.to(room).emit("dm:typing", {
           userId,
+          userType,
           peerUserId: Number(peerUserId),
+          peerUserType,
           isTyping: Boolean(isTyping),
         });
       } catch {}
     });
 
-    socket.on("dm:send", async ({ peerUserId, message_text }, cb) => {
-      try {
-        const userId = Number(socket.user?.id);
-        if (!Number.isInteger(userId) || userId <= 0)
-          throw new Error("Unauthorized");
-        if (!message_text) throw new Error("message_text required");
+    socket.on(
+      "dm:send",
+      async ({ peerUserId, peerUserType, message_text }, cb) => {
+        try {
+          const userId = Number(socket.user?.id);
+          const userType = socket.user?.userType;
+          if (!Number.isInteger(userId) || userId <= 0)
+            throw new Error("Unauthorized");
+          if (!message_text) throw new Error("message_text required");
 
-        const roomKey = dmRoomKey(userId, peerUserId);
-        const created = await DirectMessage.create({
-          roomKey,
-          senderId: userId,
-          receiverId: Number(peerUserId),
-          messageText: message_text,
-        });
+          const roomKey = dmRoomKey(userType, userId, peerUserType, peerUserId);
+          const created = await DirectMessage.create({
+            roomKey,
+            senderType: userType,
+            senderId: userId,
+            receiverType: peerUserType,
+            receiverId: Number(peerUserId),
+            messageText: message_text,
+          });
 
-        const payload = {
-          id: created._id,
-          sender_id: userId,
-          receiver_id: Number(peerUserId),
-          message_text: message_text,
-          created_at: created.created_at,
-          delivered_at: null,
-          read_at: null,
-        };
+          const payload = {
+            id: created._id,
+            sender_id: userId,
+            sender_type: userType,
+            receiver_id: Number(peerUserId),
+            receiver_type: peerUserType,
+            message_text: message_text,
+            created_at: created.created_at,
+            delivered_at: null,
+            read_at: null,
+          };
 
-        const room = dmRoom(userId, peerUserId);
-        io.to(room).emit("dm:newMessage", payload);
-        cb?.({ ok: true, message: payload });
-      } catch (err) {
-        cb?.({ ok: false, error: err.message });
+          const room = dmRoom(userType, userId, peerUserType, peerUserId);
+          io.to(room).emit("dm:newMessage", payload);
+          cb?.({ ok: true, message: payload });
+        } catch (err) {
+          cb?.({ ok: false, error: err.message });
+        }
       }
-    });
+    );
 
     // Mark delivered
     socket.on("dm:delivered", async ({ messageId }, cb) => {
@@ -123,7 +143,12 @@ export function setupDirectChatSocket(io) {
           msg.deliveredAt = new Date();
           await msg.save();
         }
-        const room = dmRoom(msg.senderId, msg.receiverId);
+        const room = dmRoom(
+          msg.senderType,
+          msg.senderId,
+          msg.receiverType,
+          msg.receiverId
+        );
         io.to(room).emit("dm:delivered", {
           messageId: msg._id,
           delivered_at: msg.deliveredAt,
@@ -148,7 +173,12 @@ export function setupDirectChatSocket(io) {
           msg.readAt = new Date();
           await msg.save();
         }
-        const room = dmRoom(msg.senderId, msg.receiverId);
+        const room = dmRoom(
+          msg.senderType,
+          msg.senderId,
+          msg.receiverType,
+          msg.receiverId
+        );
         io.to(room).emit("dm:read", {
           messageId: msg._id,
           read_at: msg.readAt,
@@ -161,13 +191,14 @@ export function setupDirectChatSocket(io) {
 
     socket.on(
       "dm:loadMore",
-      async ({ peerUserId, beforeMessageId, limit = 50 }, cb) => {
+      async ({ peerUserId, peerUserType, beforeMessageId, limit = 50 }, cb) => {
         try {
           const userId = Number(socket.user?.id);
+          const userType = socket.user?.userType;
           if (!Number.isInteger(userId) || userId <= 0)
             throw new Error("Unauthorized");
 
-          const roomKey = dmRoomKey(userId, peerUserId);
+          const roomKey = dmRoomKey(userType, userId, peerUserType, peerUserId);
           const query = { roomKey };
           if (beforeMessageId) {
             query._id = { $lt: beforeMessageId };
@@ -181,7 +212,9 @@ export function setupDirectChatSocket(io) {
           const messages = mongoMessages.map((m) => ({
             id: m._id,
             sender_id: m.senderId,
+            sender_type: m.senderType,
             receiver_id: m.receiverId,
+            receiver_type: m.receiverType,
             message_text: m.messageText,
             created_at: m.created_at,
           }));

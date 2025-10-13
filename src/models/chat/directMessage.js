@@ -2,8 +2,12 @@ import mongoose from "mongoose";
 
 const DirectMessageSchema = new mongoose.Schema(
   {
-    roomKey: { type: String, required: true, index: true }, // sorted pair: userA-userB
+    // roomKey is a stable, sorted composite of (type:id)-(type:id)
+    // Example: dm:staff:12-student:45 (lexicographically sorted)
+    roomKey: { type: String, required: true, index: true },
+    senderType: { type: String, enum: ["student", "staff"], required: true },
     senderId: { type: Number, required: true, index: true },
+    receiverType: { type: String, enum: ["student", "staff"], required: true },
     receiverId: { type: Number, required: true, index: true },
     messageText: { type: String, required: true },
     deliveredAt: { type: Date, default: null },

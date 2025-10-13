@@ -1,7 +1,7 @@
 import { DataTypes } from "sequelize";
-import { db } from "../../database/database.js";
+import { dbLibrary } from "../../database/database.js";
 
-export const VideoCall = db.define(
+export const VideoCall = dbLibrary.define(
   "video_calls",
   {
     id: {

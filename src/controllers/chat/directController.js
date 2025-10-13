@@ -18,13 +18,24 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
   const skip = (page - 1) * limit;
   const search = (req.query.search || "").trim();
 
-  // Aggregate threads grouped by peerId
+  // Aggregate threads grouped by typed peer (type + id)
   const pipeline = [
-    { $match: { $or: [{ senderId: userId }, { receiverId: userId }] } },
+    {
+      $match: {
+        $or: [{ senderId: userId }, { receiverId: userId }],
+      },
+    },
     {
       $addFields: {
         peerId: {
           $cond: [{ $eq: ["$senderId", userId] }, "$receiverId", "$senderId"],
+        },
+        peerType: {
+          $cond: [
+            { $eq: ["$senderId", userId] },
+            "$receiverType",
+            "$senderType",
+          ],
         },
         isUnreadForUser: {
           $and: [{ $eq: ["$receiverId", userId] }, { $eq: ["$readAt", null] }],
@@ -34,7 +45,7 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
     { $sort: { created_at: -1 } },
     {
       $group: {
-        _id: "$peerId",
+        _id: { peerId: "$peerId", peerType: "$peerType" },
         lastMessage: { $first: "$$ROOT" },
         unreadCount: { $sum: { $cond: ["$isUnreadForUser", 1, 0] } },
       },
@@ -45,7 +56,8 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
   ];
 
   const grouped = await DirectMessage.aggregate(pipeline).exec();
-  const peerIds = grouped.map((g) => g._id);
+  const peerIds = grouped.map((g) => g._id.peerId);
+  const peerTypes = grouped.map((g) => g._id.peerType);
 
   // Fetch peer details from Staff and Students
   const [staffList, studentList] = await Promise.all([
@@ -75,9 +87,10 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
 
   const threads = grouped.map((g) => {
     const lm = g.lastMessage;
-    const sid = g._id;
+    const sid = g._id.peerId;
+    const stype = g._id.peerType;
     let peer = null;
-    if (staffMap.has(sid)) {
+    if (stype === "staff" && staffMap.has(sid)) {
       const s = staffMap.get(sid);
       peer = {
         id: s.id,
@@ -85,7 +98,7 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
         email: s.email,
         role: "staff",
       };
-    } else if (studentMap.has(sid)) {
+    } else if (stype === "student" && studentMap.has(sid)) {
       const s = studentMap.get(sid);
       const name = [s.fname, s.mname, s.lname].filter(Boolean).join(" ").trim();
       peer = {
@@ -96,7 +109,7 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
         role: "student",
       };
     } else {
-      peer = { id: sid, full_name: "Unknown", role: "unknown" };
+      peer = { id: sid, full_name: "Unknown", role: stype || "unknown" };
     }
 
     return {
@@ -104,7 +117,9 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
       lastMessage: {
         id: lm._id,
         sender_id: lm.senderId,
+        sender_type: lm.senderType,
         receiver_id: lm.receiverId,
+        receiver_type: lm.receiverType,
         message_text: lm.messageText,
         created_at: lm.created_at,
         delivered_at: lm.deliveredAt || null,
