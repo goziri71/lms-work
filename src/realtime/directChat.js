@@ -59,10 +59,22 @@ export function setupDirectChatSocket(io) {
         socket.join(room);
 
         const roomKey = dmRoomKey(userType, userId, peerUserType, peerUserId);
-        const messages = await DirectMessage.find({ roomKey })
+        const mongoMessages = await DirectMessage.find({ roomKey })
           .sort({ created_at: 1 })
           .limit(100)
           .lean();
+
+        const messages = mongoMessages.map((m) => ({
+          id: m._id,
+          sender_id: m.senderId,
+          sender_type: m.senderType,
+          receiver_id: m.receiverId,
+          receiver_type: m.receiverType,
+          message_text: m.messageText,
+          created_at: m.created_at,
+          delivered_at: m.deliveredAt || null,
+          read_at: m.readAt || null,
+        }));
 
         cb?.({ ok: true, messages });
       } catch (err) {
