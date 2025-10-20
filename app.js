@@ -13,6 +13,7 @@ import videoRoutes from "./src/routes/video.js";
 import chatRoutes from "./src/routes/chat.js";
 import examRoutes from "./src/routes/exams.js";
 import { setupAssociations } from "./src/models/associations.js";
+import { setupExamAssociations } from "./src/models/exams/index.js";
 import { setupDiscussionsSocket } from "./src/realtime/discussions.js";
 import { setupDirectChatSocket } from "./src/realtime/directChat.js";
 
@@ -48,6 +49,12 @@ app.get("/health", (req, res) => {
 
 // Global error handler for TryCatchFunction
 app.use((error, req, res, next) => {
+  // Log error for debugging
+  console.error("❌ Error:", error.message);
+  if (process.env.NODE_ENV === "development") {
+    console.error("Stack trace:", error.stack);
+  }
+
   if (error.statusCode) {
     return res.status(error.statusCode).json({
       success: false,
@@ -58,6 +65,7 @@ app.use((error, req, res, next) => {
   res.status(500).json({
     success: false,
     message: "Internal server error",
+    ...(process.env.NODE_ENV === "development" && { error: error.message }),
   });
 });
 
@@ -66,6 +74,7 @@ connectDB().then((success) => {
   if (success) {
     // Set up model associations after database connection
     setupAssociations();
+    setupExamAssociations();
     console.log("🔗 Model associations established");
 
     setupDiscussionsSocket(io);
