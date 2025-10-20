@@ -79,7 +79,7 @@ export const Exam = dbLibrary.define(
       allowNull: false,
       defaultValue: "random",
       comment:
-        "random = auto-select from bank; manual = pre-selected questions",
+        "random = auto-select from bank, manual = pre-selected questions",
     },
     created_by: {
       type: DataTypes.INTEGER,

@@ -93,9 +93,10 @@ export function setupExamAssociations() {
     as: "examItem",
   });
 
-  // ExamAttempt belongsTo Student (cross-DB soft reference)
+  // ExamAttempt belongsTo Student (cross-DB soft reference - no DB constraint)
   ExamAttempt.belongsTo(Students, {
     foreignKey: "student_id",
     as: "student",
+    constraints: false, // Cross-database reference - no foreign key constraint
   });
 }

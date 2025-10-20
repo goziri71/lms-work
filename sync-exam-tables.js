@@ -35,7 +35,7 @@ async function syncTables() {
     console.log("✅ question_theory table synced");
 
     console.log("\n📊 Syncing exam definition tables...");
-    await Exam.sync({ alter: true });
+    await Exam.sync({ alter: false }); // Skip alter - table already exists
     console.log("✅ exams table synced");
     await ExamItem.sync({ alter: true });
     console.log("✅ exam_items table synced");

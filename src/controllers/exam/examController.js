@@ -15,8 +15,10 @@ import { Op } from "sequelize";
  * POST /api/exams
  */
 export const createExam = TryCatchFunction(async (req, res) => {
+  console.log("📝 Create exam endpoint called");
   const staffId = Number(req.user?.id);
   const userType = req.user?.userType;
+  console.log("👤 User:", { staffId, userType });
 
   if (userType !== "staff") {
     throw new ErrorClass("Only staff can create exams", 403);
@@ -40,6 +42,14 @@ export const createExam = TryCatchFunction(async (req, res) => {
     manual_question_ids, // Array of question_bank_ids for manual mode
   } = req.body;
 
+  console.log("📋 Request body:", {
+    course_id,
+    academic_year,
+    semester,
+    title,
+    exam_type,
+  });
+
   if (!course_id || !academic_year || !semester || !title) {
     throw new ErrorClass(
       "course_id, academic_year, semester, and title are required",
@@ -48,14 +58,17 @@ export const createExam = TryCatchFunction(async (req, res) => {
   }
 
   // Verify staff owns the course
+  console.log("🔍 Checking course ownership...");
   const course = await Courses.findOne({
     where: { id: course_id, staff_id: staffId },
   });
   if (!course) {
     throw new ErrorClass("Course not found or access denied", 403);
   }
+  console.log("✅ Course found:", course.id);
 
   // Create exam
+  console.log("💾 Creating exam...");
   const exam = await Exam.create({
     course_id,
     academic_year,
@@ -74,8 +87,11 @@ export const createExam = TryCatchFunction(async (req, res) => {
     created_by: staffId,
   });
 
+  console.log("✅ Exam created with ID:", exam.id);
+
   // If manual mode, add pre-selected questions
   if (selection_mode === "manual" && Array.isArray(manual_question_ids)) {
+    console.log("📝 Adding manual questions:", manual_question_ids.length);
     for (let i = 0; i < manual_question_ids.length; i++) {
       await ExamItem.create({
         exam_id: exam.id,
@@ -86,6 +102,7 @@ export const createExam = TryCatchFunction(async (req, res) => {
     }
   }
 
+  console.log("✅ Exam creation completed successfully");
   res.status(201).json({
     status: true,
     code: 201,
@@ -139,14 +156,17 @@ export const getStaffExams = TryCatchFunction(async (req, res) => {
  * GET /api/exams/:examId
  */
 export const getExamById = TryCatchFunction(async (req, res) => {
+  console.log("🔍 Get exam by ID endpoint called");
   const staffId = Number(req.user?.id);
   const userType = req.user?.userType;
   const examId = Number(req.params.examId);
+  console.log("👤 User:", { staffId, userType, examId });
 
   if (userType !== "staff") {
     throw new ErrorClass("Only staff can access this endpoint", 403);
   }
 
+  console.log("📚 Fetching exam with includes...");
   const exam = await Exam.findByPk(examId, {
     include: [
       {
@@ -169,16 +189,21 @@ export const getExamById = TryCatchFunction(async (req, res) => {
   });
 
   if (!exam) {
+    console.log("❌ Exam not found");
     throw new ErrorClass("Exam not found", 404);
   }
+  console.log("✅ Exam found:", exam.id);
 
   // Verify staff owns the course
+  console.log("🔍 Checking course ownership...");
   const course = await Courses.findOne({
     where: { id: exam.course_id, staff_id: staffId },
   });
   if (!course) {
+    console.log("❌ Access denied - course not owned by staff");
     throw new ErrorClass("Access denied", 403);
   }
+  console.log("✅ Access granted");
 
   res.status(200).json({
     status: true,
