@@ -1,0 +1,523 @@
+{
+  "info": {
+    "name": "LMS Exam API - Quick Test",
+    "description": "Simple test collection for exam endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api",
+      "type": "string"
+    },
+    {
+      "key": "staffToken",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "type": "string"
+    },
+    {
+      "key": "studentToken",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Create Exam (Random Mode)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"course_id\": 1,\n  \"academic_year\": \"2024/2025\",\n  \"semester\": \"1ST\",\n  \"title\": \"Test Midterm Exam\",\n  \"instructions\": \"Answer all questions carefully. You have 2 hours to complete this exam.\",\n  \"start_at\": \"2024-12-20T09:00:00Z\",\n  \"end_at\": \"2024-12-20T11:00:00Z\",\n  \"duration_minutes\": 120,\n  \"visibility\": \"draft\",\n  \"randomize\": true,\n  \"exam_type\": \"mixed\",\n  \"selection_mode\": \"random\",\n  \"objective_count\": 10,\n  \"theory_count\": 3\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/exams",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams"]
+        }
+      }
+    },
+    {
+      "name": "2. Create Exam (Manual Mode)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"course_id\": 1,\n  \"academic_year\": \"2024/2025\",\n  \"semester\": \"1ST\",\n  \"title\": \"Test Final Exam\",\n  \"instructions\": \"This is a manually curated exam. Answer all questions.\",\n  \"start_at\": \"2024-12-25T09:00:00Z\",\n  \"end_at\": \"2024-12-25T12:00:00Z\",\n  \"duration_minutes\": 180,\n  \"visibility\": \"draft\",\n  \"randomize\": false,\n  \"exam_type\": \"mixed\",\n  \"selection_mode\": \"manual\",\n  \"manual_question_ids\": [1, 2, 3, 4, 5]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/exams",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams"]
+        }
+      }
+    },
+    {
+      "name": "3. Get All Staff Exams",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/exams",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams"]
+        }
+      }
+    },
+    {
+      "name": "4. Get Staff Exams (Filtered)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/exams?course_id=1&academic_year=2024/2025&semester=1ST&visibility=draft",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams"],
+          "query": [
+            {
+              "key": "course_id",
+              "value": "1"
+            },
+            {
+              "key": "academic_year",
+              "value": "2024/2025"
+            },
+            {
+              "key": "semester",
+              "value": "1ST"
+            },
+            {
+              "key": "visibility",
+              "value": "draft"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "5. Get Exam by ID",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/exams/1",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "1"]
+        }
+      }
+    },
+    {
+      "name": "6. Update Exam",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Updated Test Midterm Exam\",\n  \"instructions\": \"Updated instructions: Answer all questions. Time limit is 2 hours.\",\n  \"visibility\": \"published\",\n  \"duration_minutes\": 120\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/exams/1",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "1"]
+        }
+      }
+    },
+    {
+      "name": "7. Get Question Bank",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/exams/bank/questions?course_id=1&status=approved",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "bank", "questions"],
+          "query": [
+            {
+              "key": "course_id",
+              "value": "1"
+            },
+            {
+              "key": "status",
+              "value": "approved"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "8. Get Question Bank (Filtered)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/exams/bank/questions?course_id=1&question_type=objective&difficulty=medium&status=approved",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "bank", "questions"],
+          "query": [
+            {
+              "key": "course_id",
+              "value": "1"
+            },
+            {
+              "key": "question_type",
+              "value": "objective"
+            },
+            {
+              "key": "difficulty",
+              "value": "medium"
+            },
+            {
+              "key": "status",
+              "value": "approved"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "9. Get Student Available Exams",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{studentToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/exams/student/exams",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "student", "exams"]
+        }
+      }
+    },
+    {
+      "name": "10. Get Student Exams (Filtered)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{studentToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/exams/student/exams?academic_year=2024/2025&semester=1ST",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "student", "exams"],
+          "query": [
+            {
+              "key": "academic_year",
+              "value": "2024/2025"
+            },
+            {
+              "key": "semester",
+              "value": "1ST"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "11. Start Exam (Student)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{studentToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/exams/student/exams/1/start",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "student", "exams", "1", "start"]
+        }
+      }
+    },
+    {
+      "name": "12. Submit Objective Answer",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{studentToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"exam_item_id\": 1,\n  \"answer_type\": \"objective\",\n  \"selected_option\": \"A\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/exams/student/exams/attempts/1/answer",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "student", "exams", "attempts", "1", "answer"]
+        }
+      }
+    },
+    {
+      "name": "13. Submit Theory Answer",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{studentToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"exam_item_id\": 2,\n  \"answer_type\": \"theory\",\n  \"answer_text\": \"This is my detailed answer for the theory question. I will explain the concept step by step and provide examples to support my argument.\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/exams/student/exams/attempts/1/answer",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "student", "exams", "attempts", "1", "answer"]
+        }
+      }
+    },
+    {
+      "name": "14. Submit Exam",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{studentToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/exams/student/exams/attempts/1/submit",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "student", "exams", "attempts", "1", "submit"]
+        }
+      }
+    },
+    {
+      "name": "15. Get Attempt Details",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{studentToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/exams/student/exams/attempts/1",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "student", "exams", "attempts", "1"]
+        }
+      }
+    },
+    {
+      "name": "16. Get Exam Attempts (Staff)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/exams/1/attempts",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "1", "attempts"]
+        }
+      }
+    },
+    {
+      "name": "17. Get Attempt for Grading",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/exams/attempts/1/grade",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "attempts", "1", "grade"]
+        }
+      }
+    },
+    {
+      "name": "18. Grade Theory Answer",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"marks_awarded\": 8.5,\n  \"feedback\": \"Good answer! You covered most of the key points but missed some important details about the implementation.\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/exams/answers/theory/1/grade",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "answers", "theory", "1", "grade"]
+        }
+      }
+    },
+    {
+      "name": "19. Bulk Grade Theory Answers",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"grades\": [\n    {\n      \"answer_id\": 1,\n      \"marks_awarded\": 8.5,\n      \"feedback\": \"Excellent answer with good examples\"\n    },\n    {\n      \"answer_id\": 2,\n      \"marks_awarded\": 7.0,\n      \"feedback\": \"Good understanding but needs more detail\"\n    },\n    {\n      \"answer_id\": 3,\n      \"marks_awarded\": 9.0,\n      \"feedback\": \"Outstanding response, very comprehensive\"\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/exams/attempts/1/grade-bulk",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "attempts", "1", "grade-bulk"]
+        }
+      }
+    },
+    {
+      "name": "20. Get Exam Statistics",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/exams/1/statistics",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "1", "statistics"]
+        }
+      }
+    },
+    {
+      "name": "21. Delete Exam",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{staffToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/exams/1",
+          "host": ["{{baseUrl}}"],
+          "path": ["exams", "1"]
+        }
+      }
+    }
+  ]
+}

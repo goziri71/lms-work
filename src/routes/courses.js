@@ -6,6 +6,12 @@ import {
   getCourseParticipants,
   getMyCourseParticipants,
 } from "../controllers/courses/courses.js";
+import {
+  registerCourse,
+  unregisterCourse,
+  getAvailableSemesters,
+  getAvailableCourses,
+} from "../controllers/courses/courseRegistration.js";
 import { authorize } from "../middlewares/authorize.js";
 
 const router = Router();
@@ -36,5 +42,11 @@ router.get("/:courseId/participants", authorize, getCourseParticipants);
 
 // Student-accessible participants for ALL their enrolled courses (no courseId)
 router.get("/participants", authorize, getMyCourseParticipants);
+
+// Course registration endpoints
+router.post("/register", authorize, registerCourse);
+router.delete("/register/:registrationId", authorize, unregisterCourse);
+router.get("/semesters", authorize, getAvailableSemesters);
+router.get("/available", authorize, getAvailableCourses);
 
 export default router;

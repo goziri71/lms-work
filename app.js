@@ -57,13 +57,15 @@ app.use((error, req, res, next) => {
 
   if (error.statusCode) {
     return res.status(error.statusCode).json({
-      success: false,
+      status: false,
+      code: error.statusCode,
       message: error.message,
     });
   }
 
   res.status(500).json({
-    success: false,
+    status: false,
+    code: 500,
     message: "Internal server error",
     ...(process.env.NODE_ENV === "development" && { error: error.message }),
   });

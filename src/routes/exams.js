@@ -8,6 +8,14 @@ import {
   getBankQuestions,
 } from "../controllers/exam/examController.js";
 import {
+  createObjectiveQuestion,
+  createTheoryQuestion,
+  updateObjectiveQuestion,
+  updateTheoryQuestion,
+  deleteQuestion,
+  getQuestionById,
+} from "../controllers/exam/questionBankController.js";
+import {
   getStudentExams,
   startExam,
   submitAnswer,
@@ -35,6 +43,20 @@ router.delete("/:examId", authorize, deleteExam); // Delete exam
 
 // Question Bank
 router.get("/bank/questions", authorize, getBankQuestions); // Get bank questions for exam creation
+router.post("/bank/questions/objective", authorize, createObjectiveQuestion); // Create objective question
+router.post("/bank/questions/theory", authorize, createTheoryQuestion); // Create theory question
+router.get("/bank/questions/:questionId", authorize, getQuestionById); // Get question by ID
+router.put(
+  "/bank/questions/objective/:questionId",
+  authorize,
+  updateObjectiveQuestion
+); // Update objective question
+router.put(
+  "/bank/questions/theory/:questionId",
+  authorize,
+  updateTheoryQuestion
+); // Update theory question
+router.delete("/bank/questions/:questionId", authorize, deleteQuestion); // Delete question
 
 // Grading
 router.get("/:examId/attempts", authorize, getExamAttempts); // Get all attempts for an exam
