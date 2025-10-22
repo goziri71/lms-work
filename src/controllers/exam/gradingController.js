@@ -12,6 +12,10 @@ import {
 import { Courses } from "../../models/course/courses.js";
 import { Students } from "../../models/auth/student.js";
 import { Op } from "sequelize";
+import {
+  getPaginationParams,
+  paginatedResponse,
+} from "../../utils/pagination.js";
 
 /**
  * GET ATTEMPTS FOR GRADING (Staff)
@@ -40,27 +44,51 @@ export const getExamAttempts = TryCatchFunction(async (req, res) => {
   }
 
   const { status } = req.query;
+  const { page, limit, offset } = getPaginationParams(req);
   const where = { exam_id: examId };
   if (status) where.status = status;
 
-  const attempts = await ExamAttempt.findAll({
+  const { count, rows: attempts } = await ExamAttempt.findAndCountAll({
     where,
-    include: [
-      {
-        model: Students,
-        as: "student",
-        attributes: ["id", "fname", "lname", "matric_number"],
-      },
-    ],
     order: [["submitted_at", "DESC"]],
+    limit,
+    offset,
   });
 
-  res.status(200).json({
-    status: true,
-    code: 200,
-    message: "Attempts retrieved successfully",
-    data: attempts,
+  // Fetch student data separately (different database)
+  const studentIds = [...new Set(attempts.map((a) => a.student_id))];
+  const students = await Students.findAll({
+    where: { id: studentIds },
+    attributes: ["id", "fname", "lname", "matric_number"],
   });
+
+  // Map students to attempts
+  const studentsMap = {};
+  students.forEach((s) => {
+    studentsMap[s.id] = {
+      id: s.id,
+      fname: s.fname,
+      lname: s.lname,
+      matric_number: s.matric_number,
+    };
+  });
+
+  const attemptsWithStudents = attempts.map((attempt) => ({
+    ...attempt.toJSON(),
+    student: studentsMap[attempt.student_id] || null,
+  }));
+
+  res
+    .status(200)
+    .json(
+      paginatedResponse(
+        attemptsWithStudents,
+        count,
+        page,
+        limit,
+        "Attempts retrieved successfully"
+      )
+    );
 });
 
 /**
@@ -79,11 +107,6 @@ export const getAttemptForGrading = TryCatchFunction(async (req, res) => {
   const attempt = await ExamAttempt.findByPk(attemptId, {
     include: [
       { model: Exam, as: "exam" },
-      {
-        model: Students,
-        as: "student",
-        attributes: ["id", "fname", "lname", "matric_number", "email"],
-      },
       {
         model: ExamAnswerObjective,
         as: "objectiveAnswers",
@@ -121,6 +144,11 @@ export const getAttemptForGrading = TryCatchFunction(async (req, res) => {
     ],
   });
 
+  // Fetch student data separately (different database)
+  const student = await Students.findByPk(attempt.student_id, {
+    attributes: ["id", "fname", "lname", "matric_number", "email"],
+  });
+
   if (!attempt) {
     throw new ErrorClass("Attempt not found", 404);
   }
@@ -137,7 +165,10 @@ export const getAttemptForGrading = TryCatchFunction(async (req, res) => {
     status: true,
     code: 200,
     message: "Attempt retrieved for grading",
-    data: attempt,
+    data: {
+      ...attempt.toJSON(),
+      student: student ? student.toJSON() : null,
+    },
   });
 });
 
@@ -330,12 +361,17 @@ export const bulkGradeTheory = TryCatchFunction(async (req, res) => {
     0
   );
 
+  const totalScore = objectiveScore + theoryScore;
+
   await attempt.update({
-    total_score: objectiveScore + theoryScore,
+    total_score: totalScore,
     status: "graded",
     graded_at: new Date(),
     graded_by: staffId,
   });
+
+  // Reload to get updated values
+  await attempt.reload();
 
   res.status(200).json({
     status: true,
@@ -343,7 +379,10 @@ export const bulkGradeTheory = TryCatchFunction(async (req, res) => {
     message: "Answers graded successfully",
     data: {
       attempt_id: attemptId,
-      total_score: objectiveScore + theoryScore,
+      total_score: totalScore,
+      objective_score: objectiveScore,
+      theory_score: theoryScore,
+      status: attempt.status,
     },
   });
 });

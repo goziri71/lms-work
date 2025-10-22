@@ -81,6 +81,12 @@ export const Exam = dbLibrary.define(
       comment:
         "random = auto-select from bank, manual = pre-selected questions",
     },
+    max_attempts: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 3,
+      comment: "Maximum number of attempts allowed per student (null = unlimited)",
+    },
     created_by: {
       type: DataTypes.INTEGER,
       allowNull: false,

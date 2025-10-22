@@ -16,6 +16,10 @@ import {
   getAttemptQuestions,
 } from "../../services/examAttemptService.js";
 import { Op } from "sequelize";
+import {
+  getPaginationParams,
+  paginatedResponse,
+} from "../../utils/pagination.js";
 
 /**
  * GET AVAILABLE EXAMS (Student)
@@ -30,6 +34,7 @@ export const getStudentExams = TryCatchFunction(async (req, res) => {
   }
 
   const { academic_year, semester } = req.query;
+  const { page, limit, offset } = getPaginationParams(req);
 
   // Get student's enrolled courses
   const where = { student_id: studentId };
@@ -49,24 +54,39 @@ export const getStudentExams = TryCatchFunction(async (req, res) => {
       code: 200,
       message: "No exams available",
       data: [],
+      pagination: {
+        total: 0,
+        page: 1,
+        limit,
+        totalPages: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      },
     });
   }
 
   // Get published exams for enrolled courses
-  const exams = await Exam.findAll({
+  const { count, rows: exams } = await Exam.findAndCountAll({
     where: {
       course_id: { [Op.in]: courseIds },
       visibility: "published",
     },
     order: [["start_at", "DESC"]],
+    limit,
+    offset,
   });
 
-  res.status(200).json({
-    status: true,
-    code: 200,
-    message: "Exams retrieved successfully",
-    data: exams,
-  });
+  res
+    .status(200)
+    .json(
+      paginatedResponse(
+        exams,
+        count,
+        page,
+        limit,
+        "Exams retrieved successfully"
+      )
+    );
 });
 
 /**
@@ -114,7 +134,72 @@ export const startExam = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Exam has ended", 403);
   }
 
-  // Start attempt (handles random selection if needed)
+  // Check attempt limit (default: max 3 attempts per exam)
+  const MAX_ATTEMPTS = exam.max_attempts || 3;
+  const existingAttempts = await ExamAttempt.count({
+    where: {
+      exam_id: examId,
+      student_id: studentId,
+    },
+  });
+
+  if (existingAttempts >= MAX_ATTEMPTS) {
+    throw new ErrorClass(
+      `Maximum attempt limit reached (${MAX_ATTEMPTS} attempts allowed)`,
+      403
+    );
+  }
+
+  // Check for existing in-progress attempt
+  const inProgressAttempt = await ExamAttempt.findOne({
+    where: {
+      exam_id: examId,
+      student_id: studentId,
+      status: "in_progress",
+    },
+  });
+
+  if (inProgressAttempt) {
+    // Return existing attempt instead of creating new one
+    const items = await getAttemptQuestions(inProgressAttempt.id);
+    const questions = items.map((item) => ({
+      exam_item_id: item.id,
+      order: item.order,
+      question_type: item.question?.question_type,
+      question_text:
+        item.question?.objective?.question_text ||
+        item.question?.theory?.question_text,
+      options: item.question?.objective?.options || null,
+      max_marks:
+        item.question?.objective?.marks ||
+        item.question?.theory?.max_marks ||
+        null,
+      image_url:
+        item.question?.objective?.image_url ||
+        item.question?.theory?.image_url ||
+        null,
+      video_url:
+        item.question?.objective?.video_url ||
+        item.question?.theory?.video_url ||
+        null,
+    }));
+
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: "Resuming existing exam attempt",
+      data: {
+        attempt_id: inProgressAttempt.id,
+        exam_id: inProgressAttempt.exam_id,
+        started_at: inProgressAttempt.started_at,
+        duration_minutes: exam.duration_minutes,
+        remaining_attempts: MAX_ATTEMPTS - existingAttempts,
+        questions,
+      },
+    });
+  }
+
+  // Start new attempt (handles random selection if needed)
   const { attempt, isNew } = await startExamAttempt(examId, studentId);
 
   // Get questions for this attempt (student view - no correct answers)

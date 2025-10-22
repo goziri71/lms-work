@@ -9,6 +9,10 @@ import {
 } from "../../models/exams/index.js";
 import { Courses } from "../../models/course/courses.js";
 import { Op } from "sequelize";
+import {
+  getPaginationParams,
+  paginatedResponse,
+} from "../../utils/pagination.js";
 
 /**
  * CREATE EXAM (Staff only)
@@ -124,6 +128,7 @@ export const getStaffExams = TryCatchFunction(async (req, res) => {
   }
 
   const { course_id, academic_year, semester, visibility } = req.query;
+  const { page, limit, offset } = getPaginationParams(req);
 
   // Get courses owned by staff
   const staffCourses = await Courses.findAll({
@@ -138,17 +143,24 @@ export const getStaffExams = TryCatchFunction(async (req, res) => {
   if (semester) where.semester = semester;
   if (visibility) where.visibility = visibility;
 
-  const exams = await Exam.findAll({
+  const { count, rows: exams } = await Exam.findAndCountAll({
     where,
     order: [["created_at", "DESC"]],
+    limit,
+    offset,
   });
 
-  res.status(200).json({
-    status: true,
-    code: 200,
-    message: "Exams retrieved successfully",
-    data: exams,
-  });
+  res
+    .status(200)
+    .json(
+      paginatedResponse(
+        exams,
+        count,
+        page,
+        limit,
+        "Exams retrieved successfully"
+      )
+    );
 });
 
 /**
@@ -328,6 +340,7 @@ export const getBankQuestions = TryCatchFunction(async (req, res) => {
     difficulty,
     status = "approved",
   } = req.query;
+  const { page, limit, offset } = getPaginationParams(req);
 
   if (!course_id) {
     throw new ErrorClass("course_id is required", 400);
@@ -345,19 +358,26 @@ export const getBankQuestions = TryCatchFunction(async (req, res) => {
   if (question_type) where.question_type = question_type;
   if (difficulty) where.difficulty = difficulty;
 
-  const questions = await QuestionBank.findAll({
+  const { count, rows: questions } = await QuestionBank.findAndCountAll({
     where,
     include: [
       { model: QuestionObjective, as: "objective" },
       { model: QuestionTheory, as: "theory" },
     ],
     order: [["created_at", "DESC"]],
+    limit,
+    offset,
   });
 
-  res.status(200).json({
-    status: true,
-    code: 200,
-    message: "Bank questions retrieved successfully",
-    data: questions,
-  });
+  res
+    .status(200)
+    .json(
+      paginatedResponse(
+        questions,
+        count,
+        page,
+        limit,
+        "Bank questions retrieved successfully"
+      )
+    );
 });

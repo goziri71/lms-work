@@ -5,6 +5,11 @@ export const Config = {
   port: process.env.PORT || 3000,
   JWT_SECRET: process.env.JWT_SECRET,
 
+  // Redis Configuration
+  REDIS_HOST: process.env.REDIS_HOST || "localhost",
+  REDIS_PORT: process.env.REDIS_PORT || 6379,
+  REDIS_PASSWORD: process.env.REDIS_PASSWORD,
+
   // Stream Video
   streamApiKey: process.env.STREAM_API_KEY,
   streamSecret: process.env.STREAM_SECRET,
@@ -25,10 +30,11 @@ export const Config = {
       },
     },
     pool: {
-      max: 5,
-      min: 0,
-      acquire: 60000,
+      max: 20, // Increased for better concurrency
+      min: 5, // Keep connections warm
+      acquire: 30000,
       idle: 10000,
+      evict: 1000, // Check for idle connections every second
     },
   },
 
@@ -46,10 +52,11 @@ export const Config = {
       },
     },
     pool: {
-      max: 5,
-      min: 0,
-      acquire: 60000,
+      max: 20, // Increased for better concurrency
+      min: 5, // Keep connections warm
+      acquire: 30000,
       idle: 10000,
+      evict: 1000, // Check for idle connections every second
     },
   },
 };
