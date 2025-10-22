@@ -20,6 +20,7 @@ import {
   getPaginationParams,
   paginatedResponse,
 } from "../../utils/pagination.js";
+import { storeExamStartIP } from "../../middlewares/ipTracker.js";
 
 /**
  * GET AVAILABLE EXAMS (Student)
@@ -202,6 +203,11 @@ export const startExam = TryCatchFunction(async (req, res) => {
   // Start new attempt (handles random selection if needed)
   const { attempt, isNew } = await startExamAttempt(examId, studentId);
 
+  // Store exam start IP for security tracking
+  const startIP =
+    req.ip || req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+  await storeExamStartIP(attempt.id, startIP);
+
   // Get questions for this attempt (student view - no correct answers)
   const items = await getAttemptQuestions(attempt.id);
   const questions = items.map((item) => ({
@@ -229,6 +235,7 @@ export const startExam = TryCatchFunction(async (req, res) => {
       exam_id: exam.id,
       started_at: attempt.started_at,
       duration_minutes: exam.duration_minutes,
+      remaining_attempts: MAX_ATTEMPTS - existingAttempts - 1,
       questions,
     },
   });

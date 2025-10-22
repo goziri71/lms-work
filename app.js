@@ -12,10 +12,13 @@ import studentRoutes from "./src/routes/student.js";
 import videoRoutes from "./src/routes/video.js";
 import chatRoutes from "./src/routes/chat.js";
 import examRoutes from "./src/routes/exams.js";
+import monitoringRoutes from "./src/routes/monitoring.js";
 import { setupAssociations } from "./src/models/associations.js";
 import { setupExamAssociations } from "./src/models/exams/index.js";
 import { setupDiscussionsSocket } from "./src/realtime/discussions.js";
 import { setupDirectChatSocket } from "./src/realtime/directChat.js";
+import { performanceMonitor } from "./src/middlewares/performanceMonitor.js";
+import { trackLoginIP } from "./src/middlewares/ipTracker.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -27,6 +30,12 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Performance monitoring
+app.use(performanceMonitor);
+
+// IP tracking (after auth)
+app.use(trackLoginIP);
+
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/courses", courseRoutes);
@@ -36,6 +45,7 @@ app.use("/api/students", studentRoutes);
 app.use("/api/video", videoRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/exams", examRoutes);
+app.use("/api/monitoring", monitoringRoutes);
 app.use("/api", modulesRoutes);
 
 // Health check endpoint
