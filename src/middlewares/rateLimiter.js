@@ -50,7 +50,7 @@ export const examLimiter = rateLimit({
 
 // Very strict limiter for starting exams - 5 attempts per hour
 export const examStartLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
+  windowMs: 5 * 60 * 1000, // 1 hour
   max: 5,
   message: {
     status: false,
