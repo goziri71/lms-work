@@ -47,7 +47,7 @@ export const getStudentExams = TryCatchFunction(async (req, res) => {
     attributes: ["course_id"],
   });
 
-  const courseIds = enrollments.map((e) => e.course_id);
+  const courseIds = [...new Set(enrollments.map((e) => e.course_id))]; // Remove duplicates
 
   if (courseIds.length === 0) {
     return res.status(200).json({
@@ -66,12 +66,18 @@ export const getStudentExams = TryCatchFunction(async (req, res) => {
     });
   }
 
-  // Get published exams for enrolled courses
+  // Get published exams for enrolled courses (filter by academic year/semester)
+  const examWhere = {
+    course_id: { [Op.in]: courseIds },
+    visibility: "published",
+  };
+
+  // Add academic year/semester filter if provided
+  if (academic_year) examWhere.academic_year = academic_year;
+  if (semester) examWhere.semester = semester;
+
   const { count, rows: exams } = await Exam.findAndCountAll({
-    where: {
-      course_id: { [Op.in]: courseIds },
-      visibility: "published",
-    },
+    where: examWhere,
     order: [["start_at", "DESC"]],
     limit,
     offset,
