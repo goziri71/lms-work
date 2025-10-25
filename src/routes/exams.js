@@ -21,6 +21,7 @@ import {
   submitAnswer,
   submitExam,
   getAttemptDetails,
+  getStudentAttemptHistory,
 } from "../controllers/exam/studentExamController.js";
 import {
   getExamAttempts,
@@ -49,9 +50,24 @@ router.put("/:examId", authorize, examLimiter, updateExam); // Update exam
 router.delete("/:examId", authorize, examLimiter, deleteExam); // Delete exam
 
 // Question Bank
-router.get("/bank/questions", authorize, cacheMiddleware(600), getBankQuestions); // Get bank questions for exam creation (cache 10 min)
-router.post("/bank/questions/objective", authorize, questionCreationLimiter, createObjectiveQuestion); // Create objective question
-router.post("/bank/questions/theory", authorize, questionCreationLimiter, createTheoryQuestion); // Create theory question
+router.get(
+  "/bank/questions",
+  authorize,
+  cacheMiddleware(600),
+  getBankQuestions
+); // Get bank questions for exam creation (cache 10 min)
+router.post(
+  "/bank/questions/objective",
+  authorize,
+  questionCreationLimiter,
+  createObjectiveQuestion
+); // Create objective question
+router.post(
+  "/bank/questions/theory",
+  authorize,
+  questionCreationLimiter,
+  createTheoryQuestion
+); // Create theory question
 router.get("/bank/questions/:questionId", authorize, getQuestionById); // Get question by ID
 router.put(
   "/bank/questions/objective/:questionId",
@@ -65,25 +81,61 @@ router.put(
   examLimiter,
   updateTheoryQuestion
 ); // Update theory question
-router.delete("/bank/questions/:questionId", authorize, examLimiter, deleteQuestion); // Delete question
-
-// Grading
-router.get("/:examId/attempts", authorize, getExamAttempts); // Get all attempts for an exam
-router.get("/attempts/:attemptId/grade", authorize, getAttemptForGrading); // Get attempt for grading
-router.post("/answers/theory/:answerId/grade", authorize, examLimiter, gradeTheoryAnswer); // Grade single theory answer
-router.post("/attempts/:attemptId/grade-bulk", authorize, examLimiter, bulkGradeTheory); // Bulk grade theory answers
-router.get("/:examId/statistics", authorize, getExamStatistics); // Get exam statistics
+router.delete(
+  "/bank/questions/:questionId",
+  authorize,
+  examLimiter,
+  deleteQuestion
+); // Delete question
 
 // ==================== STUDENT ROUTES ====================
 router.get("/student/exams", authorize, cacheMiddleware(180), getStudentExams); // Get available exams (cache 3 min)
-router.post("/student/exams/:examId/start", authorize, examStartLimiter, startExam); // Start exam attempt
+router.get(
+  "/student/attempts",
+  authorize,
+  cacheMiddleware(300),
+  getStudentAttemptHistory
+); // Get attempt history (cache 5 min)
+router.post(
+  "/student/exams/:examId/start",
+  authorize,
+  examStartLimiter,
+  startExam
+); // Start exam attempt
 router.post(
   "/student/exams/attempts/:attemptId/answer",
   authorize,
   answerLimiter,
   submitAnswer
 ); // Submit answer
-router.post("/student/exams/attempts/:attemptId/submit", authorize, examLimiter, submitExam); // Submit exam
-router.get("/student/exams/attempts/:attemptId", authorize, cacheMiddleware(120), getAttemptDetails); // Get attempt details (cache 2 min)
+router.post(
+  "/student/exams/attempts/:attemptId/submit",
+  authorize,
+  examLimiter,
+  submitExam
+); // Submit exam
+router.get(
+  "/student/exams/attempts/:attemptId",
+  authorize,
+  cacheMiddleware(120),
+  getAttemptDetails
+); // Get attempt details (cache 2 min)
+
+// Grading
+router.get("/:examId/attempts", authorize, getExamAttempts); // Get all attempts for an exam
+router.get("/attempts/:attemptId/grade", authorize, getAttemptForGrading); // Get attempt for grading
+router.post(
+  "/answers/theory/:answerId/grade",
+  authorize,
+  examLimiter,
+  gradeTheoryAnswer
+); // Grade single theory answer
+router.post(
+  "/attempts/:attemptId/grade-bulk",
+  authorize,
+  examLimiter,
+  bulkGradeTheory
+); // Bulk grade theory answers
+router.get("/:examId/statistics", authorize, getExamStatistics); // Get exam statistics
 
 export default router;

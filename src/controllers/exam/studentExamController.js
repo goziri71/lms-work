@@ -477,3 +477,75 @@ export const getAttemptDetails = TryCatchFunction(async (req, res) => {
     data: attempt,
   });
 });
+
+/**
+ * GET STUDENT'S ATTEMPT HISTORY (Student - all attempts)
+ * GET /api/exams/student/attempts
+ */
+export const getStudentAttemptHistory = TryCatchFunction(async (req, res) => {
+  const studentId = Number(req.user?.id);
+  const userType = req.user?.userType;
+
+  if (userType !== "student") {
+    throw new ErrorClass("Only students can access this endpoint", 403);
+  }
+
+  const { exam_id, status } = req.query;
+  const { page, limit, offset } = getPaginationParams(req);
+
+  const where = { student_id: studentId };
+  if (exam_id) where.exam_id = Number(exam_id);
+  if (status) where.status = status;
+
+  const { count, rows: attempts } = await ExamAttempt.findAndCountAll({
+    where,
+    include: [
+      {
+        model: Exam,
+        as: "exam",
+        attributes: [
+          "id",
+          "title",
+          "course_id",
+          "duration_minutes",
+          "exam_type",
+        ],
+      },
+    ],
+    order: [["started_at", "DESC"]],
+    limit,
+    offset,
+  });
+
+  // Format response with exam details
+  const formattedAttempts = attempts.map((attempt) => ({
+    id: attempt.id,
+    exam_id: attempt.exam_id,
+    attempt_no: attempt.attempt_no,
+    status: attempt.status,
+    started_at: attempt.started_at,
+    submitted_at: attempt.submitted_at,
+    total_score: attempt.total_score,
+    max_score: attempt.max_score,
+    graded_at: attempt.graded_at,
+    exam: {
+      id: attempt.exam.id,
+      title: attempt.exam.title,
+      course_id: attempt.exam.course_id,
+      duration_minutes: attempt.exam.duration_minutes,
+      exam_type: attempt.exam.exam_type,
+    },
+  }));
+
+  res
+    .status(200)
+    .json(
+      paginatedResponse(
+        formattedAttempts,
+        count,
+        page,
+        limit,
+        "Attempt history retrieved successfully"
+      )
+    );
+});
