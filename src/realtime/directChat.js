@@ -144,6 +144,10 @@ export function setupDirectChatSocket(io) {
             });
           }
 
+          // Invalidate chat list cache for BOTH users (sender and receiver)
+          await invalidateChatListCache(userId);
+          await invalidateChatListCache(peerUserId);
+
           // Notify sender that messages were read
           const room = dmRoom(userType, userId, peerUserType, peerUserId);
           io.to(room).emit("dm:read", {
@@ -260,6 +264,10 @@ export function setupDirectChatSocket(io) {
         if (!msg.readAt) {
           msg.readAt = new Date();
           await msg.save();
+
+          // Invalidate chat list cache for BOTH users
+          await invalidateChatListCache(userId);
+          await invalidateChatListCache(msg.senderId);
         }
         const room = dmRoom(
           msg.senderType,
