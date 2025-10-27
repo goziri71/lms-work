@@ -10,6 +10,9 @@ import {
 
 const authService = new AuthService();
 
+// Track online users (userId -> socketId)
+const onlineUsers = new Map();
+
 function composite(userType, userId) {
   return `${String(userType)}:${Number(userId)}`;
 }
@@ -47,13 +50,49 @@ export function setupDirectChatSocket(io) {
   });
 
   io.on("connection", (socket) => {
-    // Basic presence: let peers know this user is online
-    try {
-      const onlineUserId = Number(socket.user?.id);
-      if (Number.isInteger(onlineUserId) && onlineUserId > 0) {
-        io.emit("dm:online", { userId: onlineUserId, isOnline: true });
+    // Track user as online
+    const userId = Number(socket.user?.id);
+    const userType = socket.user?.userType;
+
+    if (Number.isInteger(userId) && userId > 0) {
+      onlineUsers.set(userId, socket.id);
+
+      // Notify all clients that this user is now online
+      io.emit("dm:online", {
+        userId,
+        userType,
+        isOnline: true,
+      });
+    }
+
+    // Handle disconnect
+    socket.on("disconnect", () => {
+      if (Number.isInteger(userId) && userId > 0) {
+        onlineUsers.delete(userId);
+
+        // Notify all clients that this user is now offline
+        io.emit("dm:online", {
+          userId,
+          userType,
+          isOnline: false,
+        });
       }
-    } catch {}
+    });
+
+    // Allow clients to check if a user is online
+    socket.on("dm:checkOnline", ({ userIds }, cb) => {
+      if (!Array.isArray(userIds)) {
+        cb?.({ ok: false, error: "userIds must be an array" });
+        return;
+      }
+
+      const onlineStatus = userIds.map((uid) => ({
+        userId: uid,
+        isOnline: onlineUsers.has(Number(uid)),
+      }));
+
+      cb?.({ ok: true, status: onlineStatus });
+    });
 
     socket.on("dm:join", async ({ peerUserId, peerUserType }, cb) => {
       try {
@@ -167,7 +206,7 @@ export function setupDirectChatSocket(io) {
         const msg = await DirectMessage.findById(messageId);
         if (!msg) throw new Error("Message not found");
         // Only receiver can mark delivered
-        if (msg.receiverId !== userId) throw new Error("Forbidden");
+        if (Number(msg.receiverId) !== userId) throw new Error("Forbidden");
         if (!msg.deliveredAt) {
           msg.deliveredAt = new Date();
           await msg.save();
@@ -197,7 +236,7 @@ export function setupDirectChatSocket(io) {
         const msg = await DirectMessage.findById(messageId);
         if (!msg) throw new Error("Message not found");
         // Only receiver can mark read
-        if (msg.receiverId !== userId) throw new Error("Forbidden");
+        if (Number(msg.receiverId) !== userId) throw new Error("Forbidden");
         if (!msg.readAt) {
           msg.readAt = new Date();
           await msg.save();
