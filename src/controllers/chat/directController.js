@@ -4,6 +4,15 @@ import { DirectMessage } from "../../models/chat/directMessage.js";
 import { Staff } from "../../models/auth/staff.js";
 import { Students } from "../../models/auth/student.js";
 import { Op } from "sequelize";
+import {
+  cacheChatList,
+  getCachedChatList,
+  cacheMessages,
+  getCachedMessages,
+  getChatKey,
+  invalidateChatList,
+  invalidateChatCache,
+} from "../../utils/chatCache.js";
 
 // GET /api/chat/dm/threads?page=&limit=&search=
 // Returns recent 1:1 threads for the authenticated user (student or staff)
@@ -17,6 +26,19 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
   const skip = (page - 1) * limit;
   const search = (req.query.search || "").trim();
+
+  // Try to get from cache first (only for first page, no search)
+  if (page === 1 && !search) {
+    const cachedList = await getCachedChatList(userId);
+    if (cachedList) {
+      return res.status(200).json({
+        status: true,
+        code: 200,
+        message: "Recent threads fetched successfully (cached)",
+        data: cachedList,
+      });
+    }
+  }
 
   // Aggregate threads grouped by typed peer (type + id)
   const pipeline = [
@@ -129,20 +151,27 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
     };
   });
 
+  const response = {
+    threads,
+    pagination: {
+      current_page: page,
+      per_page: limit,
+      returned: threads.length,
+    },
+    filters: {
+      search: search || null,
+    },
+  };
+
+  // Cache the result for first page only
+  if (page === 1 && !search) {
+    await cacheChatList(userId, response);
+  }
+
   res.status(200).json({
     status: true,
     code: 200,
     message: "Recent threads fetched successfully",
-    data: {
-      threads,
-      pagination: {
-        current_page: page,
-        per_page: limit,
-        returned: threads.length,
-      },
-      filters: {
-        search: search || null,
-      },
-    },
+    data: response,
   });
 });

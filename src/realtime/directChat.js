@@ -1,6 +1,12 @@
 import { AuthService } from "../service/authservice.js";
 import { Config } from "../config/config.js";
 import { DirectMessage } from "../models/chat/directMessage.js";
+import {
+  getCachedMessages,
+  cacheMessages,
+  getChatKey,
+  invalidateChatCache,
+} from "../utils/chatCache.js";
 
 const authService = new AuthService();
 
@@ -55,12 +61,23 @@ export function setupDirectChatSocket(io) {
         const userType = socket.user?.userType;
         if (!Number.isInteger(userId) || userId <= 0)
           throw new Error("Unauthorized");
+
+        // Leave all previous DM rooms first to avoid message leakage
+        const allRooms = Array.from(socket.rooms);
+        allRooms.forEach((room) => {
+          if (room.startsWith("dm:")) {
+            socket.leave(room);
+          }
+        });
+
         const room = dmRoom(userType, userId, peerUserType, peerUserId);
         socket.join(room);
 
         const roomKey = dmRoomKey(userType, userId, peerUserType, peerUserId);
+
+        // Always fetch from database for now (cache disabled for safety)
         const mongoMessages = await DirectMessage.find({ roomKey })
-          .sort({ created_at: 1 })
+          .sort({ created_at: -1 })
           .limit(100)
           .lean();
 
