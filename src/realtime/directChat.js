@@ -132,6 +132,26 @@ export function setupDirectChatSocket(io) {
           read_at: m.readAt || null,
         }));
 
+        // Auto-mark all unread messages as read when joining chat
+        const unreadMessages = messages.filter(
+          (m) => m.receiver_id === userId && !m.read_at
+        );
+
+        if (unreadMessages.length > 0) {
+          for (const msg of unreadMessages) {
+            await DirectMessage.findByIdAndUpdate(msg.id, {
+              readAt: new Date(),
+            });
+          }
+
+          // Notify sender that messages were read
+          const room = dmRoom(userType, userId, peerUserType, peerUserId);
+          io.to(room).emit("dm:read", {
+            messageId: unreadMessages[0].id,
+            read_at: new Date(),
+          });
+        }
+
         cb?.({ ok: true, messages });
       } catch (err) {
         cb?.({ ok: false, error: err.message });
