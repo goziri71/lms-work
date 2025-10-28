@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: lms-web
+    env: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: node app.js
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: lms-redis
+          property: connectionString
+
+  - type: redis
+    name: lms-redis
+    plan: free
