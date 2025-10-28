@@ -10,6 +10,9 @@ import {
   getUserIPHistory,
   getActiveSessions,
 } from "../middlewares/ipTracker.js";
+import { redisClient, isRedisAvailable } from "../config/redis.js";
+import { db, dbLibrary } from "../database/database.js";
+import mongoose from "mongoose";
 
 const router = express.Router();
 
@@ -127,24 +130,111 @@ router.get(
 );
 
 /**
- * GET SYSTEM HEALTH
+ * GET SYSTEM HEALTH (Checks all databases and Redis)
  * GET /api/monitoring/health
  */
-router.get("/health", (req, res) => {
-  res.status(200).json({
-    status: true,
-    code: 200,
-    message: "System is healthy",
-    data: {
-      uptime: process.uptime(),
-      memory: {
-        used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-        total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
-        unit: "MB",
+router.get(
+  "/health",
+  TryCatchFunction(async (req, res) => {
+    const health = {
+      status: true,
+      code: 200,
+      message: "System health check",
+      data: {
+        timestamp: new Date().toISOString(),
+        uptime: Math.round(process.uptime()),
+        memory: {
+          used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+          total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+          unit: "MB",
+        },
+        services: {
+          redis: {
+            available: isRedisAvailable,
+            status: "disconnected",
+            latency: null,
+          },
+          postgresLms: {
+            status: "disconnected",
+            latency: null,
+          },
+          postgresLibrary: {
+            status: "disconnected",
+            latency: null,
+          },
+          mongodb: {
+            status: "disconnected",
+            latency: null,
+          },
+        },
       },
-      timestamp: new Date().toISOString(),
-    },
-  });
-});
+    };
+
+    // Check Redis
+    if (isRedisAvailable && redisClient) {
+      try {
+        const startTime = Date.now();
+        await redisClient.ping();
+        health.data.services.redis.latency = Date.now() - startTime;
+        health.data.services.redis.status = "connected";
+      } catch (error) {
+        health.data.services.redis.status = "error";
+      }
+    } else {
+      health.data.services.redis.status = "not available";
+    }
+
+    // Check PostgreSQL (LMS)
+    try {
+      const startTime = Date.now();
+      await db.authenticate();
+      health.data.services.postgresLms.latency = Date.now() - startTime;
+      health.data.services.postgresLms.status = "connected";
+    } catch (error) {
+      health.data.services.postgresLms.status = "disconnected";
+    }
+
+    // Check PostgreSQL (Library)
+    try {
+      const startTime = Date.now();
+      await dbLibrary.authenticate();
+      health.data.services.postgresLibrary.latency = Date.now() - startTime;
+      health.data.services.postgresLibrary.status = "connected";
+    } catch (error) {
+      health.data.services.postgresLibrary.status = "disconnected";
+    }
+
+    // Check MongoDB
+    try {
+      const startTime = Date.now();
+      if (mongoose.connection.readyState === 1) {
+        await mongoose.connection.db.admin().ping();
+        health.data.services.mongodb.latency = Date.now() - startTime;
+        health.data.services.mongodb.status = "connected";
+      } else {
+        health.data.services.mongodb.status = "disconnected";
+      }
+    } catch (error) {
+      health.data.services.mongodb.status = "disconnected";
+    }
+
+    // Determine overall health
+    const allServicesHealthy =
+      health.data.services.redis.status === "connected" &&
+      health.data.services.postgresLms.status === "connected" &&
+      health.data.services.postgresLibrary.status === "connected" &&
+      health.data.services.mongodb.status === "connected";
+
+    if (!allServicesHealthy) {
+      health.status = false;
+      health.code = 503;
+      health.message = "Some services are unhealthy";
+    } else {
+      health.message = "All services are healthy";
+    }
+
+    res.status(allServicesHealthy ? 200 : 503).json(health);
+  })
+);
 
 export default router;
