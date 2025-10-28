@@ -8,7 +8,7 @@ services:
     envVars:
       - key: REDIS_URL
         fromService:
-          type: free
+          type: redis
           name: lms-redis
           property: connectionString
 
