@@ -44,8 +44,8 @@ const router = express.Router();
 // ==================== STAFF ROUTES ====================
 // Exam Management
 router.post("/", authorize, examLimiter, createExam); // Create exam
-router.get("/", authorize, cacheMiddleware(300), getStaffExams); // Get staff's exams (cache 5 min)
-router.get("/:examId", authorize, cacheMiddleware(600), getExamById); // Get exam details (cache 10 min)
+router.get("/", authorize, cacheMiddleware(60), getStaffExams); // Get staff's exams (cache 1 min)
+router.get("/:examId", authorize, cacheMiddleware(120), getExamById); // Get exam details (cache 2 min)
 router.put("/:examId", authorize, examLimiter, updateExam); // Update exam
 router.delete("/:examId", authorize, examLimiter, deleteExam); // Delete exam
 
@@ -53,9 +53,9 @@ router.delete("/:examId", authorize, examLimiter, deleteExam); // Delete exam
 router.get(
   "/bank/questions",
   authorize,
-  cacheMiddleware(600),
+  cacheMiddleware(120),
   getBankQuestions
-); // Get bank questions for exam creation (cache 10 min)
+); // Get bank questions for exam creation (cache 2 min)
 router.post(
   "/bank/questions/objective",
   authorize,
@@ -89,13 +89,8 @@ router.delete(
 ); // Delete question
 
 // ==================== STUDENT ROUTES ====================
-router.get("/student/exams", authorize, cacheMiddleware(180), getStudentExams); // Get available exams (cache 3 min)
-router.get(
-  "/student/attempts",
-  authorize,
-  cacheMiddleware(300),
-  getStudentAttemptHistory
-); // Get attempt history (cache 5 min)
+router.get("/student/exams", authorize, cacheMiddleware(60), getStudentExams); // Get available exams (cache 1 min)
+router.get("/student/attempts", authorize, getStudentAttemptHistory); // Get attempt history (no cache - changes frequently)
 router.post(
   "/student/exams/:examId/start",
   authorize,
@@ -114,12 +109,7 @@ router.post(
   examLimiter,
   submitExam
 ); // Submit exam
-router.get(
-  "/student/exams/attempts/:attemptId",
-  authorize,
-  cacheMiddleware(120),
-  getAttemptDetails
-); // Get attempt details (cache 2 min)
+router.get("/student/exams/attempts/:attemptId", authorize, getAttemptDetails); // Get attempt details (no cache - changes during exam)
 
 // Grading
 router.get("/:examId/attempts", authorize, getExamAttempts); // Get all attempts for an exam

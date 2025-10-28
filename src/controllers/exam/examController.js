@@ -19,10 +19,8 @@ import {
  * POST /api/exams
  */
 export const createExam = TryCatchFunction(async (req, res) => {
-  console.log("📝 Create exam endpoint called");
   const staffId = Number(req.user?.id);
   const userType = req.user?.userType;
-  console.log("👤 User:", { staffId, userType });
 
   if (userType !== "staff") {
     throw new ErrorClass("Only staff can create exams", 403);

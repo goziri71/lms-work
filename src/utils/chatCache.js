@@ -15,9 +15,6 @@ export const cacheMessages = async (chatKey, messages) => {
     // Cache last 100 messages
     const messagesToCache = messages.slice(0, 100);
     await cacheHelper.set(key, messagesToCache, CACHE_TTL);
-    console.log(
-      `✅ Cached ${messagesToCache.length} messages for chat: ${chatKey}`
-    );
   } catch (error) {
     console.error("Chat cache error:", error.message);
   }
@@ -32,11 +29,8 @@ export const getCachedMessages = async (chatKey) => {
     const cached = await cacheHelper.get(key);
 
     if (cached) {
-      console.log(`✅ Cache HIT for chat: ${chatKey}`);
       return cached;
     }
-
-    console.log(`❌ Cache MISS for chat: ${chatKey}`);
     return null;
   } catch (error) {
     console.error("Get cached messages error:", error.message);
@@ -74,8 +68,7 @@ export const getCachedUnreadCount = async (userId, peerId, peerType) => {
 export const cacheChatList = async (userId, chatList) => {
   try {
     const key = `chat:list:${userId}`;
-    await cacheHelper.set(key, chatList, 10 * 60); // 10 minutes for chat list
-    console.log(`✅ Cached chat list for user: ${userId}`);
+    await cacheHelper.set(key, chatList, 10 * 60);
   } catch (error) {
     console.error("Cache chat list error:", error.message);
   }
@@ -90,11 +83,8 @@ export const getCachedChatList = async (userId) => {
     const cached = await cacheHelper.get(key);
 
     if (cached) {
-      console.log(`✅ Cache HIT for chat list: ${userId}`);
       return cached;
     }
-
-    console.log(`❌ Cache MISS for chat list: ${userId}`);
     return null;
   } catch (error) {
     return null;
@@ -108,7 +98,6 @@ export const invalidateChatCache = async (chatKey) => {
   try {
     const key = `chat:messages:${chatKey}`;
     await cacheHelper.del(key);
-    console.log(`🗑️ Invalidated cache for chat: ${chatKey}`);
   } catch (error) {
     console.error("Invalidate chat cache error:", error.message);
   }
@@ -121,7 +110,6 @@ export const invalidateChatList = async (userId) => {
   try {
     const key = `chat:list:${userId}`;
     await cacheHelper.del(key);
-    console.log(`🗑️ Invalidated chat list for user: ${userId}`);
   } catch (error) {
     console.error("Invalidate chat list error:", error.message);
   }

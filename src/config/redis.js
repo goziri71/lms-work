@@ -57,8 +57,7 @@ try {
     isRedisAvailable = true;
   });
 
-  redisClient.on("error", (err) => {
-    console.log("⚠️ Redis not available:", err.message);
+  redisClient.on("error", () => {
     isRedisAvailable = false;
   });
 

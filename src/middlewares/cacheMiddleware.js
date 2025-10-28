@@ -37,22 +37,24 @@ export const cacheMiddleware = (ttl = 300, keyGenerator = null) => {
       const cachedData = await cacheHelper.get(cacheKey);
 
       if (cachedData) {
-        console.log(`✅ Cache HIT: ${cacheKey}`);
         return res.status(200).json(cachedData);
       }
-
-      console.log(`❌ Cache MISS: ${cacheKey}`);
 
       // Store original res.json
       const originalJson = res.json.bind(res);
 
       // Override res.json to cache the response
       res.json = function (data) {
-        // Only cache successful responses
+        // Only cache successful AND small responses (< 10 KB)
         if (data.status === true || data.success === true) {
-          cacheHelper.set(cacheKey, data, ttl).catch((err) => {
-            console.error("Cache set error:", err.message);
-          });
+          const dataSize = JSON.stringify(data).length;
+
+          // Skip caching if response is larger than 10 KB
+          if (dataSize < 10240) {
+            cacheHelper.set(cacheKey, data, ttl).catch((err) => {
+              console.error("Cache set error:", err.message);
+            });
+          }
         }
 
         return originalJson(data);
@@ -73,7 +75,6 @@ export const cacheMiddleware = (ttl = 300, keyGenerator = null) => {
 export const invalidateCache = async (pattern) => {
   try {
     await cacheHelper.delPattern(pattern);
-    console.log(`🗑️ Cache invalidated: ${pattern}`);
   } catch (error) {
     console.error("Cache invalidation error:", error.message);
   }
@@ -104,4 +105,3 @@ export const cacheKeys = {
   // Exam statistics
   examStats: (examId) => `exam:${examId}:stats`,
 };
-
