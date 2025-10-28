@@ -7,7 +7,7 @@ export const Config = {
 
   // Redis Configuration
   REDIS_HOST: process.env.REDIS_HOST || "localhost",
-  REDIS_PORT: process.env.REDIS_PORT || 6379,
+  REDIS_PORT: process.env.REDIS_PORT || 6380,
   REDIS_PASSWORD: process.env.REDIS_PASSWORD,
 
   // Stream Video
