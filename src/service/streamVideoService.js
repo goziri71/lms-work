@@ -9,9 +9,10 @@ class StreamVideoService {
   getClient() {
     if (!this.client) {
       if (!Config.streamApiKey || !Config.streamSecret) {
-        throw new Error(
-          "STREAM_API_KEY and STREAM_SECRET must be set in environment"
+        console.warn(
+          "⚠️ Video calls disabled: STREAM_API_KEY and STREAM_SECRET not configured"
         );
+        return null;
       }
       this.client = new StreamClient(Config.streamApiKey, Config.streamSecret);
     }

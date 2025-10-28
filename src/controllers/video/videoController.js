@@ -16,6 +16,14 @@ export async function createCall(req, res) {
     const userId = req.user?.id;
     const userType = req.user?.userType;
 
+    if (!Config.streamApiKey || !Config.streamSecret) {
+      return res.status(503).json({
+        success: false,
+        message:
+          "Video calls are currently disabled. Please contact administrator.",
+      });
+    }
+
     if (userType !== "staff") {
       return res.status(403).json({
         success: false,
@@ -174,6 +182,14 @@ export async function generateToken(req, res) {
     const { id } = req.params;
     const userId = req.user?.id;
     const userType = req.user?.userType;
+
+    if (!Config.streamApiKey || !Config.streamSecret) {
+      return res.status(503).json({
+        success: false,
+        message:
+          "Video calls are currently disabled. Please contact administrator.",
+      });
+    }
 
     const call = await VideoCall.findByPk(id);
 
