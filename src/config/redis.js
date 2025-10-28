@@ -8,7 +8,7 @@ try {
   // Try to create Redis client
   // Support both REDIS_URL (Render) and individual config
   const redisUrl = process.env.REDIS_URL;
-  
+
   if (redisUrl) {
     // Parse connection string for Render Redis
     redisClient = new Redis(redisUrl, {
