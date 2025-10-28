@@ -11,7 +11,7 @@ try {
 
   if (redisUrl) {
     // Parse connection string for Render Redis
-    redisClient = new Redis(redisUrl, {
+    const options = {
       retryStrategy: (times) => {
         if (times > 3) {
           console.log("⚠️ Redis unavailable - running without cache");
@@ -22,7 +22,16 @@ try {
       },
       maxRetriesPerRequest: 1,
       enableOfflineQueue: false,
-    });
+    };
+
+    // Add TLS support for rediss:// URLs
+    if (redisUrl.startsWith("rediss://")) {
+      options.tls = {
+        rejectUnauthorized: false, // Accept self-signed certificates
+      };
+    }
+
+    redisClient = new Redis(redisUrl, options);
   } else {
     // Use individual config
     redisClient = new Redis({
