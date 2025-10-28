@@ -6,23 +6,42 @@ let isRedisAvailable = false;
 
 try {
   // Try to create Redis client
-  redisClient = new Redis({
-    host: Config.REDIS_HOST || "localhost",
-    port: Config.REDIS_PORT || 6379,
-    password: Config.REDIS_PASSWORD || undefined,
-    retryStrategy: (times) => {
-      // Stop retrying after 3 attempts
-      if (times > 3) {
-        console.log("⚠️ Redis unavailable - running without cache");
-        return null;
-      }
-      const delay = Math.min(times * 50, 500);
-      return delay;
-    },
-    maxRetriesPerRequest: 1,
-    enableOfflineQueue: false,
-    lazyConnect: true, // Don't connect immediately
-  });
+  // Support both REDIS_URL (Render) and individual config
+  const redisUrl = process.env.REDIS_URL;
+  
+  if (redisUrl) {
+    // Parse connection string for Render Redis
+    redisClient = new Redis(redisUrl, {
+      retryStrategy: (times) => {
+        if (times > 3) {
+          console.log("⚠️ Redis unavailable - running without cache");
+          return null;
+        }
+        const delay = Math.min(times * 50, 500);
+        return delay;
+      },
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+    });
+  } else {
+    // Use individual config
+    redisClient = new Redis({
+      host: Config.REDIS_HOST || "localhost",
+      port: Config.REDIS_PORT || 6379,
+      password: Config.REDIS_PASSWORD || undefined,
+      retryStrategy: (times) => {
+        if (times > 3) {
+          console.log("⚠️ Redis unavailable - running without cache");
+          return null;
+        }
+        const delay = Math.min(times * 50, 500);
+        return delay;
+      },
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+      lazyConnect: true,
+    });
+  }
 
   redisClient.on("connect", () => {
     console.log("✅ Redis connected successfully");
