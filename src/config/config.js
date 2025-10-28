@@ -31,7 +31,7 @@ export const Config = {
     },
     pool: {
       max: 20, // Increased for better concurrency
-      min: 5, // Keep connections warm
+      min: 5,
       acquire: 30000,
       idle: 10000,
       evict: 1000, // Check for idle connections every second
