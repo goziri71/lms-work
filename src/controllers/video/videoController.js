@@ -384,3 +384,51 @@ export async function endCall(req, res) {
     });
   }
 }
+
+/**
+ * Delete a call (permanently remove)
+ * DELETE /api/video/calls/:id
+ * Auth: Host only (creator of the call)
+ */
+export async function deleteCall(req, res) {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+
+    const call = await VideoCall.findByPk(id);
+
+    if (!call) {
+      return res.status(404).json({
+        success: false,
+        message: "Call not found",
+      });
+    }
+
+    if (call.created_by !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: "Only the host can delete the call",
+      });
+    }
+
+    // Delete participants first (foreign key constraint)
+    await VideoCallParticipant.destroy({
+      where: { call_id: call.id },
+    });
+
+    // Delete the call record
+    await call.destroy();
+
+    res.json({
+      success: true,
+      message: "Call deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete call error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete call",
+      error: error.message,
+    });
+  }
+}

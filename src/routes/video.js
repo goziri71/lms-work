@@ -5,6 +5,7 @@ import {
   generateToken,
   listCalls,
   endCall,
+  deleteCall,
 } from "../controllers/video/videoController.js";
 import { authorize } from "../middlewares/authorize.js";
 
@@ -27,5 +28,8 @@ router.post("/calls/:id/token", generateToken);
 
 // End a call (host only)
 router.post("/calls/:id/end", endCall);
+
+// Delete a call (host only)
+router.delete("/calls/:id", deleteCall);
 
 export default router;
