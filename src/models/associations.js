@@ -11,7 +11,12 @@ import { QuizQuestions } from "./modules/quiz_questions.js";
 import { QuizOptions } from "./modules/quiz_options.js";
 import { QuizAttempts } from "./modules/quiz_attempts.js";
 import { QuizAnswers } from "./modules/quiz_answers.js";
-// Import other models like Faculty, Program when you have them
+import { EmailLog } from "./email/emailLog.js";
+import { EmailPreference } from "./email/emailPreference.js";
+import { Program } from "./program/program.js";
+import { WspAdmin } from "./admin/wspAdmin.js";
+import { AdminActivityLog } from "./admin/adminActivityLog.js";
+// Import other models like Faculty when you have them
 
 export const setupAssociations = () => {
   // Staff teaches Courses
@@ -115,5 +120,74 @@ export const setupAssociations = () => {
   QuizAnswers.belongsTo(QuizAttempts, {
     foreignKey: "attempt_id",
     as: "attempt",
+  });
+
+  // Email associations
+  // Students -> EmailLogs (One-to-Many)
+  Students.hasMany(EmailLog, {
+    foreignKey: "user_id",
+    constraints: false,
+    scope: {
+      user_type: "student",
+    },
+    as: "emailLogs",
+  });
+
+  // Staff -> EmailLogs (One-to-Many)
+  Staff.hasMany(EmailLog, {
+    foreignKey: "user_id",
+    constraints: false,
+    scope: {
+      user_type: "staff",
+    },
+    as: "emailLogs",
+  });
+
+  // Students -> EmailPreference (One-to-One)
+  Students.hasOne(EmailPreference, {
+    foreignKey: "user_id",
+    constraints: false,
+    scope: {
+      user_type: "student",
+    },
+    as: "emailPreference",
+  });
+
+  // Staff -> EmailPreference (One-to-One)
+  Staff.hasOne(EmailPreference, {
+    foreignKey: "user_id",
+    constraints: false,
+    scope: {
+      user_type: "staff",
+    },
+    as: "emailPreference",
+  });
+
+  // Program associations
+  // Program -> Students (One-to-Many)
+  Program.hasMany(Students, {
+    foreignKey: "program_id",
+    as: "students",
+  });
+
+  // Students -> Program (Many-to-One)
+  Students.belongsTo(Program, {
+    foreignKey: "program_id",
+    as: "program",
+  });
+
+  // Note: Program -> Faculty association will be added when Faculty model is available
+  // Program.belongsTo(Faculty, { foreignKey: "faculty_id", as: "faculty" });
+
+  // Admin associations
+  // WspAdmin -> AdminActivityLog (One-to-Many)
+  WspAdmin.hasMany(AdminActivityLog, {
+    foreignKey: "admin_id",
+    as: "activityLogs",
+  });
+
+  AdminActivityLog.belongsTo(WspAdmin, {
+    foreignKey: "admin_id",
+    as: "admin",
   });
 };

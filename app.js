@@ -13,6 +13,7 @@ import videoRoutes from "./src/routes/video.js";
 import chatRoutes from "./src/routes/chat.js";
 import examRoutes from "./src/routes/exams.js";
 import monitoringRoutes from "./src/routes/monitoring.js";
+import adminRoutes from "./src/routes/admin.js";
 import { setupAssociations } from "./src/models/associations.js";
 import { setupExamAssociations } from "./src/models/exams/index.js";
 import { setupDiscussionsSocket } from "./src/realtime/discussions.js";
@@ -46,6 +47,7 @@ app.use("/api/video", videoRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/exams", examRoutes);
 app.use("/api/monitoring", monitoringRoutes);
+app.use("/api/admin", adminRoutes);
 app.use("/api", modulesRoutes);
 
 // Health check endpoint

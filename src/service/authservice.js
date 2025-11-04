@@ -49,6 +49,14 @@ export class AuthService {
   }
 
   // OPTIMIZATION: Synchronous MD5 for maximum speed
+  hashPassword(plainPassword) {
+    const md5Hash = crypto
+      .createHash("md5")
+      .update(plainPassword)
+      .digest("hex");
+    return md5Hash;
+  }
+
   comparePassword(plainPassword, hashedPassword) {
     const md5Hash = crypto
       .createHash("md5")

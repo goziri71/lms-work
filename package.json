@@ -12,7 +12,11 @@
     "migrate:course-reg": "node src/scripts/migrateCourseReg.js",
     "db:introspect": "node src/scripts/introspect.js",
     "fix:course-reg": "node src/scripts/fixCourseRegIds.js",
-    "migrate:library": "node src/scripts/migrateLibrary.js"
+    "migrate:library": "node src/scripts/migrateLibrary.js",
+    "setup:email-tables": "node create-email-tables.js",
+    "migrate:programs": "node migrate-programs.js",
+    "setup:admin": "node setup-admin-system.js",
+    "test:email": "node test-email.js"
   },
   "keywords": [],
   "author": "",
@@ -44,7 +48,8 @@
     "redis": "^5.8.3",
     "sequelize": "^6.37.7",
     "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "zeptomail": "^7.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

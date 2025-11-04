@@ -3,6 +3,10 @@ import { Staff } from "../../models/auth/staff.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { authService } from "../../service/authservice.js";
+import { emailService } from "../../services/emailService.js";
+import { EmailLog } from "../../models/email/emailLog.js";
+import { EmailPreference } from "../../models/email/emailPreference.js";
+import crypto from "crypto";
 
 // Student Login using Sequelize ORM
 export const studentLogin = TryCatchFunction(async (req, res) => {
@@ -410,5 +414,314 @@ export const updateStaffProfile = TryCatchFunction(async (req, res) => {
     data: {
       user: updatedStaff,
     },
+  });
+});
+
+// Student Registration with Welcome Email
+export const registerStudent = TryCatchFunction(async (req, res) => {
+  const { email, password, fname, lname, ...otherData } = req.body;
+
+  // Validate required fields
+  if (!email || !password || !fname || !lname) {
+    throw new ErrorClass(
+      "Email, password, first name, and last name are required",
+      400
+    );
+  }
+
+  // Check if student already exists
+  const existingStudent = await Students.findOne({
+    where: { email: email.toLowerCase() },
+  });
+
+  if (existingStudent) {
+    throw new ErrorClass("Student with this email already exists", 409);
+  }
+
+  // Hash password
+  const hashedPassword = await authService.hashPassword(password);
+
+  // Create student
+  const student = await Students.create({
+    email: email.toLowerCase(),
+    password: hashedPassword,
+    fname,
+    lname,
+    admin_status: "active",
+    date: new Date(),
+    ...otherData,
+  });
+
+  // Create default email preferences
+  try {
+    await EmailPreference.create({
+      user_id: student.id,
+      user_type: "student",
+      receive_course_notifications: true,
+      receive_grade_notifications: true,
+      receive_exam_reminders: true,
+      receive_quiz_reminders: true,
+      receive_announcements: true,
+    });
+  } catch (prefError) {
+    console.error("Error creating email preferences:", prefError);
+  }
+
+  // Send welcome email (non-blocking)
+  emailService
+    .sendWelcomeEmail(
+      {
+        email: student.email,
+        name: `${student.fname} ${student.lname}`,
+      },
+      "student"
+    )
+    .then((result) => {
+      // Log email send
+      EmailLog.create({
+        user_id: student.id,
+        user_type: "student",
+        recipient_email: student.email,
+        recipient_name: `${student.fname} ${student.lname}`,
+        email_type: "welcome",
+        subject: "Welcome to Pinnacle University LMS",
+        status: result.success ? "sent" : "failed",
+        error_message: result.success ? null : result.message,
+        sent_at: result.success ? new Date() : null,
+      }).catch((logError) =>
+        console.error("Error logging welcome email:", logError)
+      );
+    })
+    .catch((error) => {
+      console.error("Error sending welcome email:", error);
+    });
+
+  // Prepare response data (exclude password)
+  const studentData = {
+    id: student.id,
+    firstName: student.fname,
+    lastName: student.lname,
+    email: student.email,
+    adminStatus: student.admin_status,
+  };
+
+  res.status(201).json({
+    success: true,
+    message: "Student registered successfully. Welcome email sent.",
+    data: {
+      user: studentData,
+    },
+  });
+});
+
+// Staff Registration with Welcome Email
+export const registerStaff = TryCatchFunction(async (req, res) => {
+  const { email, password, fname, lname, ...otherData } = req.body;
+
+  // Validate required fields
+  if (!email || !password || !fname || !lname) {
+    throw new ErrorClass(
+      "Email, password, first name, and last name are required",
+      400
+    );
+  }
+
+  // Check if staff already exists
+  const existingStaff = await Staff.findOne({
+    where: { email: email.toLowerCase() },
+  });
+
+  if (existingStaff) {
+    throw new ErrorClass("Staff with this email already exists", 409);
+  }
+
+  // Hash password
+  const hashedPassword = await authService.hashPassword(password);
+
+  // Create staff
+  const staff = await Staff.create({
+    email: email.toLowerCase(),
+    password: hashedPassword,
+    fname,
+    lname,
+    admin_status: "active",
+    date: new Date(),
+    ...otherData,
+  });
+
+  // Create default email preferences
+  try {
+    await EmailPreference.create({
+      user_id: staff.id,
+      user_type: "staff",
+      receive_course_notifications: true,
+      receive_announcements: true,
+    });
+  } catch (prefError) {
+    console.error("Error creating email preferences:", prefError);
+  }
+
+  // Send welcome email (non-blocking)
+  emailService
+    .sendWelcomeEmail(
+      {
+        email: staff.email,
+        name: `${staff.fname} ${staff.lname}`,
+      },
+      "staff"
+    )
+    .then((result) => {
+      // Log email send
+      EmailLog.create({
+        user_id: staff.id,
+        user_type: "staff",
+        recipient_email: staff.email,
+        recipient_name: `${staff.fname} ${staff.lname}`,
+        email_type: "welcome",
+        subject: "Welcome to Pinnacle University LMS",
+        status: result.success ? "sent" : "failed",
+        error_message: result.success ? null : result.message,
+        sent_at: result.success ? new Date() : null,
+      }).catch((logError) =>
+        console.error("Error logging welcome email:", logError)
+      );
+    })
+    .catch((error) => {
+      console.error("Error sending welcome email:", error);
+    });
+
+  // Prepare response data (exclude password)
+  const staffData = {
+    id: staff.id,
+    firstName: staff.fname,
+    lastName: staff.lname,
+    email: staff.email,
+    adminStatus: staff.admin_status,
+  };
+
+  res.status(201).json({
+    success: true,
+    message: "Staff registered successfully. Welcome email sent.",
+    data: {
+      user: staffData,
+    },
+  });
+});
+
+// Request Password Reset
+export const requestPasswordReset = TryCatchFunction(async (req, res) => {
+  const { email, userType } = req.body;
+
+  // Validate input
+  if (!email || !userType) {
+    throw new ErrorClass("Email and user type are required", 400);
+  }
+
+  if (!["student", "staff"].includes(userType)) {
+    throw new ErrorClass("Invalid user type. Must be 'student' or 'staff'", 400);
+  }
+
+  // Find user based on type
+  const Model = userType === "student" ? Students : Staff;
+  const user = await Model.findOne({
+    where: { email: email.toLowerCase() },
+  });
+
+  // Don't reveal if user exists or not (security best practice)
+  if (!user) {
+    return res.status(200).json({
+      success: true,
+      message: "If the email exists, a password reset link has been sent.",
+    });
+  }
+
+  // Generate secure reset token
+  const resetToken = crypto.randomBytes(32).toString("hex");
+  const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+
+  // Save hashed token to user (expires in 1 hour)
+  await user.update({
+    token: hashedToken,
+    // If you have a token_expires field, set it to: new Date(Date.now() + 3600000)
+  });
+
+  // Create reset URL (adjust based on your frontend)
+  const resetUrl = `${process.env.FRONTEND_URL || "https://pinnacleuniversity.co"}/reset-password?token=${resetToken}&type=${userType}`;
+
+  // Send password reset email
+  try {
+    const result = await emailService.sendPasswordResetEmail(
+      {
+        email: user.email,
+        name: `${user.fname} ${user.lname}`,
+      },
+      resetToken,
+      resetUrl
+    );
+
+    // Log email send
+    await EmailLog.create({
+      user_id: user.id,
+      user_type: userType,
+      recipient_email: user.email,
+      recipient_name: `${user.fname} ${user.lname}`,
+      email_type: "password_reset",
+      subject: "Password Reset Request - Pinnacle University",
+      status: result.success ? "sent" : "failed",
+      error_message: result.success ? null : result.message,
+      sent_at: result.success ? new Date() : null,
+    });
+  } catch (error) {
+    console.error("Error sending password reset email:", error);
+    // Don't throw error - still return success to prevent email enumeration
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "If the email exists, a password reset link has been sent.",
+  });
+});
+
+// Reset Password
+export const resetPassword = TryCatchFunction(async (req, res) => {
+  const { token, newPassword, userType } = req.body;
+
+  // Validate input
+  if (!token || !newPassword || !userType) {
+    throw new ErrorClass("Token, new password, and user type are required", 400);
+  }
+
+  if (!["student", "staff"].includes(userType)) {
+    throw new ErrorClass("Invalid user type", 400);
+  }
+
+  // Hash the token from URL
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+  // Find user with this token
+  const Model = userType === "student" ? Students : Staff;
+  const user = await Model.findOne({
+    where: { token: hashedToken },
+  });
+
+  if (!user) {
+    throw new ErrorClass(
+      "Invalid or expired reset token. Please request a new password reset.",
+      400
+    );
+  }
+
+  // Hash new password
+  const hashedPassword = await authService.hashPassword(newPassword);
+
+  // Update password and clear token
+  await user.update({
+    password: hashedPassword,
+    token: null,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Password has been reset successfully. You can now login with your new password.",
   });
 });

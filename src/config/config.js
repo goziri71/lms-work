@@ -59,4 +59,16 @@ export const Config = {
       evict: 1000, // Check for idle connections every second
     },
   },
+
+  // Email Configuration (ZeptoMail)
+  email: {
+    apiUrl: process.env.ZEPTOMAIL_API_URL,
+    apiToken: process.env.ZEPTOMAIL_TOKEN,
+    fromAddress: process.env.EMAIL_FROM_ADDRESS,
+    fromName: process.env.EMAIL_FROM_NAME || "Pinnacle University",
+    enabled: process.env.EMAIL_ENABLED === "true" || true,
+  },
+
+  // Frontend URL for email links
+  frontendUrl: process.env.FRONTEND_URL || "https://pinnacleuniversity.co",
 };
