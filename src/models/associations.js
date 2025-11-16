@@ -43,6 +43,20 @@ export const setupAssociations = () => {
     otherKey: "student_id",
   });
 
+  // Direct associations to CourseReg for querying registration details
+  Students.hasMany(CourseReg, {
+    foreignKey: "student_id",
+    as: "courseRegistrations",
+  });
+  CourseReg.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+  CourseReg.belongsTo(Courses, {
+    foreignKey: "course_id",
+    as: "course",
+  });
+
   // Library DB associations (Modules -> Units)
   // Note: These are on a separate connection (dbLibrary) and do not join to LMS models.
   Modules.hasMany(Units, {

@@ -509,6 +509,13 @@ Here's the **complete journey** of what we'll test:
 }
 ```
 
+**📝 Note:** The following fields are optional and will use defaults if not provided:
+
+- `currency` (default: "NGN")
+- `referral_code` (default: "")
+- `designated_institute` (default: 0)
+- `foreign_student` (default: 0 = domestic student)
+
 **Expected Response:** ✅ Status `201 Created`
 
 ```json
@@ -1105,8 +1112,8 @@ Here's the **complete journey** of what we'll test:
 |-----|-------|-------------|
 | `page` | `1` | Page number |
 | `limit` | `20` | Items per page |
-| `action` | _(optional)_ | Filter by action (login, created_student, etc.) |
-| `admin_id` | _(optional)_ | Filter by specific admin |
+| `action` | _(optional)_ | Filter by action (login, created*student, etc.) |
+| `admin_id` | *(optional)\_ | Filter by specific admin |
 
 **Expected Response:** ✅ Status `200 OK`
 

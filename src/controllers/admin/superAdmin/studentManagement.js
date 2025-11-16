@@ -76,12 +76,12 @@ export const getStudentById = TryCatchFunction(async (req, res) => {
       },
       {
         model: CourseReg,
-        as: "courses",
+        as: "courseRegistrations",
         include: [
           {
             model: Courses,
             as: "course",
-            attributes: ["id", "title", "code"],
+            attributes: ["id", "title", "course_code"],
           },
         ],
       },
@@ -138,7 +138,7 @@ export const createStudent = TryCatchFunction(async (req, res) => {
   // Hash password
   const hashedPassword = authService.hashPassword(password);
 
-  // Create student
+  // Create student with required defaults
   const student = await Students.create({
     email: email.toLowerCase(),
     password: hashedPassword,
@@ -151,6 +151,11 @@ export const createStudent = TryCatchFunction(async (req, res) => {
     level,
     admin_status: "active",
     date: new Date(),
+    // Required fields with defaults
+    currency: otherData.currency || "NGN",
+    referral_code: otherData.referral_code || "",
+    designated_institute: otherData.designated_institute || 0,
+    foreign_student: otherData.foreign_student || 0,
     ...otherData,
   });
 
@@ -380,7 +385,10 @@ export const getStudentStats = TryCatchFunction(async (req, res) => {
   const studentsByProgram = await Students.findAll({
     attributes: [
       "program_id",
-      [Students.sequelize.fn("COUNT", Students.sequelize.col("id")), "count"],
+      [
+        Students.sequelize.fn("COUNT", Students.sequelize.col("Student.id")),
+        "count",
+      ],
     ],
     include: [
       {
