@@ -35,7 +35,7 @@ export const getAllStaff = TryCatchFunction(async (req, res) => {
       {
         model: Courses,
         as: "courses",
-        attributes: ["id", "title", "code"],
+        attributes: ["id", "title", "course_code"],
       },
     ],
     order: [["id", "DESC"]], // Order by ID (newest first)
