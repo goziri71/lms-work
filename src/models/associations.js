@@ -16,7 +16,12 @@ import { EmailPreference } from "./email/emailPreference.js";
 import { Program } from "./program/program.js";
 import { WspAdmin } from "./admin/wspAdmin.js";
 import { AdminActivityLog } from "./admin/adminActivityLog.js";
-// Import other models like Faculty when you have them
+import { Faculty } from "./faculty/faculty.js";
+import { CourseOrder, Funding, PaymentSetup, SchoolFees } from "./payment/index.js";
+import { GeneralSetup } from "./settings/generalSetup.js";
+import { Notice } from "./notice/notice.js";
+import { SchoolAttended } from "./auth/schoolAttended.js";
+import { LegacyUser } from "./auth/legacyUser.js";
 
 export const setupAssociations = () => {
   // Staff teaches Courses
@@ -190,8 +195,87 @@ export const setupAssociations = () => {
     as: "program",
   });
 
-  // Note: Program -> Faculty association will be added when Faculty model is available
-  // Program.belongsTo(Faculty, { foreignKey: "faculty_id", as: "faculty" });
+  // Faculty associations
+  // Faculty -> Programs (One-to-Many)
+  Faculty.hasMany(Program, {
+    foreignKey: "faculty_id",
+    as: "programs",
+  });
+  Program.belongsTo(Faculty, {
+    foreignKey: "faculty_id",
+    as: "faculty",
+  });
+
+  // Program -> Courses (One-to-Many)
+  Program.hasMany(Courses, {
+    foreignKey: "program_id",
+    as: "courses",
+  });
+  Courses.belongsTo(Program, {
+    foreignKey: "program_id",
+    as: "program",
+  });
+
+  // Courses -> Faculty (Many-to-One)
+  Courses.belongsTo(Faculty, {
+    foreignKey: "faculty_id",
+    as: "faculty",
+  });
+  Faculty.hasMany(Courses, {
+    foreignKey: "faculty_id",
+    as: "courses",
+  });
+
+  // Payment associations
+  // Students -> CourseOrder (One-to-Many)
+  Students.hasMany(CourseOrder, {
+    foreignKey: "student_id",
+    as: "courseOrders",
+  });
+  CourseOrder.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Students -> Funding (One-to-Many)
+  Students.hasMany(Funding, {
+    foreignKey: "student_id",
+    as: "fundingTransactions",
+  });
+  Funding.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Students -> SchoolFees (One-to-Many)
+  Students.hasMany(SchoolFees, {
+    foreignKey: "student_id",
+    as: "schoolFees",
+  });
+  SchoolFees.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Students -> SchoolAttended (One-to-Many)
+  Students.hasMany(SchoolAttended, {
+    foreignKey: "student_id",
+    as: "schoolsAttended",
+  });
+  SchoolAttended.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Notice -> Courses (Many-to-One, optional)
+  Notice.belongsTo(Courses, {
+    foreignKey: "course_id",
+    as: "course",
+  });
+  Courses.hasMany(Notice, {
+    foreignKey: "course_id",
+    as: "notices",
+  });
 
   // Admin associations
   // WspAdmin -> AdminActivityLog (One-to-Many)

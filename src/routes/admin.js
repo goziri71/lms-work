@@ -32,6 +32,35 @@ import {
   getAdminActivityLogs,
 } from "../controllers/admin/superAdmin/adminManagement.js";
 import {
+  getAllPrograms,
+  getProgramById,
+  createProgram,
+  updateProgram,
+  deleteProgram,
+  getProgramStats,
+} from "../controllers/admin/superAdmin/programManagement.js";
+import {
+  getAllCourses,
+  getCoursesByProgram,
+  getCourseById,
+  createCourse,
+  updateCourse,
+  deleteCourse,
+  getCourseStats,
+} from "../controllers/admin/superAdmin/courseManagement.js";
+import {
+  getAllSemesters,
+  getSemesterById,
+  getCurrentSemester,
+  createSemester,
+  updateSemester,
+  closeSemester,
+  extendSemester,
+  activateSemester,
+  deleteSemester,
+  getSemesterStats,
+} from "../controllers/admin/superAdmin/semesterManagement.js";
+import {
   adminAuthorize,
   requireSuperAdmin,
   requirePermission,
@@ -107,6 +136,41 @@ router.post("/admins", requireSuperAdmin, createAdmin);
 router.put("/admins/:id", requireSuperAdmin, updateAdmin);
 router.patch("/admins/:id/deactivate", requireSuperAdmin, deactivateAdmin);
 router.get("/activity-logs", requireSuperAdmin, getAdminActivityLogs);
+
+// ============================================
+// PROGRAM MANAGEMENT (Super Admin Only)
+// ============================================
+router.get("/programs", requireSuperAdmin, getAllPrograms);
+router.get("/programs/stats", requireSuperAdmin, getProgramStats);
+router.get("/programs/:id", requireSuperAdmin, getProgramById);
+router.post("/programs", requireSuperAdmin, createProgram);
+router.put("/programs/:id", requireSuperAdmin, updateProgram);
+router.delete("/programs/:id", requireSuperAdmin, deleteProgram);
+
+// ============================================
+// COURSE MANAGEMENT (Super Admin Only)
+// ============================================
+router.get("/courses", requireSuperAdmin, getAllCourses);
+router.get("/courses/stats", requireSuperAdmin, getCourseStats);
+router.get("/courses/program/:programId", requireSuperAdmin, getCoursesByProgram);
+router.get("/courses/:id", requireSuperAdmin, getCourseById);
+router.post("/courses", requireSuperAdmin, createCourse);
+router.put("/courses/:id", requireSuperAdmin, updateCourse);
+router.delete("/courses/:id", requireSuperAdmin, deleteCourse);
+
+// ============================================
+// SEMESTER MANAGEMENT (Super Admin Only)
+// ============================================
+router.get("/semesters", requireSuperAdmin, getAllSemesters);
+router.get("/semesters/current", requireSuperAdmin, getCurrentSemester);
+router.get("/semesters/stats", requireSuperAdmin, getSemesterStats);
+router.get("/semesters/:id", requireSuperAdmin, getSemesterById);
+router.post("/semesters", requireSuperAdmin, createSemester);
+router.put("/semesters/:id", requireSuperAdmin, updateSemester);
+router.patch("/semesters/:id/close", requireSuperAdmin, closeSemester);
+router.patch("/semesters/:id/extend", requireSuperAdmin, extendSemester);
+router.patch("/semesters/:id/activate", requireSuperAdmin, activateSemester);
+router.delete("/semesters/:id", requireSuperAdmin, deleteSemester);
 
 // ============================================
 // DASHBOARD & ANALYTICS
