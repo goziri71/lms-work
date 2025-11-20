@@ -39,6 +39,15 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Course not found", 404);
   }
 
+  // IMPORTANT: WSP students get FREE access to WSP courses
+  // Marketplace courses (sole_tutor/organization) require payment via purchase endpoint
+  if (course.is_marketplace && course.owner_type !== "wsp") {
+    throw new ErrorClass(
+      "This is a marketplace course and requires purchase. Please use the purchase endpoint: POST /api/marketplace/courses/purchase",
+      400
+    );
+  }
+
   // Check if already registered
   const existingReg = await CourseReg.findOne({
     where: {
@@ -73,7 +82,7 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
   res.status(201).json({
     status: true,
     code: 201,
-    message: "Course registered successfully",
+    message: "Course registered successfully (Free - WSP Course)",
     data: {
       id: registration.id,
       course_id: registration.course_id,
@@ -81,6 +90,11 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
       semester: registration.semester,
       course_title: course.title,
       course_code: course.course_code,
+      is_marketplace: course.is_marketplace,
+      owner_type: course.owner_type,
+      note: course.owner_type === "wsp" 
+        ? "This is a free WSP course" 
+        : "Course registered",
     },
   });
 });
@@ -161,7 +175,11 @@ export const getAvailableCourses = TryCatchFunction(async (req, res) => {
   if (level) where.course_level = Number(level);
 
   const courses = await Courses.findAll({
-    where,
+    where: {
+      ...where,
+      // WSP students can see both WSP courses (free) and marketplace courses (paid)
+      // Filter can be added later if needed
+    },
     attributes: [
       "id",
       "title",
@@ -173,14 +191,33 @@ export const getAvailableCourses = TryCatchFunction(async (req, res) => {
       "price",
       "exam_fee",
       "staff_id",
+      "owner_type",
+      "is_marketplace",
+      "marketplace_status",
     ],
     order: [["course_code", "ASC"]],
+  });
+
+  // Add pricing info for frontend
+  const coursesWithPricing = courses.map((course) => {
+    const courseData = course.toJSON();
+    if (course.owner_type === "wsp") {
+      courseData.price = 0; // Free for WSP students
+      courseData.requires_purchase = false;
+    } else if (course.is_marketplace) {
+      courseData.requires_purchase = true;
+      courseData.purchase_endpoint = "/api/marketplace/courses/purchase";
+    } else {
+      courseData.requires_purchase = false;
+    }
+    return courseData;
   });
 
   res.status(200).json({
     status: true,
     code: 200,
     message: "Available courses retrieved successfully",
-    data: courses,
+    data: coursesWithPricing,
+    note: "WSP courses are free. Marketplace courses require purchase.",
   });
 });

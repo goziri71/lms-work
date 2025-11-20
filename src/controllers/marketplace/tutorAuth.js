@@ -1,0 +1,407 @@
+import { SoleTutor } from "../../models/marketplace/soleTutor.js";
+import { Organization } from "../../models/marketplace/organization.js";
+import { OrganizationUser } from "../../models/marketplace/organizationUser.js";
+import { ErrorClass } from "../../utils/errorClass/index.js";
+import { TryCatchFunction } from "../../utils/tryCatch/index.js";
+import { authService } from "../../service/authservice.js";
+
+/**
+ * Sole Tutor Registration
+ */
+export const registerSoleTutor = TryCatchFunction(async (req, res) => {
+  const {
+    email,
+    password,
+    fname,
+    lname,
+    mname,
+    phone,
+    bio,
+    specialization,
+    qualifications,
+    experience_years,
+    address,
+    country,
+  } = req.body;
+
+  if (!email || !password || !fname || !lname) {
+    throw new ErrorClass(
+      "Email, password, first name, and last name are required",
+      400
+    );
+  }
+
+  // Check if email already exists
+  const existingTutor = await SoleTutor.findOne({
+    where: { email: email.toLowerCase() },
+  });
+
+  if (existingTutor) {
+    throw new ErrorClass("Tutor with this email already exists", 409);
+  }
+
+  // Hash password
+  const hashedPassword = authService.hashPassword(password);
+
+  // Create tutor (status: pending - awaiting approval)
+  const tutor = await SoleTutor.create({
+    email: email.toLowerCase().trim(),
+    password: hashedPassword,
+    fname: fname.trim(),
+    lname: lname.trim(),
+    mname: mname?.trim() || null,
+    phone: phone?.trim() || null,
+    bio: bio?.trim() || null,
+    specialization: specialization?.trim() || null,
+    qualifications: qualifications?.trim() || null,
+    experience_years: experience_years || 0,
+    address: address?.trim() || null,
+    country: country?.trim() || null,
+    status: "pending", // Requires admin approval
+    verification_status: "unverified",
+  });
+
+  res.status(201).json({
+    success: true,
+    message:
+      "Registration successful! Your account is pending approval. You will be notified once approved.",
+    data: {
+      tutor: {
+        id: tutor.id,
+        email: tutor.email,
+        fname: tutor.fname,
+        lname: tutor.lname,
+        status: tutor.status,
+      },
+    },
+  });
+});
+
+/**
+ * Organization Registration
+ */
+export const registerOrganization = TryCatchFunction(async (req, res) => {
+  const {
+    name,
+    email,
+    password,
+    description,
+    website,
+    phone,
+    address,
+    country,
+    registration_number,
+    tax_id,
+    contact_person,
+    contact_email,
+    contact_phone,
+  } = req.body;
+
+  if (!name || !email || !password) {
+    throw new ErrorClass("Name, email, and password are required", 400);
+  }
+
+  // Check if email already exists
+  const existingOrg = await Organization.findOne({
+    where: { email: email.toLowerCase() },
+  });
+
+  if (existingOrg) {
+    throw new ErrorClass("Organization with this email already exists", 409);
+  }
+
+  // Hash password
+  const hashedPassword = authService.hashPassword(password);
+
+  // Create organization (status: pending - awaiting approval)
+  const organization = await Organization.create({
+    name: name.trim(),
+    email: email.toLowerCase().trim(),
+    password: hashedPassword,
+    description: description?.trim() || null,
+    website: website?.trim() || null,
+    phone: phone?.trim() || null,
+    address: address?.trim() || null,
+    country: country?.trim() || null,
+    registration_number: registration_number?.trim() || null,
+    tax_id: tax_id?.trim() || null,
+    contact_person: contact_person?.trim() || null,
+    contact_email: contact_email?.trim() || null,
+    contact_phone: contact_phone?.trim() || null,
+    status: "pending", // Requires admin approval
+    verification_status: "unverified",
+  });
+
+  res.status(201).json({
+    success: true,
+    message:
+      "Registration successful! Your organization account is pending approval. You will be notified once approved.",
+    data: {
+      organization: {
+        id: organization.id,
+        name: organization.name,
+        email: organization.email,
+        status: organization.status,
+      },
+    },
+  });
+});
+
+/**
+ * Sole Tutor Login
+ */
+export const soleTutorLogin = TryCatchFunction(async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    throw new ErrorClass("Email and password are required", 400);
+  }
+
+  const tutor = await SoleTutor.findOne({
+    where: { email: email.toLowerCase() },
+  });
+
+  if (!tutor) {
+    throw new ErrorClass("Invalid email or password", 401);
+  }
+
+  // Check status
+  if (tutor.status === "pending") {
+    throw new ErrorClass(
+      "Your account is pending approval. Please wait for admin approval.",
+      403
+    );
+  }
+
+  if (tutor.status === "rejected") {
+    throw new ErrorClass(
+      "Your account has been rejected. Please contact support.",
+      403
+    );
+  }
+
+  if (tutor.status === "suspended") {
+    throw new ErrorClass(
+      "Your account has been suspended. Please contact support.",
+      403
+    );
+  }
+
+  // Verify password
+  const isPasswordValid = await authService.comparePassword(
+    password,
+    tutor.password
+  );
+
+  if (!isPasswordValid) {
+    throw new ErrorClass("Invalid email or password", 401);
+  }
+
+  // Update last login
+  await tutor.update({ last_login: new Date() });
+
+  // Generate JWT token
+  const accessToken = await authService.generateAccessToken({
+    id: tutor.id,
+    userType: "sole_tutor",
+    email: tutor.email,
+    firstName: tutor.fname,
+    lastName: tutor.lname,
+    status: tutor.status,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Login successful",
+    data: {
+      tutor: {
+        id: tutor.id,
+        fname: tutor.fname,
+        lname: tutor.lname,
+        email: tutor.email,
+        status: tutor.status,
+        wallet_balance: tutor.wallet_balance,
+        rating: tutor.rating,
+      },
+      accessToken,
+      userType: "sole_tutor",
+      expiresIn: 14400, // 4 hours
+    },
+  });
+});
+
+/**
+ * Organization Login
+ */
+export const organizationLogin = TryCatchFunction(async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    throw new ErrorClass("Email and password are required", 400);
+  }
+
+  const organization = await Organization.findOne({
+    where: { email: email.toLowerCase() },
+  });
+
+  if (!organization) {
+    throw new ErrorClass("Invalid email or password", 401);
+  }
+
+  // Check status
+  if (organization.status === "pending") {
+    throw new ErrorClass(
+      "Your organization account is pending approval. Please wait for admin approval.",
+      403
+    );
+  }
+
+  if (organization.status === "rejected") {
+    throw new ErrorClass(
+      "Your organization account has been rejected. Please contact support.",
+      403
+    );
+  }
+
+  if (organization.status === "suspended") {
+    throw new ErrorClass(
+      "Your organization account has been suspended. Please contact support.",
+      403
+    );
+  }
+
+  // Verify password
+  const isPasswordValid = await authService.comparePassword(
+    password,
+    organization.password
+  );
+
+  if (!isPasswordValid) {
+    throw new ErrorClass("Invalid email or password", 401);
+  }
+
+  // Update last login
+  await organization.update({ last_login: new Date() });
+
+  // Generate JWT token
+  const accessToken = await authService.generateAccessToken({
+    id: organization.id,
+    userType: "organization",
+    email: organization.email,
+    name: organization.name,
+    status: organization.status,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Login successful",
+    data: {
+      organization: {
+        id: organization.id,
+        name: organization.name,
+        email: organization.email,
+        status: organization.status,
+        wallet_balance: organization.wallet_balance,
+        rating: organization.rating,
+      },
+      accessToken,
+      userType: "organization",
+      expiresIn: 14400, // 4 hours
+    },
+  });
+});
+
+/**
+ * Organization User Login
+ */
+export const organizationUserLogin = TryCatchFunction(async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    throw new ErrorClass("Email and password are required", 400);
+  }
+
+  const orgUser = await OrganizationUser.findOne({
+    where: { email: email.toLowerCase() },
+    include: [
+      {
+        model: Organization,
+        as: "organization",
+        attributes: ["id", "name", "status"],
+      },
+    ],
+  });
+
+  if (!orgUser) {
+    throw new ErrorClass("Invalid email or password", 401);
+  }
+
+  // Check organization status
+  if (orgUser.organization.status !== "active") {
+    throw new ErrorClass(
+      "Your organization account is not active. Please contact your organization admin.",
+      403
+    );
+  }
+
+  // Check user status
+  if (orgUser.status === "suspended") {
+    throw new ErrorClass(
+      "Your account has been suspended. Please contact your organization admin.",
+      403
+    );
+  }
+
+  if (orgUser.status === "inactive") {
+    throw new ErrorClass(
+      "Your account is inactive. Please contact your organization admin.",
+      403
+    );
+  }
+
+  // Verify password
+  const isPasswordValid = await authService.comparePassword(
+    password,
+    orgUser.password
+  );
+
+  if (!isPasswordValid) {
+    throw new ErrorClass("Invalid email or password", 401);
+  }
+
+  // Update last login
+  await orgUser.update({ last_login: new Date() });
+
+  // Generate JWT token
+  const accessToken = await authService.generateAccessToken({
+    id: orgUser.id,
+    organizationId: orgUser.organization_id,
+    userType: "organization_user",
+    role: orgUser.role,
+    email: orgUser.email,
+    firstName: orgUser.fname,
+    lastName: orgUser.lname,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Login successful",
+    data: {
+      user: {
+        id: orgUser.id,
+        fname: orgUser.fname,
+        lname: orgUser.lname,
+        email: orgUser.email,
+        role: orgUser.role,
+        organization: {
+          id: orgUser.organization.id,
+          name: orgUser.organization.name,
+        },
+      },
+      accessToken,
+      userType: "organization_user",
+      expiresIn: 14400, // 4 hours
+    },
+  });
+});
+

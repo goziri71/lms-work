@@ -61,6 +61,53 @@ import {
   getSemesterStats,
 } from "../controllers/admin/superAdmin/semesterManagement.js";
 import {
+  getAllFaculties,
+  getFacultyById,
+  createFaculty,
+  updateFaculty,
+  deleteFaculty,
+  getFacultyStats,
+} from "../controllers/admin/superAdmin/facultyManagement.js";
+import {
+  getSystemSettings,
+  updateSystemSettings,
+} from "../controllers/admin/superAdmin/settingsManagement.js";
+import {
+  getAllNotices,
+  getNoticeById,
+  createNotice,
+  updateNotice,
+  deleteNotice,
+} from "../controllers/admin/superAdmin/noticeManagement.js";
+import { getDashboardStats } from "../controllers/admin/superAdmin/dashboardController.js";
+import {
+  getAllFundings,
+  getFundingStats,
+  getAllSchoolFees,
+  getSchoolFeesStats,
+  getAllCourseOrders,
+  getCourseOrderStats,
+  getPaymentOverview,
+} from "../controllers/admin/superAdmin/paymentManagement.js";
+import {
+  getAllSoleTutors,
+  getSoleTutorById,
+  approveSoleTutor,
+  rejectSoleTutor,
+  updateSoleTutorStatus,
+  getAllOrganizations,
+  getOrganizationById,
+  approveOrganization,
+  rejectOrganization,
+  updateOrganizationStatus,
+  getTutorStats,
+} from "../controllers/admin/superAdmin/tutorManagement.js";
+import {
+  getAllMarketplaceTransactions,
+  getWspRevenueStatistics,
+  getTutorRevenueDetails,
+} from "../controllers/admin/superAdmin/revenueManagement.js";
+import {
   adminAuthorize,
   requireSuperAdmin,
   requirePermission,
@@ -173,12 +220,72 @@ router.patch("/semesters/:id/activate", requireSuperAdmin, activateSemester);
 router.delete("/semesters/:id", requireSuperAdmin, deleteSemester);
 
 // ============================================
-// DASHBOARD & ANALYTICS
+// FACULTY MANAGEMENT (Super Admin Only)
 // ============================================
-// TODO: Add dashboard routes
-// router.get("/dashboard/stats", getDashboardStats);
-// router.get("/analytics/students", getStudentAnalytics);
-// router.get("/analytics/courses", getCourseAnalytics);
+router.get("/faculties", requireSuperAdmin, getAllFaculties);
+router.get("/faculties/stats", requireSuperAdmin, getFacultyStats);
+router.get("/faculties/:id", requireSuperAdmin, getFacultyById);
+router.post("/faculties", requireSuperAdmin, createFaculty);
+router.put("/faculties/:id", requireSuperAdmin, updateFaculty);
+router.delete("/faculties/:id", requireSuperAdmin, deleteFaculty);
+
+// ============================================
+// SYSTEM SETTINGS (Super Admin Only)
+// ============================================
+router.get("/settings", requireSuperAdmin, getSystemSettings);
+router.put("/settings", requireSuperAdmin, updateSystemSettings);
+
+// ============================================
+// NOTICE MANAGEMENT (Super Admin Only)
+// ============================================
+router.get("/notices", requireSuperAdmin, getAllNotices);
+router.get("/notices/:id", requireSuperAdmin, getNoticeById);
+router.post("/notices", requireSuperAdmin, createNotice);
+router.put("/notices/:id", requireSuperAdmin, updateNotice);
+router.delete("/notices/:id", requireSuperAdmin, deleteNotice);
+
+// ============================================
+// PAYMENT MANAGEMENT (Super Admin Only)
+// ============================================
+router.get("/payments/overview", requireSuperAdmin, getPaymentOverview);
+router.get("/payments/fundings", requireSuperAdmin, getAllFundings);
+router.get("/payments/fundings/stats", requireSuperAdmin, getFundingStats);
+router.get("/payments/school-fees", requireSuperAdmin, getAllSchoolFees);
+router.get("/payments/school-fees/stats", requireSuperAdmin, getSchoolFeesStats);
+router.get("/payments/course-orders", requireSuperAdmin, getAllCourseOrders);
+router.get("/payments/course-orders/stats", requireSuperAdmin, getCourseOrderStats);
+
+// ============================================
+// TUTOR MANAGEMENT (Super Admin Only)
+// ============================================
+// Sole Tutors
+router.get("/tutors/sole-tutors", requireSuperAdmin, getAllSoleTutors);
+router.get("/tutors/sole-tutors/:id", requireSuperAdmin, getSoleTutorById);
+router.patch("/tutors/sole-tutors/:id/approve", requireSuperAdmin, approveSoleTutor);
+router.patch("/tutors/sole-tutors/:id/reject", requireSuperAdmin, rejectSoleTutor);
+router.patch("/tutors/sole-tutors/:id/status", requireSuperAdmin, updateSoleTutorStatus);
+
+// Organizations
+router.get("/tutors/organizations", requireSuperAdmin, getAllOrganizations);
+router.get("/tutors/organizations/:id", requireSuperAdmin, getOrganizationById);
+router.patch("/tutors/organizations/:id/approve", requireSuperAdmin, approveOrganization);
+router.patch("/tutors/organizations/:id/reject", requireSuperAdmin, rejectOrganization);
+router.patch("/tutors/organizations/:id/status", requireSuperAdmin, updateOrganizationStatus);
+
+// Statistics
+router.get("/tutors/stats", requireSuperAdmin, getTutorStats);
+
+// ============================================
+// REVENUE MANAGEMENT (Super Admin Only)
+// ============================================
+router.get("/revenue/transactions", requireSuperAdmin, getAllMarketplaceTransactions);
+router.get("/revenue/wsp-stats", requireSuperAdmin, getWspRevenueStatistics);
+router.get("/revenue/tutor/:owner_type/:owner_id", requireSuperAdmin, getTutorRevenueDetails);
+
+// ============================================
+// DASHBOARD & ANALYTICS (Super Admin Only)
+// ============================================
+router.get("/dashboard/stats", requireSuperAdmin, getDashboardStats);
 
 export default router;
 

@@ -65,6 +65,28 @@ export const Courses = db.define(
       type: DataTypes.INTEGER,
       allowNull: false,
     },
+    owner_type: {
+      type: DataTypes.ENUM("wsp", "sole_tutor", "organization"),
+      allowNull: false,
+      defaultValue: "wsp",
+      comment: "wsp = WSP owned, sole_tutor = owned by individual tutor, organization = owned by organization",
+    },
+    owner_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: "ID of owner (sole_tutor.id or organization.id, null for wsp)",
+    },
+    is_marketplace: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: "Whether course is listed in marketplace",
+    },
+    marketplace_status: {
+      type: DataTypes.ENUM("draft", "pending", "approved", "rejected", "published"),
+      allowNull: true,
+      comment: "Marketplace listing status (only for marketplace courses)",
+    },
     date: {
       type: DataTypes.DATE, // timestamp without time zone
       allowNull: false,

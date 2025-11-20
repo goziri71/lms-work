@@ -22,6 +22,13 @@ import { GeneralSetup } from "./settings/generalSetup.js";
 import { Notice } from "./notice/notice.js";
 import { SchoolAttended } from "./auth/schoolAttended.js";
 import { LegacyUser } from "./auth/legacyUser.js";
+import {
+  SoleTutor,
+  Organization,
+  OrganizationUser,
+  MarketplaceTransaction,
+  WspCommission,
+} from "./marketplace/index.js";
 
 export const setupAssociations = () => {
   // Staff teaches Courses
@@ -287,5 +294,101 @@ export const setupAssociations = () => {
   AdminActivityLog.belongsTo(WspAdmin, {
     foreignKey: "admin_id",
     as: "admin",
+  });
+
+  // ============================================
+  // MARKETPLACE ASSOCIATIONS
+  // ============================================
+
+  // Sole Tutor -> Courses (One-to-Many)
+  SoleTutor.hasMany(Courses, {
+    foreignKey: "owner_id",
+    constraints: false,
+    scope: { owner_type: "sole_tutor" },
+    as: "courses",
+  });
+
+  // Organization -> Courses (One-to-Many)
+  Organization.hasMany(Courses, {
+    foreignKey: "owner_id",
+    constraints: false,
+    scope: { owner_type: "organization" },
+    as: "courses",
+  });
+
+  // Organization -> Organization Users (One-to-Many)
+  Organization.hasMany(OrganizationUser, {
+    foreignKey: "organization_id",
+    as: "users",
+  });
+  OrganizationUser.belongsTo(Organization, {
+    foreignKey: "organization_id",
+    as: "organization",
+  });
+
+  // Organization User -> Courses (via organization ownership)
+  // Note: Courses are owned by organization, not individual org users
+  // But org users can be assigned as instructors (staff_id)
+
+  // Courses ownership (polymorphic)
+  Courses.belongsTo(SoleTutor, {
+    foreignKey: "owner_id",
+    constraints: false,
+    scope: { owner_type: "sole_tutor" },
+    as: "soleTutorOwner",
+  });
+
+  Courses.belongsTo(Organization, {
+    foreignKey: "owner_id",
+    constraints: false,
+    scope: { owner_type: "organization" },
+    as: "organizationOwner",
+  });
+
+  // Marketplace Transaction associations
+  // Courses -> Marketplace Transactions (One-to-Many)
+  Courses.hasMany(MarketplaceTransaction, {
+    foreignKey: "course_id",
+    as: "marketplaceTransactions",
+  });
+  MarketplaceTransaction.belongsTo(Courses, {
+    foreignKey: "course_id",
+    as: "course",
+  });
+
+  // Students -> Marketplace Transactions (One-to-Many)
+  Students.hasMany(MarketplaceTransaction, {
+    foreignKey: "student_id",
+    as: "marketplacePurchases",
+  });
+  MarketplaceTransaction.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Sole Tutor -> Marketplace Transactions (One-to-Many)
+  SoleTutor.hasMany(MarketplaceTransaction, {
+    foreignKey: "owner_id",
+    constraints: false,
+    scope: { owner_type: "sole_tutor" },
+    as: "transactions",
+  });
+
+  // Organization -> Marketplace Transactions (One-to-Many)
+  Organization.hasMany(MarketplaceTransaction, {
+    foreignKey: "owner_id",
+    constraints: false,
+    scope: { owner_type: "organization" },
+    as: "transactions",
+  });
+
+  // Marketplace Transaction -> WSP Commission (One-to-One)
+  MarketplaceTransaction.hasOne(WspCommission, {
+    foreignKey: "transaction_id",
+    as: "wspCommission",
+  });
+  WspCommission.belongsTo(MarketplaceTransaction, {
+    foreignKey: "transaction_id",
+    as: "transaction",
   });
 };

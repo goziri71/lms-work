@@ -13,7 +13,8 @@
     "db:introspect": "node src/scripts/introspect.js",
     "fix:course-reg": "node src/scripts/fixCourseRegIds.js",
     "migrate:library": "node src/scripts/migrateLibrary.js",
-    "setup:admin": "node setup-admin-system.js"
+    "setup:admin": "node setup-admin-system.js",
+    "setup:marketplace": "node setup-marketplace-tables.js"
   },
   "keywords": [],
   "author": "",
