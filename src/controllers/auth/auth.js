@@ -659,7 +659,7 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
       resetUrl
     );
 
-    // Log email send
+    // Log email send with detailed error information
     await EmailLog.create({
       user_id: user.id,
       user_type: userType,
@@ -668,11 +668,31 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
       email_type: "password_reset",
       subject: "Password Reset Request - Pinnacle University",
       status: result.success ? "sent" : "failed",
-      error_message: result.success ? null : result.message,
+      error_message: result.success ? null : (result.message || JSON.stringify(result.error)),
       sent_at: result.success ? new Date() : null,
+      metadata: result.success ? null : {
+        error_details: result.error,
+        timestamp: new Date().toISOString(),
+      },
     });
   } catch (error) {
     console.error("Error sending password reset email:", error);
+    // Log the error to email_logs even if EmailLog.create fails
+    try {
+      await EmailLog.create({
+        user_id: user.id,
+        user_type: userType,
+        recipient_email: user.email,
+        recipient_name: `${user.fname} ${user.lname}`,
+        email_type: "password_reset",
+        subject: "Password Reset Request - Pinnacle University",
+        status: "failed",
+        error_message: error.message || "Unknown error occurred",
+        sent_at: null,
+      });
+    } catch (logError) {
+      console.error("Failed to log email error:", logError);
+    }
     // Don't throw error - still return success to prevent email enumeration
   }
 

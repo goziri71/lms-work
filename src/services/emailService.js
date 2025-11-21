@@ -4,13 +4,30 @@ import { renderTemplate } from "../utils/templateRenderer.js";
 
 class EmailService {
   constructor() {
-    this.client = new SendMailClient({
-      url: Config.email.apiUrl,
-      token: Config.email.apiToken,
-    });
+    // Validate email configuration
+    const hasEmailConfig = Config.email.apiUrl && Config.email.apiToken && Config.email.fromAddress;
+    
+    if (!hasEmailConfig) {
+      console.warn("⚠️ Email configuration incomplete. Missing required environment variables:");
+      if (!Config.email.apiUrl) console.warn("  - ZEPTOMAIL_API_URL");
+      if (!Config.email.apiToken) console.warn("  - ZEPTOMAIL_TOKEN");
+      if (!Config.email.fromAddress) console.warn("  - EMAIL_FROM_ADDRESS");
+      this.client = null;
+    } else {
+      try {
+        this.client = new SendMailClient({
+          url: Config.email.apiUrl,
+          token: Config.email.apiToken,
+        });
+      } catch (error) {
+        console.error("❌ Failed to initialize ZeptoMail client:", error.message);
+        this.client = null;
+      }
+    }
+    
     this.fromAddress = Config.email.fromAddress;
     this.fromName = Config.email.fromName;
-    this.enabled = Config.email.enabled;
+    this.enabled = Config.email.enabled && hasEmailConfig;
   }
 
   /**
@@ -24,6 +41,16 @@ class EmailService {
    */
   async sendEmail({ to, name, subject, htmlBody }) {
     try {
+      // Check if email client is initialized
+      if (!this.client) {
+        const errorMsg = "Email service not configured. Missing ZeptoMail credentials.";
+        console.error(`❌ ${errorMsg}`);
+        return {
+          success: false,
+          message: errorMsg,
+        };
+      }
+
       // Check if email is enabled (useful for testing/development)
       if (!this.enabled) {
         console.log(`📧 Email sending disabled. Would send to: ${to}`);
@@ -34,6 +61,11 @@ class EmailService {
       // Validate email address
       if (!this.validateEmail(to)) {
         throw new Error(`Invalid email address: ${to}`);
+      }
+
+      // Validate required fields
+      if (!this.fromAddress) {
+        throw new Error("From address not configured");
       }
 
       const mailOptions = {
@@ -63,11 +95,15 @@ class EmailService {
         response,
       };
     } catch (error) {
-      console.error(`❌ Failed to send email to ${to}:`, error.message);
+      const errorMessage = error.message || "Unknown error occurred";
+      console.error(`❌ Failed to send email to ${to}:`, errorMessage);
+      if (error.response) {
+        console.error("ZeptoMail API Error:", JSON.stringify(error.response.data || error.response, null, 2));
+      }
       return {
         success: false,
-        message: error.message,
-        error,
+        message: errorMessage,
+        error: error.response?.data || error.message,
       };
     }
   }
