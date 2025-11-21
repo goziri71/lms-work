@@ -7,11 +7,21 @@
 - **Fix**: Added validation and graceful error handling in `emailService.js`
 - **Status**: Fixed ✅
 
-### 2. ⚠️ API Not Accessible on Render
+### 2. ✅ Missing Database Tables
+- **Problem**: `email_logs` table doesn't exist in production database
+- **Error**: `relation "email_logs" does not exist`
+- **Fix**: 
+  - Created `setup-email-logs-table.js` script
+  - Added automatic table creation check in `app.js` on startup
+  - Table will be created automatically when server starts
+- **Status**: Fixed ✅
+
+### 3. ⚠️ API Not Accessible on Render
 - **Possible Causes**:
   - Missing environment variables
   - Database connection issues
   - Port configuration
+  - Missing database tables (now auto-created)
 
 ---
 
@@ -98,7 +108,27 @@ Expected response:
 2. Ensure ALL required variables are set
 3. Check for typos in variable names
 
-### **4. Test Email Configuration**
+### **4. Setup Database Tables**
+**IMPORTANT**: Run this after first deployment to ensure all tables exist:
+
+```bash
+# Option 1: Run setup script manually (recommended for first deployment)
+npm run setup:email-logs
+
+# Option 2: The table will be auto-created on server startup (already implemented)
+# Just restart your Render service and check logs
+```
+
+**Verify table exists:**
+```sql
+SELECT EXISTS (
+  SELECT FROM information_schema.tables 
+  WHERE table_schema = 'public' 
+  AND table_name = 'email_logs'
+);
+```
+
+### **5. Test Email Configuration**
 After setting ZeptoMail credentials, test with:
 ```bash
 POST https://your-render-url.onrender.com/api/auth/password/reset
@@ -116,11 +146,20 @@ ORDER BY created_at DESC
 LIMIT 5;
 ```
 
-### **5. Database Connection Issues**
+### **6. Database Connection Issues**
 If database connection fails:
 - Verify `DATABASE_URL` is correct
 - Check if database allows connections from Render IPs
 - Ensure SSL is enabled (already configured in code)
+
+### **7. Missing Tables Error**
+If you see `relation "email_logs" does not exist`:
+- **Solution 1**: Restart your Render service - table will auto-create on startup
+- **Solution 2**: Run manually via Render Shell:
+  ```bash
+  npm run setup:email-logs
+  ```
+- **Solution 3**: Check Render logs for table creation messages
 
 ---
 

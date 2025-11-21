@@ -21,6 +21,8 @@ import { setupDiscussionsSocket } from "./src/realtime/discussions.js";
 import { setupDirectChatSocket } from "./src/realtime/directChat.js";
 import { performanceMonitor } from "./src/middlewares/performanceMonitor.js";
 import { trackLoginIP } from "./src/middlewares/ipTracker.js";
+import { EmailLog } from "./src/models/email/emailLog.js";
+import { db } from "./src/database/database.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -86,12 +88,36 @@ app.use((error, req, res, next) => {
 });
 
 // Connect to databases
-connectDB().then((success) => {
+connectDB().then(async (success) => {
   if (success) {
     // Set up model associations after database connection
     setupAssociations();
     setupExamAssociations();
     console.log("🔗 Model associations established");
+
+    // Ensure critical tables exist (especially email_logs)
+    try {
+      const [tableExists] = await db.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'email_logs'
+        )
+      `);
+      
+      if (!tableExists[0].exists) {
+        console.log("📧 Creating email_logs table...");
+        await EmailLog.sync({ force: false });
+        console.log("✅ email_logs table created");
+      } else {
+        // Sync to ensure schema is up to date
+        await EmailLog.sync({ alter: true });
+        console.log("✅ email_logs table verified");
+      }
+    } catch (error) {
+      console.error("⚠️ Warning: Could not verify/create email_logs table:", error.message);
+      console.error("   Run 'node setup-email-logs-table.js' manually to create the table");
+    }
 
     setupDiscussionsSocket(io);
     setupDirectChatSocket(io);

@@ -660,6 +660,7 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
     );
 
     // Log email send with detailed error information
+    // Option 1: Explicit (current approach - preserves exact values at time of sending)
     await EmailLog.create({
       user_id: user.id,
       user_type: userType,
@@ -675,6 +676,21 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
         timestamp: new Date().toISOString(),
       },
     });
+    
+    // Option 2: Simplified (auto-fetches from user table - can use this instead)
+    // await EmailLog.createForUser({
+    //   user_id: user.id,
+    //   user_type: userType,
+    //   email_type: "password_reset",
+    //   subject: "Password Reset Request - Pinnacle University",
+    //   status: result.success ? "sent" : "failed",
+    //   error_message: result.success ? null : (result.message || JSON.stringify(result.error)),
+    //   sent_at: result.success ? new Date() : null,
+    //   metadata: result.success ? null : {
+    //     error_details: result.error,
+    //     timestamp: new Date().toISOString(),
+    //   },
+    // });
   } catch (error) {
     console.error("Error sending password reset email:", error);
     // Log the error to email_logs even if EmailLog.create fails

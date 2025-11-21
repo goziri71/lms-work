@@ -159,6 +159,16 @@ export const setupAssociations = () => {
     as: "emailLogs",
   });
 
+  // EmailLog -> Students (Many-to-One)
+  EmailLog.belongsTo(Students, {
+    foreignKey: "user_id",
+    constraints: false,
+    scope: {
+      user_type: "student",
+    },
+    as: "student",
+  });
+
   // Staff -> EmailLogs (One-to-Many)
   Staff.hasMany(EmailLog, {
     foreignKey: "user_id",
@@ -167,6 +177,16 @@ export const setupAssociations = () => {
       user_type: "staff",
     },
     as: "emailLogs",
+  });
+
+  // EmailLog -> Staff (Many-to-One)
+  EmailLog.belongsTo(Staff, {
+    foreignKey: "user_id",
+    constraints: false,
+    scope: {
+      user_type: "staff",
+    },
+    as: "staff",
   });
 
   // Students -> EmailPreference (One-to-One)
