@@ -107,16 +107,55 @@ connectDB().then(async (success) => {
       
       if (!tableExists[0].exists) {
         console.log("📧 Creating email_logs table...");
+        // Use force: false to create table without dropping existing data
         await EmailLog.sync({ force: false });
         console.log("✅ email_logs table created");
       } else {
-        // Sync to ensure schema is up to date
-        await EmailLog.sync({ alter: true });
-        console.log("✅ email_logs table verified");
+        // Table exists - just verify it's accessible (don't alter to avoid errors)
+        try {
+          await db.query('SELECT 1 FROM email_logs LIMIT 1');
+          console.log("✅ email_logs table verified");
+        } catch (verifyError) {
+          console.warn("⚠️ email_logs table exists but may have issues:", verifyError.message);
+        }
       }
     } catch (error) {
       console.error("⚠️ Warning: Could not verify/create email_logs table:", error.message);
-      console.error("   Run 'node setup-email-logs-table.js' manually to create the table");
+      if (error.message.includes("USING") || error.message.includes("syntax")) {
+        console.error("   This is likely a Sequelize sync issue. Trying alternative method...");
+        try {
+          // Try creating table with raw SQL as fallback
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS email_logs (
+              id SERIAL PRIMARY KEY,
+              user_id INTEGER,
+              user_type VARCHAR(20) NOT NULL DEFAULT 'student' CHECK (user_type IN ('student', 'staff', 'other')),
+              recipient_email VARCHAR(255) NOT NULL,
+              recipient_name VARCHAR(255),
+              email_type VARCHAR(50) NOT NULL CHECK (email_type IN ('welcome', 'password_reset', 'email_verification', 'course_enrollment', 'exam_reminder', 'exam_published', 'grade_notification', 'quiz_deadline', 'announcement', 'other')),
+              subject VARCHAR(255) NOT NULL,
+              status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed', 'bounced')),
+              zepto_message_id VARCHAR(255),
+              error_message TEXT,
+              sent_at TIMESTAMP,
+              metadata JSONB,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS idx_email_logs_user ON email_logs(user_id, user_type);
+            CREATE INDEX IF NOT EXISTS idx_email_logs_email ON email_logs(recipient_email);
+            CREATE INDEX IF NOT EXISTS idx_email_logs_type ON email_logs(email_type);
+            CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status);
+            CREATE INDEX IF NOT EXISTS idx_email_logs_created ON email_logs(created_at);
+          `);
+          console.log("✅ email_logs table created using raw SQL");
+        } catch (fallbackError) {
+          console.error("❌ Fallback creation also failed:", fallbackError.message);
+          console.error("   Please run 'node setup-email-logs-table.js' manually");
+        }
+      } else {
+        console.error("   Run 'node setup-email-logs-table.js' manually to create the table");
+      }
     }
 
     setupDiscussionsSocket(io);

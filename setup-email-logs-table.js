@@ -37,14 +37,46 @@ async function setupEmailLogsTable() {
 
     if (!emailLogsExists) {
       console.log("   Creating email_logs table...");
-      await EmailLog.sync({ force: false });
-      console.log("   ✅ email_logs table created successfully");
+      try {
+        await EmailLog.sync({ force: false });
+        console.log("   ✅ email_logs table created successfully");
+      } catch (syncError) {
+        console.warn("   ⚠️ Sequelize sync failed, trying raw SQL...");
+        // Fallback: Create table using raw SQL
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS email_logs (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER,
+            user_type VARCHAR(20) NOT NULL DEFAULT 'student' CHECK (user_type IN ('student', 'staff', 'other')),
+            recipient_email VARCHAR(255) NOT NULL,
+            recipient_name VARCHAR(255),
+            email_type VARCHAR(50) NOT NULL CHECK (email_type IN ('welcome', 'password_reset', 'email_verification', 'course_enrollment', 'exam_reminder', 'exam_published', 'grade_notification', 'quiz_deadline', 'announcement', 'other')),
+            subject VARCHAR(255) NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed', 'bounced')),
+            zepto_message_id VARCHAR(255),
+            error_message TEXT,
+            sent_at TIMESTAMP,
+            metadata JSONB,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+          );
+          CREATE INDEX IF NOT EXISTS idx_email_logs_user ON email_logs(user_id, user_type);
+          CREATE INDEX IF NOT EXISTS idx_email_logs_email ON email_logs(recipient_email);
+          CREATE INDEX IF NOT EXISTS idx_email_logs_type ON email_logs(email_type);
+          CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status);
+          CREATE INDEX IF NOT EXISTS idx_email_logs_created ON email_logs(created_at);
+        `);
+        console.log("   ✅ email_logs table created using raw SQL");
+      }
     } else {
       console.log("   ✅ email_logs table already exists");
-      // Still sync to ensure schema is up to date
-      console.log("   🔄 Syncing table schema...");
-      await EmailLog.sync({ alter: true });
-      console.log("   ✅ email_logs table schema updated");
+      // Just verify it's accessible, don't alter (can cause errors)
+      try {
+        await db.query('SELECT 1 FROM email_logs LIMIT 1');
+        console.log("   ✅ email_logs table is accessible");
+      } catch (verifyError) {
+        console.warn("   ⚠️ Table exists but may have issues:", verifyError.message);
+      }
     }
 
     // Verify table structure
