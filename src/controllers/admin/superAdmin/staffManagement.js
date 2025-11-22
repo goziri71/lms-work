@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import { Staff } from "../../../models/auth/staff.js";
 import { Courses } from "../../../models/course/courses.js";
 import { ErrorClass } from "../../../utils/errorClass/index.js";
@@ -17,10 +18,9 @@ export const getAllStaff = TryCatchFunction(async (req, res) => {
   const where = {};
   if (status) where.admin_status = status;
   if (search) {
-    where[Staff.sequelize.Op.or] = [
-      { fname: { [Staff.sequelize.Op.iLike]: `%${search}%` } },
-      { lname: { [Staff.sequelize.Op.iLike]: `%${search}%` } },
-      { email: { [Staff.sequelize.Op.iLike]: `%${search}%` } },
+    where[Op.or] = [
+      { full_name: { [Op.iLike]: `%${search}%` } },
+      { email: { [Op.iLike]: `%${search}%` } },
     ];
   }
 
