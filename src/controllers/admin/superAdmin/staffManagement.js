@@ -63,7 +63,10 @@ export const createStaff = TryCatchFunction(async (req, res) => {
   const { email, password, fname, lname, ...otherData } = req.body;
 
   if (!email || !password || !fname || !lname) {
-    throw new ErrorClass("Email, password, first name, and last name are required", 400);
+    throw new ErrorClass(
+      "Email, password, first name, and last name are required",
+      400
+    );
   }
 
   const existingStaff = await Staff.findOne({
@@ -76,11 +79,12 @@ export const createStaff = TryCatchFunction(async (req, res) => {
 
   const hashedPassword = authService.hashPassword(password);
 
+  const fullName = `${fname} ${lname}`.trim();
+
   const staff = await Staff.create({
     email: email.toLowerCase(),
     password: hashedPassword,
-    fname,
-    lname,
+    fullName,
     admin_status: "active",
     date: new Date(),
     ...otherData,
@@ -98,7 +102,14 @@ export const createStaff = TryCatchFunction(async (req, res) => {
   res.status(201).json({
     success: true,
     message: "Staff created successfully",
-    data: { staff: { id: staff.id, firstName: staff.fname, lastName: staff.lname, email: staff.email } },
+    data: {
+      staff: {
+        id: staff.id,
+        firstName: staff.fname,
+        lastName: staff.lname,
+        email: staff.email,
+      },
+    },
   });
 });
 
@@ -223,4 +234,3 @@ export const resetStaffPassword = TryCatchFunction(async (req, res) => {
     message: "Staff password reset successfully. Notification email sent.",
   });
 });
-
