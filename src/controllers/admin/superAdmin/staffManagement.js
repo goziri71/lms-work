@@ -84,7 +84,7 @@ export const createStaff = TryCatchFunction(async (req, res) => {
   const staff = await Staff.create({
     email: email.toLowerCase(),
     password: hashedPassword,
-    fullName,
+    full_name: fullName,
     admin_status: "active",
     date: new Date(),
     ...otherData,
