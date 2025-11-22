@@ -328,28 +328,25 @@ export const getProgramStats = TryCatchFunction(async (req, res) => {
     raw: false,
   });
 
-  // Programs with course counts
-  const programsWithCourses = await Program.findAll({
-    attributes: [
-      "id",
-      "title",
-      [
-        Program.sequelize.fn("COUNT", Program.sequelize.col("courses.id")),
-        "course_count",
-      ],
-    ],
-    include: [
-      {
-        model: Courses,
-        as: "courses",
-        attributes: [],
-        required: false,
-      },
-    ],
-    group: ["Program.id"],
-    order: [[Program.sequelize.literal("course_count"), "DESC"]],
-    limit: 10,
-  });
+  // Programs with course counts - use raw query to avoid subquery issues
+  const programsWithCourses = await Program.sequelize.query(
+    `
+    SELECT 
+      p.id,
+      p.title,
+      COUNT(c.id) AS course_count
+    FROM programs p
+    LEFT JOIN courses c ON p.id = c.program_id
+    GROUP BY p.id, p.title
+    ORDER BY course_count DESC
+    LIMIT 10
+    `,
+    {
+      type: Program.sequelize.QueryTypes.SELECT,
+      model: Program,
+      mapToModel: true,
+    }
+  );
 
   res.status(200).json({
     success: true,
