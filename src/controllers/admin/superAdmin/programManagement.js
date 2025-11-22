@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import { Program } from "../../../models/program/program.js";
 import { Courses } from "../../../models/course/courses.js";
 import { Faculty } from "../../../models/faculty/faculty.js";
@@ -15,7 +16,7 @@ export const getAllPrograms = TryCatchFunction(async (req, res) => {
   if (status) where.status = status;
   if (faculty_id) where.faculty_id = faculty_id;
   if (search) {
-    where[Program.sequelize.Op.or] = [
+    where[Op.or] = [
       { title: { [Program.sequelize.Op.iLike]: `%${search}%` } },
       { description: { [Program.sequelize.Op.iLike]: `%${search}%` } },
     ];
@@ -146,10 +147,16 @@ export const createProgram = TryCatchFunction(async (req, res) => {
   });
 
   // Log activity
-  await logAdminActivity(req.admin.id, "created_program", "program", program.id, {
-    program_title: program.title,
-    faculty_id: program.faculty_id,
-  });
+  await logAdminActivity(
+    req.admin.id,
+    "created_program",
+    "program",
+    program.id,
+    {
+      program_title: program.title,
+      faculty_id: program.faculty_id,
+    }
+  );
 
   res.status(201).json({
     success: true,
@@ -199,7 +206,8 @@ export const updateProgram = TryCatchFunction(async (req, res) => {
 
   // Update program
   if (title) program.title = title.trim();
-  if (description !== undefined) program.description = description?.trim() || null;
+  if (description !== undefined)
+    program.description = description?.trim() || null;
   if (faculty_id !== undefined) program.faculty_id = faculty_id || null;
   if (status !== undefined) program.status = status === "Y" ? "Y" : "N";
 
@@ -299,7 +307,10 @@ export const getProgramStats = TryCatchFunction(async (req, res) => {
   const programsByFaculty = await Program.findAll({
     attributes: [
       "faculty_id",
-      [Program.sequelize.fn("COUNT", Program.sequelize.col("Program.id")), "count"],
+      [
+        Program.sequelize.fn("COUNT", Program.sequelize.col("Program.id")),
+        "count",
+      ],
     ],
     include: [
       {
@@ -347,4 +358,3 @@ export const getProgramStats = TryCatchFunction(async (req, res) => {
     },
   });
 });
-
