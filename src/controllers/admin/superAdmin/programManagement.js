@@ -17,8 +17,8 @@ export const getAllPrograms = TryCatchFunction(async (req, res) => {
   if (faculty_id) where.faculty_id = faculty_id;
   if (search) {
     where[Op.or] = [
-      { title: { [Program.sequelize.Op.iLike]: `%${search}%` } },
-      { description: { [Program.sequelize.Op.iLike]: `%${search}%` } },
+      { title: { [Op.iLike]: `%${search}%` } },
+      { description: { [Op.iLike]: `%${search}%` } },
     ];
   }
 
