@@ -81,13 +81,16 @@ export const createStaff = TryCatchFunction(async (req, res) => {
 
   const fullName = `${fname} ${lname}`.trim();
 
+  // Remove full_name from otherData to prevent override
+  const { full_name: _, ...safeOtherData } = otherData;
+
   const staff = await Staff.create({
     email: email.toLowerCase(),
     password: hashedPassword,
-    full_name: fullName,
+    ...safeOtherData,
+    full_name: fullName, // Set after otherData to ensure it's not overridden
     admin_status: "active",
     date: new Date(),
-    ...otherData,
   });
 
   await logAdminActivity(
@@ -105,8 +108,7 @@ export const createStaff = TryCatchFunction(async (req, res) => {
     data: {
       staff: {
         id: staff.id,
-        firstName: staff.fname,
-        lastName: staff.lname,
+        fullName: staff.full_name,
         email: staff.email,
       },
     },

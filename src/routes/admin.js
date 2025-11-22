@@ -140,8 +140,16 @@ router.get("/students/stats", getStudentStats);
 router.get("/students/:id", getStudentById);
 
 // Super Admin or permission required for modifications
-router.post("/students", requirePermission("students", "create"), createStudent);
-router.put("/students/:id", requirePermission("students", "edit"), updateStudent);
+router.post(
+  "/students",
+  requirePermission("students", "create"),
+  createStudent
+);
+router.put(
+  "/students/:id",
+  requirePermission("students", "edit"),
+  updateStudent
+);
 router.patch(
   "/students/:id/deactivate",
   requirePermission("students", "delete"),
@@ -199,7 +207,11 @@ router.delete("/programs/:id", requireSuperAdmin, deleteProgram);
 // ============================================
 router.get("/courses", requireSuperAdmin, getAllCourses);
 router.get("/courses/stats", requireSuperAdmin, getCourseStats);
-router.get("/courses/program/:programId", requireSuperAdmin, getCoursesByProgram);
+router.get(
+  "/courses/program/:programId",
+  requireSuperAdmin,
+  getCoursesByProgram
+);
 router.get("/courses/:id", requireSuperAdmin, getCourseById);
 router.post("/courses", requireSuperAdmin, createCourse);
 router.put("/courses/:id", requireSuperAdmin, updateCourse);
@@ -251,9 +263,17 @@ router.get("/payments/overview", requireSuperAdmin, getPaymentOverview);
 router.get("/payments/fundings", requireSuperAdmin, getAllFundings);
 router.get("/payments/fundings/stats", requireSuperAdmin, getFundingStats);
 router.get("/payments/school-fees", requireSuperAdmin, getAllSchoolFees);
-router.get("/payments/school-fees/stats", requireSuperAdmin, getSchoolFeesStats);
+router.get(
+  "/payments/school-fees/stats",
+  requireSuperAdmin,
+  getSchoolFeesStats
+);
 router.get("/payments/course-orders", requireSuperAdmin, getAllCourseOrders);
-router.get("/payments/course-orders/stats", requireSuperAdmin, getCourseOrderStats);
+router.get(
+  "/payments/course-orders/stats",
+  requireSuperAdmin,
+  getCourseOrderStats
+);
 
 // ============================================
 // TUTOR MANAGEMENT (Super Admin Only)
@@ -261,16 +281,40 @@ router.get("/payments/course-orders/stats", requireSuperAdmin, getCourseOrderSta
 // Sole Tutors
 router.get("/tutors/sole-tutors", requireSuperAdmin, getAllSoleTutors);
 router.get("/tutors/sole-tutors/:id", requireSuperAdmin, getSoleTutorById);
-router.patch("/tutors/sole-tutors/:id/approve", requireSuperAdmin, approveSoleTutor);
-router.patch("/tutors/sole-tutors/:id/reject", requireSuperAdmin, rejectSoleTutor);
-router.patch("/tutors/sole-tutors/:id/status", requireSuperAdmin, updateSoleTutorStatus);
+router.patch(
+  "/tutors/sole-tutors/:id/approve",
+  requireSuperAdmin,
+  approveSoleTutor
+);
+router.patch(
+  "/tutors/sole-tutors/:id/reject",
+  requireSuperAdmin,
+  rejectSoleTutor
+);
+router.patch(
+  "/tutors/sole-tutors/:id/status",
+  requireSuperAdmin,
+  updateSoleTutorStatus
+);
 
 // Organizations
 router.get("/tutors/organizations", requireSuperAdmin, getAllOrganizations);
 router.get("/tutors/organizations/:id", requireSuperAdmin, getOrganizationById);
-router.patch("/tutors/organizations/:id/approve", requireSuperAdmin, approveOrganization);
-router.patch("/tutors/organizations/:id/reject", requireSuperAdmin, rejectOrganization);
-router.patch("/tutors/organizations/:id/status", requireSuperAdmin, updateOrganizationStatus);
+router.patch(
+  "/tutors/organizations/:id/approve",
+  requireSuperAdmin,
+  approveOrganization
+);
+router.patch(
+  "/tutors/organizations/:id/reject",
+  requireSuperAdmin,
+  rejectOrganization
+);
+router.patch(
+  "/tutors/organizations/:id/status",
+  requireSuperAdmin,
+  updateOrganizationStatus
+);
 
 // Statistics
 router.get("/tutors/stats", requireSuperAdmin, getTutorStats);
@@ -278,9 +322,17 @@ router.get("/tutors/stats", requireSuperAdmin, getTutorStats);
 // ============================================
 // REVENUE MANAGEMENT (Super Admin Only)
 // ============================================
-router.get("/revenue/transactions", requireSuperAdmin, getAllMarketplaceTransactions);
+router.get(
+  "/revenue/transactions",
+  requireSuperAdmin,
+  getAllMarketplaceTransactions
+);
 router.get("/revenue/wsp-stats", requireSuperAdmin, getWspRevenueStatistics);
-router.get("/revenue/tutor/:owner_type/:owner_id", requireSuperAdmin, getTutorRevenueDetails);
+router.get(
+  "/revenue/tutor/:owner_type/:owner_id",
+  requireSuperAdmin,
+  getTutorRevenueDetails
+);
 
 // ============================================
 // DASHBOARD & ANALYTICS (Super Admin Only)
@@ -288,4 +340,3 @@ router.get("/revenue/tutor/:owner_type/:owner_id", requireSuperAdmin, getTutorRe
 router.get("/dashboard/stats", requireSuperAdmin, getDashboardStats);
 
 export default router;
-

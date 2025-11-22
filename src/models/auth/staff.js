@@ -19,7 +19,7 @@ export const Staff = db.define(
     },
     phone: {
       type: DataTypes.STRING, // Changed from INTEGER to STRING
-      allowNull: false,
+      allowNull: true, // Made optional since not required for staff creation
     },
     linkedin: {
       type: DataTypes.STRING,

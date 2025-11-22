@@ -59,7 +59,12 @@ export const getAllPrograms = TryCatchFunction(async (req, res) => {
 export const getProgramById = TryCatchFunction(async (req, res) => {
   const { id } = req.params;
 
-  const program = await Program.findByPk(id, {
+  // Validate that id is a number (not "stats" or other strings)
+  if (isNaN(parseInt(id))) {
+    throw new ErrorClass("Invalid program ID", 400);
+  }
+
+  const program = await Program.findByPk(parseInt(id), {
     include: [
       {
         model: Faculty,
@@ -97,7 +102,7 @@ export const getProgramById = TryCatchFunction(async (req, res) => {
   }
 
   // Log activity
-  await logAdminActivity(req.admin.id, "viewed_program", "program", id, {
+  await logAdminActivity(req.user.id, "viewed_program", "program", id, {
     program_title: program.title,
   });
 
@@ -214,7 +219,7 @@ export const updateProgram = TryCatchFunction(async (req, res) => {
   await program.save();
 
   // Log activity
-  await logAdminActivity(req.admin.id, "updated_program", "program", id, {
+  await logAdminActivity(req.user.id, "updated_program", "program", id, {
     changes: {
       before: oldData,
       after: {
@@ -267,7 +272,7 @@ export const deleteProgram = TryCatchFunction(async (req, res) => {
   if (hardDelete === "true") {
     // Hard delete
     await program.destroy();
-    await logAdminActivity(req.admin.id, "deleted_program", "program", id, {
+    await logAdminActivity(req.user.id, "deleted_program", "program", id, {
       program_title: program.title,
       hard_delete: true,
     });
@@ -281,7 +286,7 @@ export const deleteProgram = TryCatchFunction(async (req, res) => {
     program.status = "N";
     await program.save();
 
-    await logAdminActivity(req.admin.id, "deactivated_program", "program", id, {
+    await logAdminActivity(req.user.id, "deactivated_program", "program", id, {
       program_title: program.title,
     });
 
