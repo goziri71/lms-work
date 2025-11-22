@@ -148,7 +148,7 @@ export const createProgram = TryCatchFunction(async (req, res) => {
 
   // Log activity
   await logAdminActivity(
-    req.admin.id,
+    req.user.id,
     "created_program",
     "program",
     program.id,
