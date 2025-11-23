@@ -239,7 +239,7 @@ export const createCourse = TryCatchFunction(async (req, res) => {
   });
 
   // Log activity
-  await logAdminActivity(req.admin.id, "created_course", "course", course.id, {
+  await logAdminActivity(req.user.id, "created_course", "course", course.id, {
     course_title: course.title,
     course_code: course.course_code,
     program_id: course.program_id,
@@ -341,7 +341,7 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
   await course.save();
 
   // Log activity
-  await logAdminActivity(req.admin.id, "updated_course", "course", id, {
+  await logAdminActivity(req.user.id, "updated_course", "course", id, {
     changes: {
       before: oldData,
       after: {
@@ -381,7 +381,7 @@ export const deleteCourse = TryCatchFunction(async (req, res) => {
 
   if (hardDelete === "true") {
     await course.destroy();
-    await logAdminActivity(req.admin.id, "deleted_course", "course", id, {
+    await logAdminActivity(req.user.id, "deleted_course", "course", id, {
       course_title: course.title,
       course_code: course.course_code,
       hard_delete: true,
@@ -398,7 +398,7 @@ export const deleteCourse = TryCatchFunction(async (req, res) => {
     course.program_id = null;
     await course.save();
 
-    await logAdminActivity(req.admin.id, "deleted_course", "course", id, {
+    await logAdminActivity(req.user.id, "deleted_course", "course", id, {
       course_title: course.title,
       course_code: course.course_code,
       old_program_id: oldProgramId,
