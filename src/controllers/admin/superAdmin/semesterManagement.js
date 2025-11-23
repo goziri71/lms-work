@@ -20,7 +20,10 @@ export const getAllSemesters = TryCatchFunction(async (req, res) => {
     where,
     limit: parseInt(limit),
     offset,
-    order: [["academic_year", "DESC"], ["semester", "DESC"]],
+    order: [
+      ["academic_year", "DESC"],
+      ["semester", "DESC"],
+    ],
   });
 
   res.status(200).json({
@@ -70,7 +73,10 @@ export const getCurrentSemester = TryCatchFunction(async (req, res) => {
       start_date: { [Semester.sequelize.Op.lte]: currentDate },
       end_date: { [Semester.sequelize.Op.gte]: currentDate },
     },
-    order: [["academic_year", "DESC"], ["semester", "DESC"]],
+    order: [
+      ["academic_year", "DESC"],
+      ["semester", "DESC"],
+    ],
   });
 
   if (!semester) {
@@ -165,17 +171,23 @@ export const createSemester = TryCatchFunction(async (req, res) => {
   });
 
   // Log activity
-  await logAdminActivity(
-    req.admin.id,
-    "created_semester",
-    "semester",
-    newSemester.id,
-    {
-      academic_year: newSemester.academic_year,
-      semester: newSemester.semester,
-      status: newSemester.status,
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(
+        req.user.id,
+        "created_semester",
+        "semester",
+        newSemester.id,
+        {
+          academic_year: newSemester.academic_year,
+          semester: newSemester.semester,
+          status: newSemester.status,
+        }
+      );
     }
-  );
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(201).json({
     success: true,
@@ -208,7 +220,9 @@ export const updateSemester = TryCatchFunction(async (req, res) => {
 
   // Validate dates if provided
   if (start_date || end_date) {
-    const startDate = start_date ? new Date(start_date) : semesterRecord.start_date;
+    const startDate = start_date
+      ? new Date(start_date)
+      : semesterRecord.start_date;
     const endDate = end_date ? new Date(end_date) : semesterRecord.end_date;
 
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
@@ -267,18 +281,24 @@ export const updateSemester = TryCatchFunction(async (req, res) => {
   await semesterRecord.save();
 
   // Log activity
-  await logAdminActivity(req.admin.id, "updated_semester", "semester", id, {
-    changes: {
-      before: oldData,
-      after: {
-        academic_year: semesterRecord.academic_year,
-        semester: semesterRecord.semester,
-        start_date: semesterRecord.start_date,
-        end_date: semesterRecord.end_date,
-        status: semesterRecord.status,
-      },
-    },
-  });
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(req.user.id, "updated_semester", "semester", id, {
+        changes: {
+          before: oldData,
+          after: {
+            academic_year: semesterRecord.academic_year,
+            semester: semesterRecord.semester,
+            start_date: semesterRecord.start_date,
+            end_date: semesterRecord.end_date,
+            status: semesterRecord.status,
+          },
+        },
+      });
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(200).json({
     success: true,
@@ -308,10 +328,16 @@ export const closeSemester = TryCatchFunction(async (req, res) => {
   await semester.save();
 
   // Log activity
-  await logAdminActivity(req.admin.id, "closed_semester", "semester", id, {
-    academic_year: semester.academic_year,
-    semester: semester.semester,
-  });
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(req.user.id, "closed_semester", "semester", id, {
+        academic_year: semester.academic_year,
+        semester: semester.semester,
+      });
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(200).json({
     success: true,
@@ -356,13 +382,19 @@ export const extendSemester = TryCatchFunction(async (req, res) => {
   await semester.save();
 
   // Log activity
-  await logAdminActivity(req.admin.id, "extended_semester", "semester", id, {
-    academic_year: semester.academic_year,
-    semester: semester.semester,
-    old_end_date: oldEndDate,
-    new_end_date: newEndDate,
-    reason: reason || null,
-  });
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(req.user.id, "extended_semester", "semester", id, {
+        academic_year: semester.academic_year,
+        semester: semester.semester,
+        old_end_date: oldEndDate,
+        new_end_date: newEndDate,
+        reason: reason || null,
+      });
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(200).json({
     success: true,
@@ -411,10 +443,22 @@ export const activateSemester = TryCatchFunction(async (req, res) => {
   await semester.save();
 
   // Log activity
-  await logAdminActivity(req.admin.id, "activated_semester", "semester", id, {
-    academic_year: semester.academic_year,
-    semester: semester.semester,
-  });
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(
+        req.user.id,
+        "activated_semester",
+        "semester",
+        id,
+        {
+          academic_year: semester.academic_year,
+          semester: semester.semester,
+        }
+      );
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(200).json({
     success: true,
@@ -438,16 +482,25 @@ export const deleteSemester = TryCatchFunction(async (req, res) => {
 
   // Prevent deletion of active semester
   if (semester.status === "active") {
-    throw new ErrorClass("Cannot delete active semester. Please close it first.", 400);
+    throw new ErrorClass(
+      "Cannot delete active semester. Please close it first.",
+      400
+    );
   }
 
   await semester.destroy();
 
   // Log activity
-  await logAdminActivity(req.admin.id, "deleted_semester", "semester", id, {
-    academic_year: semester.academic_year,
-    semester: semester.semester,
-  });
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(req.user.id, "deleted_semester", "semester", id, {
+        academic_year: semester.academic_year,
+        semester: semester.semester,
+      });
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(200).json({
     success: true,
@@ -462,7 +515,9 @@ export const getSemesterStats = TryCatchFunction(async (req, res) => {
   const totalSemesters = await Semester.count();
   const activeSemesters = await Semester.count({ where: { status: "active" } });
   const closedSemesters = await Semester.count({ where: { status: "closed" } });
-  const pendingSemesters = await Semester.count({ where: { status: "pending" } });
+  const pendingSemesters = await Semester.count({
+    where: { status: "pending" },
+  });
 
   // Current semester
   const currentDate = new Date();
@@ -486,4 +541,3 @@ export const getSemesterStats = TryCatchFunction(async (req, res) => {
     },
   });
 });
-

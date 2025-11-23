@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import { Courses } from "../../../models/course/courses.js";
 import { Program } from "../../../models/program/program.js";
 import { Faculty } from "../../../models/faculty/faculty.js";
@@ -28,9 +29,9 @@ export const getAllCourses = TryCatchFunction(async (req, res) => {
   if (course_level) where.course_level = course_level;
   if (semester) where.semester = semester;
   if (search) {
-    where[Courses.sequelize.Op.or] = [
-      { title: { [Courses.sequelize.Op.iLike]: `%${search}%` } },
-      { course_code: { [Courses.sequelize.Op.iLike]: `%${search}%` } },
+    where[Op.or] = [
+      { title: { [Op.iLike]: `%${search}%` } },
+      { course_code: { [Op.iLike]: `%${search}%` } },
     ];
   }
 
@@ -106,7 +107,10 @@ export const getCoursesByProgram = TryCatchFunction(async (req, res) => {
         attributes: ["id", "full_name", "email"],
       },
     ],
-    order: [["course_level", "ASC"], ["course_code", "ASC"]],
+    order: [
+      ["course_level", "ASC"],
+      ["course_code", "ASC"],
+    ],
   });
 
   res.status(200).json({
@@ -239,11 +243,26 @@ export const createCourse = TryCatchFunction(async (req, res) => {
   });
 
   // Log activity
-  await logAdminActivity(req.user.id, "created_course", "course", course.id, {
-    course_title: course.title,
-    course_code: course.course_code,
-    program_id: course.program_id,
-  });
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(
+        req.user.id,
+        "created_course",
+        "course",
+        course.id,
+        {
+          course_title: course.title,
+          course_code: course.course_code,
+          program_id: course.program_id,
+        }
+      );
+    } else {
+      console.warn("⚠️ req.user is undefined - cannot log admin activity");
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+    // Don't fail the request if logging fails
+  }
 
   res.status(201).json({
     success: true,
@@ -423,7 +442,10 @@ export const getCourseStats = TryCatchFunction(async (req, res) => {
   const coursesByProgram = await Courses.findAll({
     attributes: [
       "program_id",
-      [Courses.sequelize.fn("COUNT", Courses.sequelize.col("Courses.id")), "count"],
+      [
+        Courses.sequelize.fn("COUNT", Courses.sequelize.col("Courses.id")),
+        "count",
+      ],
     ],
     include: [
       {
@@ -439,7 +461,10 @@ export const getCourseStats = TryCatchFunction(async (req, res) => {
   const coursesByFaculty = await Courses.findAll({
     attributes: [
       "faculty_id",
-      [Courses.sequelize.fn("COUNT", Courses.sequelize.col("Courses.id")), "count"],
+      [
+        Courses.sequelize.fn("COUNT", Courses.sequelize.col("Courses.id")),
+        "count",
+      ],
     ],
     include: [
       {
@@ -462,4 +487,3 @@ export const getCourseStats = TryCatchFunction(async (req, res) => {
     },
   });
 });
-

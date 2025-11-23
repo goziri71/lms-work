@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import { Students } from "../../../models/auth/student.js";
 import { CourseReg } from "../../../models/course_reg.js";
 import { Courses } from "../../../models/course/courses.js";
@@ -21,11 +22,11 @@ export const getAllStudents = TryCatchFunction(async (req, res) => {
   if (level) where.level = level;
   if (program_id) where.program_id = program_id;
   if (search) {
-    where[Students.sequelize.Op.or] = [
-      { fname: { [Students.sequelize.Op.iLike]: `%${search}%` } },
-      { lname: { [Students.sequelize.Op.iLike]: `%${search}%` } },
-      { email: { [Students.sequelize.Op.iLike]: `%${search}%` } },
-      { matric_number: { [Students.sequelize.Op.iLike]: `%${search}%` } },
+    where[Op.or] = [
+      { fname: { [Op.iLike]: `%${search}%` } },
+      { lname: { [Op.iLike]: `%${search}%` } },
+      { email: { [Op.iLike]: `%${search}%` } },
+      { matric_number: { [Op.iLike]: `%${search}%` } },
     ];
   }
 
