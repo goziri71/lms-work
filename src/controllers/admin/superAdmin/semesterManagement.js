@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import { Semester } from "../../../models/auth/semester.js";
 import { ErrorClass } from "../../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../../utils/tryCatch/index.js";
@@ -66,26 +67,33 @@ export const getSemesterById = TryCatchFunction(async (req, res) => {
  */
 export const getCurrentSemester = TryCatchFunction(async (req, res) => {
   const currentDate = new Date();
+  // Format as YYYY-MM-DD string for date-only comparison
+  const today = currentDate.toISOString().split("T")[0];
 
-  const semester = await Semester.findOne({
+  let semester = await Semester.findOne({
     where: {
-      status: "active",
-      start_date: { [Semester.sequelize.Op.lte]: currentDate },
-      end_date: { [Semester.sequelize.Op.gte]: currentDate },
+      [Op.and]: [
+        Semester.sequelize.literal(`DATE(start_date) <= '${today}'`),
+        Semester.sequelize.literal(`DATE(end_date) >= '${today}'`),
+      ],
     },
-    order: [
-      ["academic_year", "DESC"],
-      ["semester", "DESC"],
-    ],
+    order: [["id", "DESC"]],
   });
 
   if (!semester) {
-    return res.status(200).json({
-      success: true,
-      message: "No active semester found",
-      data: {
-        semester: null,
-      },
+    semester = await Semester.findOne({
+      where: Semester.sequelize.where(
+        Semester.sequelize.fn("UPPER", Semester.sequelize.col("status")),
+        "ACTIVE"
+      ),
+      order: [["id", "DESC"]],
+    });
+  }
+
+  // Third fallback: Get the most recent semester by id
+  if (!semester) {
+    semester = await Semester.findOne({
+      order: [["id", "DESC"]],
     });
   }
 
