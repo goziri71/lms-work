@@ -4,9 +4,6 @@ import { ErrorClass } from "../../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../../utils/tryCatch/index.js";
 import { logAdminActivity } from "../../../middlewares/adminAuthorize.js";
 
-/**
- * Get all semesters with pagination and filters
- */
 export const getAllSemesters = TryCatchFunction(async (req, res) => {
   const { page = 1, limit = 20, status, academic_year, semester } = req.query;
 
@@ -42,9 +39,6 @@ export const getAllSemesters = TryCatchFunction(async (req, res) => {
   });
 });
 
-/**
- * Get single semester
- */
 export const getSemesterById = TryCatchFunction(async (req, res) => {
   const { id } = req.params;
 
@@ -62,12 +56,8 @@ export const getSemesterById = TryCatchFunction(async (req, res) => {
   });
 });
 
-/**
- * Get current/active semester
- */
 export const getCurrentSemester = TryCatchFunction(async (req, res) => {
   const currentDate = new Date();
-  // Format as YYYY-MM-DD string for date-only comparison
   const today = currentDate.toISOString().split("T")[0];
 
   let semester = await Semester.findOne({
@@ -90,7 +80,6 @@ export const getCurrentSemester = TryCatchFunction(async (req, res) => {
     });
   }
 
-  // Third fallback: Get the most recent semester by id
   if (!semester) {
     semester = await Semester.findOne({
       order: [["id", "DESC"]],
@@ -106,9 +95,6 @@ export const getCurrentSemester = TryCatchFunction(async (req, res) => {
   });
 });
 
-/**
- * Create new semester
- */
 export const createSemester = TryCatchFunction(async (req, res) => {
   const {
     academic_year,
@@ -125,12 +111,10 @@ export const createSemester = TryCatchFunction(async (req, res) => {
     );
   }
 
-  // Validate semester value (1 or 2)
   if (semester !== 1 && semester !== 2) {
     throw new ErrorClass("Semester must be 1 or 2", 400);
   }
 
-  // Validate dates
   const startDate = new Date(start_date);
   const endDate = new Date(end_date);
 
@@ -142,7 +126,6 @@ export const createSemester = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("End date must be after start date", 400);
   }
 
-  // Check if semester already exists for this academic year
   const existingSemester = await Semester.findOne({
     where: {
       academic_year: parseInt(academic_year),
@@ -157,7 +140,6 @@ export const createSemester = TryCatchFunction(async (req, res) => {
     );
   }
 
-  // If setting as active, deactivate other active semesters
   if (status === "active") {
     await Semester.update(
       { status: "closed" },
@@ -178,7 +160,6 @@ export const createSemester = TryCatchFunction(async (req, res) => {
     date: new Date(),
   });
 
-  // Log activity
   try {
     if (req.user && req.user.id) {
       await logAdminActivity(
@@ -206,9 +187,6 @@ export const createSemester = TryCatchFunction(async (req, res) => {
   });
 });
 
-/**
- * Update semester
- */
 export const updateSemester = TryCatchFunction(async (req, res) => {
   const { id } = req.params;
   const { academic_year, semester, start_date, end_date, status } = req.body;
@@ -226,7 +204,6 @@ export const updateSemester = TryCatchFunction(async (req, res) => {
     status: semesterRecord.status,
   };
 
-  // Validate dates if provided
   if (start_date || end_date) {
     const startDate = start_date
       ? new Date(start_date)
@@ -242,7 +219,6 @@ export const updateSemester = TryCatchFunction(async (req, res) => {
     }
   }
 
-  // Check for duplicate if academic_year or semester is being changed
   if (
     (academic_year && academic_year !== semesterRecord.academic_year) ||
     (semester && semester !== semesterRecord.semester)
@@ -265,7 +241,6 @@ export const updateSemester = TryCatchFunction(async (req, res) => {
     }
   }
 
-  // If setting as active, deactivate other active semesters
   if (status === "active" && semesterRecord.status !== "active") {
     await Semester.update(
       { status: "closed" },
@@ -278,7 +253,6 @@ export const updateSemester = TryCatchFunction(async (req, res) => {
     );
   }
 
-  // Update semester
   if (academic_year !== undefined)
     semesterRecord.academic_year = parseInt(academic_year);
   if (semester !== undefined) semesterRecord.semester = parseInt(semester);
@@ -288,7 +262,6 @@ export const updateSemester = TryCatchFunction(async (req, res) => {
 
   await semesterRecord.save();
 
-  // Log activity
   try {
     if (req.user && req.user.id) {
       await logAdminActivity(req.user.id, "updated_semester", "semester", id, {
@@ -317,9 +290,6 @@ export const updateSemester = TryCatchFunction(async (req, res) => {
   });
 });
 
-/**
- * Close semester (set status to closed)
- */
 export const closeSemester = TryCatchFunction(async (req, res) => {
   const { id } = req.params;
 
@@ -335,7 +305,6 @@ export const closeSemester = TryCatchFunction(async (req, res) => {
   semester.status = "closed";
   await semester.save();
 
-  // Log activity
   try {
     if (req.user && req.user.id) {
       await logAdminActivity(req.user.id, "closed_semester", "semester", id, {
@@ -356,9 +325,6 @@ export const closeSemester = TryCatchFunction(async (req, res) => {
   });
 });
 
-/**
- * Extend semester (update end date)
- */
 export const extendSemester = TryCatchFunction(async (req, res) => {
   const { id } = req.params;
   const { new_end_date, reason } = req.body;
@@ -389,7 +355,6 @@ export const extendSemester = TryCatchFunction(async (req, res) => {
   semester.end_date = newEndDate;
   await semester.save();
 
-  // Log activity
   try {
     if (req.user && req.user.id) {
       await logAdminActivity(req.user.id, "extended_semester", "semester", id, {
@@ -420,9 +385,6 @@ export const extendSemester = TryCatchFunction(async (req, res) => {
   });
 });
 
-/**
- * Activate semester (set as active and close others)
- */
 export const activateSemester = TryCatchFunction(async (req, res) => {
   const { id } = req.params;
 
@@ -435,7 +397,6 @@ export const activateSemester = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Semester is already active", 400);
   }
 
-  // Close all other active semesters
   await Semester.update(
     { status: "closed" },
     {
@@ -446,11 +407,9 @@ export const activateSemester = TryCatchFunction(async (req, res) => {
     }
   );
 
-  // Activate this semester
   semester.status = "active";
   await semester.save();
 
-  // Log activity
   try {
     if (req.user && req.user.id) {
       await logAdminActivity(
@@ -477,9 +436,6 @@ export const activateSemester = TryCatchFunction(async (req, res) => {
   });
 });
 
-/**
- * Delete semester
- */
 export const deleteSemester = TryCatchFunction(async (req, res) => {
   const { id } = req.params;
 
@@ -488,7 +444,6 @@ export const deleteSemester = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Semester not found", 404);
   }
 
-  // Prevent deletion of active semester
   if (semester.status === "active") {
     throw new ErrorClass(
       "Cannot delete active semester. Please close it first.",
@@ -497,8 +452,6 @@ export const deleteSemester = TryCatchFunction(async (req, res) => {
   }
 
   await semester.destroy();
-
-  // Log activity
   try {
     if (req.user && req.user.id) {
       await logAdminActivity(req.user.id, "deleted_semester", "semester", id, {
@@ -516,9 +469,6 @@ export const deleteSemester = TryCatchFunction(async (req, res) => {
   });
 });
 
-/**
- * Get semester statistics
- */
 export const getSemesterStats = TryCatchFunction(async (req, res) => {
   const totalSemesters = await Semester.count();
   const activeSemesters = await Semester.count({
@@ -527,8 +477,6 @@ export const getSemesterStats = TryCatchFunction(async (req, res) => {
       "ACTIVE"
     ),
   });
-  // const activeSemesters = await Semester.count({ where: { status: "active" } });
-  // const closedSemesters = await Semester.count({ where: { status: "closed" } });
   const closedSemesters = await Semester.count({
     where: Semester.sequelize.where(
       Semester.sequelize.fn("UPPER", Semester.sequelize.col("status")),
@@ -541,18 +489,7 @@ export const getSemesterStats = TryCatchFunction(async (req, res) => {
     where: { status: "pending" },
   });
 
-  // Current semester
-  // const currentDate = new Date();
-  // const currentSemester = await Semester.findOne({
-  //   where: {
-  //     status: "active",
-  //     start_date: { [Op.lte]: currentDate },
-  //     end_date: { [Op.gte]: currentDate },
-  //   },
-  // });
-
   const currentDate = new Date();
-  // Format as YYYY-MM-DD string for date-only comparison
   const today = currentDate.toISOString().split("T")[0];
 
   let semester = await Semester.findOne({
@@ -575,7 +512,6 @@ export const getSemesterStats = TryCatchFunction(async (req, res) => {
     });
   }
 
-  // Third fallback: Get the most recent semester by id
   if (!semester) {
     semester = await Semester.findOne({
       order: [["id", "DESC"]],
