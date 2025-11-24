@@ -10,6 +10,7 @@ import {
 import {
   getAllStudents,
   getStudentById,
+  getStudentFullDetails,
   createStudent,
   updateStudent,
   deactivateStudent,
@@ -138,6 +139,7 @@ router.post("/logout", adminLogout);
 router.get("/students", getAllStudents);
 router.get("/students/stats", getStudentStats);
 router.get("/students/:id", getStudentById);
+router.get("/students/:id/full", requireSuperAdmin, getStudentFullDetails);
 
 // Super Admin or permission required for modifications
 router.post(

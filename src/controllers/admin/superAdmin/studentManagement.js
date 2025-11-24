@@ -3,6 +3,13 @@ import { Students } from "../../../models/auth/student.js";
 import { CourseReg } from "../../../models/course_reg.js";
 import { Courses } from "../../../models/course/courses.js";
 import { Program } from "../../../models/program/program.js";
+import { Faculty } from "../../../models/faculty/faculty.js";
+import { Staff } from "../../../models/auth/staff.js";
+import { Funding } from "../../../models/payment/funding.js";
+import { SchoolFees } from "../../../models/payment/schoolFees.js";
+import { CourseOrder } from "../../../models/payment/courseOrder.js";
+import { Semester } from "../../../models/auth/semester.js";
+import { ExamAttempt, Exam } from "../../../models/exams/index.js";
 import { ErrorClass } from "../../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../../utils/tryCatch/index.js";
 import { logAdminActivity } from "../../../middlewares/adminAuthorize.js";
@@ -63,7 +70,7 @@ export const getAllStudents = TryCatchFunction(async (req, res) => {
 });
 
 /**
- * Get single student by ID
+ * Get single student by ID (Basic)
  */
 export const getStudentById = TryCatchFunction(async (req, res) => {
   const { id } = req.params;
@@ -98,6 +105,374 @@ export const getStudentById = TryCatchFunction(async (req, res) => {
     message: "Student retrieved successfully",
     data: {
       student,
+    },
+  });
+});
+
+/**
+ * Get comprehensive student details (Full Profile)
+ * Includes: Personal Info, Faculty, Program, Courses, Exams, Results, Wallet, Payments
+ */
+export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
+  const { id } = req.params;
+
+  // Get student with program and faculty
+  const student = await Students.findByPk(id, {
+    attributes: { exclude: ["password", "token"] },
+    include: [
+      {
+        model: Program,
+        as: "program",
+        include: [
+          {
+            model: Faculty,
+            as: "faculty",
+            attributes: ["id", "name", "description"],
+          },
+        ],
+      },
+    ],
+  });
+
+  if (!student) {
+    throw new ErrorClass("Student not found", 404);
+  }
+
+  // Get current semester
+  const currentDate = new Date();
+  const today = currentDate.toISOString().split("T")[0];
+  let currentSemester = await Semester.findOne({
+    where: {
+      [Op.and]: [
+        Semester.sequelize.literal(`DATE(start_date) <= '${today}'`),
+        Semester.sequelize.literal(`DATE(end_date) >= '${today}'`),
+      ],
+    },
+    order: [["id", "DESC"]],
+  });
+
+  if (!currentSemester) {
+    currentSemester = await Semester.findOne({
+      where: Semester.sequelize.where(
+        Semester.sequelize.fn("UPPER", Semester.sequelize.col("status")),
+        "ACTIVE"
+      ),
+      order: [["id", "DESC"]],
+    });
+  }
+
+  // Get all course registrations with full course details
+  const courseRegistrations = await CourseReg.findAll({
+    where: { student_id: id },
+    include: [
+      {
+        model: Courses,
+        as: "course",
+        include: [
+          {
+            model: Program,
+            as: "program",
+            attributes: ["id", "title"],
+          },
+          {
+            model: Faculty,
+            as: "faculty",
+            attributes: ["id", "name"],
+          },
+          {
+            model: Staff,
+            as: "instructor",
+            attributes: ["id", "full_name", "email"],
+          },
+        ],
+      },
+    ],
+    order: [["academic_year", "DESC"], ["semester", "DESC"]],
+  });
+
+  // Get exam attempts for student (Exam is in Library DB, so we'll get course info separately)
+  const examAttempts = await ExamAttempt.findAll({
+    where: { student_id: id },
+    include: [
+      {
+        model: Exam,
+        as: "exam",
+        attributes: ["id", "title", "course_id", "exam_type", "duration_minutes", "academic_year", "semester"],
+      },
+    ],
+    order: [["started_at", "DESC"]],
+  });
+
+  // Get course details for exams (since Exam is in Library DB, we need to fetch courses separately)
+  const examCourseIds = [...new Set(examAttempts.map(a => a.exam?.course_id).filter(Boolean))];
+  const examCourses = examCourseIds.length > 0 ? await Courses.findAll({
+    where: { id: { [Op.in]: examCourseIds } },
+    attributes: ["id", "title", "course_code"],
+  }) : [];
+  
+  const courseMap = new Map(examCourses.map(c => [c.id, c]));
+
+  // Get wallet funding transactions
+  const fundingTransactions = await Funding.findAll({
+    where: { student_id: id },
+    order: [["date", "DESC"]],
+    limit: 50, // Last 50 transactions
+  });
+
+  // Calculate wallet summary
+  const totalCredits = await Funding.sum("amount", {
+    where: { student_id: id, type: "Credit" },
+  });
+  const totalDebits = await Funding.sum("amount", {
+    where: { student_id: id, type: "Debit" },
+  });
+  const walletBalance = (totalCredits || 0) - (totalDebits || 0);
+
+  // Get school fees history
+  const schoolFeesHistory = await SchoolFees.findAll({
+    where: { student_id: id },
+    order: [["date", "DESC"]],
+  });
+
+  // Check current semester school fees status
+  let currentSemesterSchoolFees = null;
+  if (currentSemester) {
+    currentSemesterSchoolFees = await SchoolFees.findOne({
+      where: {
+        student_id: id,
+        academic_year: currentSemester.academic_year?.toString() || null,
+        semester: currentSemester.semester?.toString() || null,
+      },
+      order: [["id", "DESC"]],
+    });
+  }
+
+  // Get course orders
+  const courseOrders = await CourseOrder.findAll({
+    where: { student_id: id },
+    order: [["date", "DESC"]],
+    limit: 50,
+  });
+
+  // Group course registrations by semester/academic year for Registrations section
+  const registrationsBySemester = {};
+  courseRegistrations.forEach((reg) => {
+    const key = `${reg.academic_year || 'Unknown'}_${reg.semester || 'Unknown'}`;
+    if (!registrationsBySemester[key]) {
+      registrationsBySemester[key] = {
+        academic_year: reg.academic_year,
+        semester: reg.semester,
+        course_count: 0,
+        courses: [],
+        registration_date: reg.date,
+        school_fees: null,
+        registration_status: 'pending', // Will be updated based on school fees
+      };
+    }
+    registrationsBySemester[key].course_count++;
+    registrationsBySemester[key].courses.push({
+      id: reg.course?.id,
+      title: reg.course?.title,
+      course_code: reg.course?.course_code,
+      registration_id: reg.id,
+      registration_date: reg.date,
+    });
+  });
+
+  // Match school fees with registrations to determine registration status
+  schoolFeesHistory.forEach((fee) => {
+    const key = `${fee.academic_year || 'Unknown'}_${fee.semester || 'Unknown'}`;
+    if (registrationsBySemester[key]) {
+      registrationsBySemester[key].school_fees = {
+        id: fee.id,
+        amount: fee.amount,
+        status: fee.status,
+        date: fee.date,
+        type: fee.type,
+        teller_no: fee.teller_no,
+        currency: fee.currency,
+      };
+      // Update registration status based on school fees
+      if (fee.status === 'Paid') {
+        registrationsBySemester[key].registration_status = 'registered';
+      } else if (fee.amount > 0) {
+        registrationsBySemester[key].registration_status = 'pending_payment';
+      }
+    } else {
+      // School fees without course registrations (semester registration only)
+      registrationsBySemester[key] = {
+        academic_year: fee.academic_year,
+        semester: fee.semester,
+        course_count: 0,
+        courses: [],
+        registration_date: fee.date,
+        school_fees: {
+          id: fee.id,
+          amount: fee.amount,
+          status: fee.status,
+          date: fee.date,
+          type: fee.type,
+          teller_no: fee.teller_no,
+          currency: fee.currency,
+        },
+        registration_status: fee.status === 'Paid' ? 'registered' : 'pending_payment',
+      };
+    }
+  });
+
+  // Convert to array and sort by academic year and semester (newest first)
+  const registrations = Object.values(registrationsBySemester)
+    .sort((a, b) => {
+      // Sort by academic year (descending), then by semester
+      if (a.academic_year !== b.academic_year) {
+        return (b.academic_year || '').localeCompare(a.academic_year || '');
+      }
+      // Sort semester: 2ND before 1ST, or by semester number
+      const semesterOrder = { '2ND': 2, '2': 2, '1ST': 1, '1': 1 };
+      return (semesterOrder[b.semester] || 0) - (semesterOrder[a.semester] || 0);
+    });
+
+  // Format course registrations with results
+  const courses = courseRegistrations.map((reg) => ({
+    registration: {
+      id: reg.id,
+      academic_year: reg.academic_year,
+      semester: reg.semester,
+      level: reg.level,
+      date: reg.date,
+      ref: reg.ref,
+    },
+    course: {
+      id: reg.course?.id,
+      title: reg.course?.title,
+      course_code: reg.course?.course_code,
+      course_unit: reg.course?.course_unit,
+      course_type: reg.course?.course_type,
+      course_level: reg.course?.course_level,
+      price: reg.course?.price,
+      exam_fee: reg.course?.exam_fee,
+      currency: reg.course?.currency,
+      program: reg.course?.program,
+      faculty: reg.course?.faculty,
+      instructor: reg.course?.instructor,
+    },
+    results: {
+      first_ca: reg.first_ca,
+      second_ca: reg.second_ca,
+      third_ca: reg.third_ca,
+      exam_score: reg.exam_score,
+      total_score: reg.first_ca + reg.second_ca + reg.third_ca + reg.exam_score,
+    },
+  }));
+
+  // Format exam attempts with course info
+  const exams = examAttempts.map((attempt) => {
+    const course = attempt.exam?.course_id ? courseMap.get(attempt.exam.course_id) : null;
+    return {
+      id: attempt.id,
+      exam_id: attempt.exam_id,
+      attempt_no: attempt.attempt_no,
+      status: attempt.status,
+      started_at: attempt.started_at,
+      submitted_at: attempt.submitted_at,
+      graded_at: attempt.graded_at,
+      total_score: attempt.total_score,
+      max_score: attempt.max_score,
+      exam: attempt.exam ? {
+        ...attempt.exam.toJSON(),
+        course: course || null,
+      } : null,
+    };
+  });
+
+  // Log activity
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(req.user.id, "viewed_student_full_details", "student", id, {
+        student_name: `${student.fname} ${student.lname}`,
+        student_email: student.email,
+      });
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Student full details retrieved successfully",
+    data: {
+      personalInformation: {
+        id: student.id,
+        fname: student.fname,
+        mname: student.mname,
+        lname: student.lname,
+        email: student.email,
+        phone: student.phone,
+        gender: student.gender,
+        dob: student.dob,
+        address: student.address,
+        state_origin: student.state_origin,
+        lcda: student.lcda,
+        country: student.country,
+        matric_number: student.matric_number,
+        level: student.level,
+        admin_status: student.admin_status,
+        g_status: student.g_status,
+        study_mode: student.study_mode,
+        application_code: student.application_code,
+        referral_code: student.referral_code,
+        date: student.date,
+      },
+      faculty: student.program?.faculty || null,
+      program: student.program
+        ? {
+            id: student.program.id,
+            title: student.program.title,
+            description: student.program.description,
+            status: student.program.status,
+          }
+        : null,
+      registrations: registrations,
+      courses: courses,
+      exams: exams,
+      wallet: {
+        balance: student.wallet_balance || walletBalance,
+        currency: student.currency || "NGN",
+        transactions: fundingTransactions,
+        summary: {
+          total_credits: totalCredits || 0,
+          total_debits: totalDebits || 0,
+          net_balance: walletBalance,
+        },
+      },
+      payments: {
+        schoolFees: {
+          history: schoolFeesHistory,
+          currentSemester: currentSemesterSchoolFees
+            ? {
+                id: currentSemesterSchoolFees.id,
+                amount: currentSemesterSchoolFees.amount,
+                status: currentSemesterSchoolFees.status,
+                academic_year: currentSemesterSchoolFees.academic_year,
+                semester: currentSemesterSchoolFees.semester,
+                date: currentSemesterSchoolFees.date,
+                type: currentSemesterSchoolFees.type,
+                paid: currentSemesterSchoolFees.status === "Paid",
+              }
+            : null,
+        },
+        courseOrders: courseOrders,
+      },
+      currentSemester: currentSemester
+        ? {
+            id: currentSemester.id,
+            academic_year: currentSemester.academic_year,
+            semester: currentSemester.semester,
+            status: currentSemester.status,
+            start_date: currentSemester.start_date,
+            end_date: currentSemester.end_date,
+          }
+        : null,
     },
   });
 });
