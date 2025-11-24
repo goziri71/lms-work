@@ -521,21 +521,66 @@ export const deleteSemester = TryCatchFunction(async (req, res) => {
  */
 export const getSemesterStats = TryCatchFunction(async (req, res) => {
   const totalSemesters = await Semester.count();
-  const activeSemesters = await Semester.count({ where: { status: "active" } });
-  const closedSemesters = await Semester.count({ where: { status: "closed" } });
+  const activeSemesters = await Semester.count({
+    where: Semester.sequelize.where(
+      Semester.sequelize.fn("UPPER", Semester.sequelize.col("status")),
+      "ACTIVE"
+    ),
+  });
+  // const activeSemesters = await Semester.count({ where: { status: "active" } });
+  // const closedSemesters = await Semester.count({ where: { status: "closed" } });
+  const closedSemesters = await Semester.count({
+    where: Semester.sequelize.where(
+      Semester.sequelize.fn("UPPER", Semester.sequelize.col("status")),
+      "CLOSED"
+    ),
+  });
+  ("CLOSED");
+
   const pendingSemesters = await Semester.count({
     where: { status: "pending" },
   });
 
   // Current semester
+  // const currentDate = new Date();
+  // const currentSemester = await Semester.findOne({
+  //   where: {
+  //     status: "active",
+  //     start_date: { [Op.lte]: currentDate },
+  //     end_date: { [Op.gte]: currentDate },
+  //   },
+  // });
+
   const currentDate = new Date();
-  const currentSemester = await Semester.findOne({
+  // Format as YYYY-MM-DD string for date-only comparison
+  const today = currentDate.toISOString().split("T")[0];
+
+  let semester = await Semester.findOne({
     where: {
-      status: "active",
-      start_date: { [Semester.sequelize.Op.lte]: currentDate },
-      end_date: { [Semester.sequelize.Op.gte]: currentDate },
+      [Op.and]: [
+        Semester.sequelize.literal(`DATE(start_date) <= '${today}'`),
+        Semester.sequelize.literal(`DATE(end_date) >= '${today}'`),
+      ],
     },
+    order: [["id", "DESC"]],
   });
+
+  if (!semester) {
+    semester = await Semester.findOne({
+      where: Semester.sequelize.where(
+        Semester.sequelize.fn("UPPER", Semester.sequelize.col("status")),
+        "ACTIVE"
+      ),
+      order: [["id", "DESC"]],
+    });
+  }
+
+  // Third fallback: Get the most recent semester by id
+  if (!semester) {
+    semester = await Semester.findOne({
+      order: [["id", "DESC"]],
+    });
+  }
 
   res.status(200).json({
     success: true,
@@ -545,7 +590,7 @@ export const getSemesterStats = TryCatchFunction(async (req, res) => {
       active: activeSemesters,
       closed: closedSemesters,
       pending: pendingSemesters,
-      current: currentSemester,
+      current: semester,
     },
   });
 });
