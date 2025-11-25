@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { Faculty } from "../../../models/faculty/faculty.js";
 import { Program } from "../../../models/program/program.js";
 import { Courses } from "../../../models/course/courses.js";
@@ -117,6 +118,11 @@ export const createFaculty = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Faculty name is required", 400);
   }
 
+  // Description is required by the model
+  if (!description || !description.trim()) {
+    throw new ErrorClass("Faculty description is required", 400);
+  }
+
   // Check if faculty with same name exists
   const existingFaculty = await Faculty.findOne({
     where: { name: name.trim() },
@@ -126,11 +132,33 @@ export const createFaculty = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Faculty with this name already exists", 409);
   }
 
-  const faculty = await Faculty.create({
-    name: name.trim(),
-    description: description?.trim() || null,
-    date: new Date(),
-  });
+  // Generate a unique token for the faculty
+  const token = crypto.randomBytes(32).toString("hex");
+
+  let faculty;
+  try {
+    // Don't pass date - let the database default handle it (model has defaultValue: DataTypes.NOW)
+    faculty = await Faculty.create({
+      name: name.trim(),
+      description: description.trim(),
+      token: token,
+    });
+  } catch (error) {
+    // Log the detailed error for debugging
+    console.error("Faculty creation error details:", {
+      message: error.message,
+      name: error.name,
+      errors: error.errors,
+      original: error.original,
+      stack: error.stack,
+    });
+    // Re-throw with more context
+    if (error.errors && error.errors.length > 0) {
+      const validationErrors = error.errors.map(e => `${e.path}: ${e.message}`).join(", ");
+      throw new ErrorClass(`Validation failed: ${validationErrors}`, 400);
+    }
+    throw error;
+  }
 
   // Log activity
   try {
