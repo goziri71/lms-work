@@ -15,13 +15,21 @@ import { TryCatchFunction } from "../../../utils/tryCatch/index.js";
  * Get dashboard statistics
  */
 export const getDashboardStats = TryCatchFunction(async (req, res) => {
-  // Get all counts in parallel
+  // Get staff counts first (handle missing admin_status column)
+  const totalStaff = await Staff.count();
+  let activeStaff = totalStaff; // Default: all staff are active if column doesn't exist
+  try {
+    activeStaff = await Staff.count({ where: { admin_status: "active" } });
+  } catch (error) {
+    // If admin_status column doesn't exist, use total count
+    console.warn("admin_status column not found in staff table, using total count");
+  }
+
+  // Get all other counts in parallel
   const [
     totalStudents,
     activeStudents,
     inactiveStudents,
-    totalStaff,
-    activeStaff,
     totalAdmins,
     totalPrograms,
     activePrograms,
@@ -36,10 +44,6 @@ export const getDashboardStats = TryCatchFunction(async (req, res) => {
     Students.count(),
     Students.count({ where: { admin_status: "active" } }),
     Students.count({ where: { admin_status: "inactive" } }),
-
-    // Staff
-    Staff.count(),
-    Staff.count({ where: { admin_status: "active" } }),
 
     // Admins
     WspAdmin.count({ where: { status: "active" } }),

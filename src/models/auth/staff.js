@@ -49,6 +49,11 @@ export const Staff = db.define(
       type: DataTypes.STRING,
       allowNull: true,
     },
+    admin_status: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: "active",
+    },
   },
   {
     tableName: "staff", // Specify the exact table name
