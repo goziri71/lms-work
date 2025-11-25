@@ -16,7 +16,8 @@ export const getAllStaff = TryCatchFunction(async (req, res) => {
   const { page = 1, limit = 20, status, search } = req.query;
 
   const where = {};
-  if (status) where.admin_status = status;
+  // Note: admin_status column doesn't exist in staff table
+  // if (status) where.admin_status = status;
   if (search) {
     where[Op.or] = [
       { full_name: { [Op.iLike]: `%${search}%` } },
@@ -89,7 +90,6 @@ export const createStaff = TryCatchFunction(async (req, res) => {
     password: hashedPassword,
     ...safeOtherData,
     full_name: fullName, // Set after otherData to ensure it's not overridden
-    admin_status: "active",
     date: new Date(),
   });
 
@@ -160,7 +160,9 @@ export const deactivateStaff = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Staff not found", 404);
   }
 
-  await staff.update({ admin_status: "inactive" });
+  // Note: admin_status column doesn't exist in staff table
+  // await staff.update({ admin_status: "inactive" });
+  // Staff deactivation would require adding the column to the database first
 
   await logAdminActivity(
     req.user.id,
