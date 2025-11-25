@@ -197,10 +197,11 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
     ],
     // Order by course_order date (if exists), then by course_reg_id to group courses in same order
     // Then by academic_year, semester, and registration id
+    // Cast course_reg.date (VARCHAR) to timestamp to match courseOrder.date (timestamp) for proper date ordering
     order: [
       [
         CourseReg.sequelize.literal(
-          `COALESCE("courseOrder"."date", course_reg.date)`
+          `COALESCE("courseOrder"."date", course_reg.date::timestamp)`
         ),
         "DESC",
       ],
