@@ -162,6 +162,8 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
   }
 
   // Get all course registrations with full course details
+  // Order by course_order (course_reg.course_reg_id links to course_order.id)
+  // This groups courses registered together in the same order and maintains the order sequence
   const courseRegistrations = await CourseReg.findAll({
     where: { student_id: id },
     include: [
@@ -186,8 +188,32 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
           },
         ],
       },
+      {
+        model: CourseOrder,
+        as: "courseOrder",
+        attributes: ["id", "date", "amount", "currency"],
+        required: false, // LEFT JOIN - course_reg may not have course_order
+      },
     ],
-    order: [["academic_year", "DESC"], ["semester", "DESC"]],
+    // Order by course_order date (if exists), then by course_reg_id to group courses in same order
+    // Then by academic_year, semester, and registration id
+    order: [
+      [
+        CourseReg.sequelize.literal(
+          `COALESCE("courseOrder"."date", course_reg.date)`
+        ),
+        "DESC",
+      ],
+      [
+        CourseReg.sequelize.literal(
+          `COALESCE(course_reg.course_reg_id, 0)`
+        ),
+        "DESC",
+      ],
+      ["academic_year", "DESC"],
+      ["semester", "DESC"],
+      ["id", "ASC"], // Within same order, order by registration id
+    ],
   });
 
   // Get exam attempts for student (Exam is in Library DB, so we'll get course info separately)

@@ -264,6 +264,17 @@ export const setupAssociations = () => {
     as: "student",
   });
 
+  // CourseReg -> CourseOrder (Many-to-One via course_reg_id)
+  CourseReg.belongsTo(CourseOrder, {
+    foreignKey: "course_reg_id",
+    as: "courseOrder",
+    constraints: false, // course_reg_id may be null
+  });
+  CourseOrder.hasMany(CourseReg, {
+    foreignKey: "course_reg_id",
+    as: "courseRegistrations",
+  });
+
   // Students -> Funding (One-to-Many)
   Students.hasMany(Funding, {
     foreignKey: "student_id",

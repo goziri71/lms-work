@@ -66,16 +66,22 @@ export const updateSystemSettings = TryCatchFunction(async (req, res) => {
   }
 
   // Log activity
-  await logAdminActivity(req.admin.id, "updated_system_settings", "settings", settings.id, {
-    changes: {
-      before: oldData,
-      after: {
-        name: settings.name,
-        address: settings.address,
-        rate: settings.rate,
-      },
-    },
-  });
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(req.user.id, "updated_system_settings", "settings", settings.id, {
+        changes: {
+          before: oldData,
+          after: {
+            name: settings.name,
+            address: settings.address,
+            rate: settings.rate,
+          },
+        },
+      });
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(200).json({
     success: true,

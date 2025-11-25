@@ -6,7 +6,7 @@ import { db } from "../database/database.js";
  */
 export const addDataIsolation = (req, res, next) => {
   // Super Admin can see everything (no filtering)
-  if (req.user?.userType === "admin" && req.admin?.role === "super_admin") {
+  if (req.user?.userType === "admin" && req.user?.role === "super_admin") {
     req.dataIsolation = null; // No filtering
     return next();
   }

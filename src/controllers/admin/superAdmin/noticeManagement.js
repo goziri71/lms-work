@@ -106,10 +106,16 @@ export const createNotice = TryCatchFunction(async (req, res) => {
   });
 
   // Log activity
-  await logAdminActivity(req.admin.id, "created_notice", "notice", notice.id, {
-    notice_title: notice.title,
-    course_id: notice.course_id,
-  });
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(req.user.id, "created_notice", "notice", notice.id, {
+        notice_title: notice.title,
+        course_id: notice.course_id,
+      });
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(201).json({
     success: true,
@@ -156,16 +162,22 @@ export const updateNotice = TryCatchFunction(async (req, res) => {
   await notice.save();
 
   // Log activity
-  await logAdminActivity(req.admin.id, "updated_notice", "notice", id, {
-    changes: {
-      before: oldData,
-      after: {
-        title: notice.title,
-        note: notice.note,
-        course_id: notice.course_id,
-      },
-    },
-  });
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(req.user.id, "updated_notice", "notice", id, {
+        changes: {
+          before: oldData,
+          after: {
+            title: notice.title,
+            note: notice.note,
+            course_id: notice.course_id,
+          },
+        },
+      });
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(200).json({
     success: true,
@@ -190,9 +202,15 @@ export const deleteNotice = TryCatchFunction(async (req, res) => {
   await notice.destroy();
 
   // Log activity
-  await logAdminActivity(req.admin.id, "deleted_notice", "notice", id, {
-    notice_title: notice.title,
-  });
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(req.user.id, "deleted_notice", "notice", id, {
+        notice_title: notice.title,
+      });
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(200).json({
     success: true,

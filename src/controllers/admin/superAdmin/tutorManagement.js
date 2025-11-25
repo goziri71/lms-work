@@ -140,9 +140,15 @@ export const approveSoleTutor = TryCatchFunction(async (req, res) => {
   }
 
   // Log activity
-  await logAdminActivity(req.admin.id, "approved_sole_tutor", "sole_tutor", id, {
-    tutor_email: tutor.email,
-  });
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(req.user.id, "approved_sole_tutor", "sole_tutor", id, {
+        tutor_email: tutor.email,
+      });
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(200).json({
     success: true,
@@ -173,10 +179,16 @@ export const rejectSoleTutor = TryCatchFunction(async (req, res) => {
   await tutor.save();
 
   // Log activity
-  await logAdminActivity(req.admin.id, "rejected_sole_tutor", "sole_tutor", id, {
-    tutor_email: tutor.email,
-    reason: reason || null,
-  });
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(req.user.id, "rejected_sole_tutor", "sole_tutor", id, {
+        tutor_email: tutor.email,
+        reason: reason || null,
+      });
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(200).json({
     success: true,
@@ -212,10 +224,16 @@ export const updateSoleTutorStatus = TryCatchFunction(async (req, res) => {
   await tutor.save();
 
   // Log activity
-  await logAdminActivity(req.admin.id, "updated_sole_tutor_status", "sole_tutor", id, {
-    old_status: oldStatus,
-    new_status: status,
-  });
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(req.user.id, "updated_sole_tutor_status", "sole_tutor", id, {
+        old_status: oldStatus,
+        new_status: status,
+      });
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(200).json({
     success: true,
@@ -375,15 +393,21 @@ export const approveOrganization = TryCatchFunction(async (req, res) => {
   }
 
   // Log activity
-  await logAdminActivity(
-    req.admin.id,
-    "approved_organization",
-    "organization",
-    id,
-    {
-      organization_name: organization.name,
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(
+        req.user.id,
+        "approved_organization",
+        "organization",
+        id,
+        {
+          organization_name: organization.name,
+        }
+      );
     }
-  );
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(200).json({
     success: true,
@@ -415,16 +439,22 @@ export const rejectOrganization = TryCatchFunction(async (req, res) => {
   await organization.save();
 
   // Log activity
-  await logAdminActivity(
-    req.admin.id,
-    "rejected_organization",
-    "organization",
-    id,
-    {
-      organization_name: organization.name,
-      reason: reason || null,
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(
+        req.user.id,
+        "rejected_organization",
+        "organization",
+        id,
+        {
+          organization_name: organization.name,
+          reason: reason || null,
+        }
+      );
     }
-  );
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(200).json({
     success: true,
@@ -460,16 +490,22 @@ export const updateOrganizationStatus = TryCatchFunction(async (req, res) => {
   await organization.save();
 
   // Log activity
-  await logAdminActivity(
-    req.admin.id,
-    "updated_organization_status",
-    "organization",
-    id,
-    {
-      old_status: oldStatus,
-      new_status: status,
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(
+        req.user.id,
+        "updated_organization_status",
+        "organization",
+        id,
+        {
+          old_status: oldStatus,
+          new_status: status,
+        }
+      );
     }
-  );
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(200).json({
     success: true,

@@ -86,9 +86,15 @@ export const getFacultyById = TryCatchFunction(async (req, res) => {
   }
 
   // Log activity
-  await logAdminActivity(req.admin.id, "viewed_faculty", "faculty", id, {
-    faculty_name: faculty.name,
-  });
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(req.user.id, "viewed_faculty", "faculty", id, {
+        faculty_name: faculty.name,
+      });
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(200).json({
     success: true,
@@ -127,9 +133,15 @@ export const createFaculty = TryCatchFunction(async (req, res) => {
   });
 
   // Log activity
-  await logAdminActivity(req.admin.id, "created_faculty", "faculty", faculty.id, {
-    faculty_name: faculty.name,
-  });
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(req.user.id, "created_faculty", "faculty", faculty.id, {
+        faculty_name: faculty.name,
+      });
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(201).json({
     success: true,
@@ -174,15 +186,21 @@ export const updateFaculty = TryCatchFunction(async (req, res) => {
   await faculty.save();
 
   // Log activity
-  await logAdminActivity(req.admin.id, "updated_faculty", "faculty", id, {
-    changes: {
-      before: oldData,
-      after: {
-        name: faculty.name,
-        description: faculty.description,
-      },
-    },
-  });
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(req.user.id, "updated_faculty", "faculty", id, {
+        changes: {
+          before: oldData,
+          after: {
+            name: faculty.name,
+            description: faculty.description,
+          },
+        },
+      });
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
 
   res.status(200).json({
     success: true,
@@ -237,10 +255,16 @@ export const deleteFaculty = TryCatchFunction(async (req, res) => {
   if (hardDelete === "true") {
     // Hard delete
     await faculty.destroy();
-    await logAdminActivity(req.admin.id, "deleted_faculty", "faculty", id, {
-      faculty_name: faculty.name,
-      hard_delete: true,
-    });
+    try {
+      if (req.user && req.user.id) {
+        await logAdminActivity(req.user.id, "deleted_faculty", "faculty", id, {
+          faculty_name: faculty.name,
+          hard_delete: true,
+        });
+      }
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
 
     res.status(200).json({
       success: true,
@@ -249,9 +273,15 @@ export const deleteFaculty = TryCatchFunction(async (req, res) => {
   } else {
     // For now, just delete (no soft delete field in faculty table)
     await faculty.destroy();
-    await logAdminActivity(req.admin.id, "deleted_faculty", "faculty", id, {
-      faculty_name: faculty.name,
-    });
+    try {
+      if (req.user && req.user.id) {
+        await logAdminActivity(req.user.id, "deleted_faculty", "faculty", id, {
+          faculty_name: faculty.name,
+        });
+      }
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
 
     res.status(200).json({
       success: true,

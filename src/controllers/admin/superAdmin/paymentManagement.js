@@ -289,14 +289,34 @@ export const getAllCourseOrders = TryCatchFunction(async (req, res) => {
  */
 export const getCourseOrderStats = TryCatchFunction(async (req, res) => {
   const totalOrders = await CourseOrder.count();
-  const totalAmount = await CourseOrder.sum("amount");
+  
+  // Sum amount by casting to INTEGER (amount is stored as VARCHAR)
+  const totalAmountResult = await CourseOrder.findAll({
+    attributes: [
+      [
+        db.Sequelize.fn(
+          "SUM",
+          db.Sequelize.cast(db.Sequelize.col("amount"), "INTEGER")
+        ),
+        "total",
+      ],
+    ],
+    raw: true,
+  });
+  const totalAmount = totalAmountResult[0]?.total || 0;
 
   // By semester
   const bySemester = await CourseOrder.findAll({
     attributes: [
       "semester",
       [db.Sequelize.fn("COUNT", db.Sequelize.col("id")), "count"],
-      [db.Sequelize.fn("SUM", db.Sequelize.col("amount")), "total"],
+      [
+        db.Sequelize.fn(
+          "SUM",
+          db.Sequelize.cast(db.Sequelize.col("amount"), "INTEGER")
+        ),
+        "total",
+      ],
     ],
     group: ["semester"],
     raw: true,
@@ -307,7 +327,13 @@ export const getCourseOrderStats = TryCatchFunction(async (req, res) => {
     attributes: [
       "academic_year",
       [db.Sequelize.fn("COUNT", db.Sequelize.col("id")), "count"],
-      [db.Sequelize.fn("SUM", db.Sequelize.col("amount")), "total"],
+      [
+        db.Sequelize.fn(
+          "SUM",
+          db.Sequelize.cast(db.Sequelize.col("amount"), "INTEGER")
+        ),
+        "total",
+      ],
     ],
     group: ["academic_year"],
     raw: true,
@@ -352,7 +378,13 @@ export const getPaymentOverview = TryCatchFunction(async (req, res) => {
     CourseOrder.findAll({
       attributes: [
         [db.Sequelize.fn("COUNT", db.Sequelize.col("id")), "count"],
-        [db.Sequelize.fn("SUM", db.Sequelize.col("amount")), "total"],
+        [
+          db.Sequelize.fn(
+            "SUM",
+            db.Sequelize.cast(db.Sequelize.col("amount"), "INTEGER")
+          ),
+          "total",
+        ],
       ],
       raw: true,
     }),
