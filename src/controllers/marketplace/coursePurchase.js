@@ -28,10 +28,10 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
   }
 
   // Only marketplace courses (sole_tutor or organization) require payment
-  // WSP courses are free for WSP students
-  if (!course.is_marketplace || course.owner_type === "wsp") {
+  // WPU courses are free for WPU students
+  if (!course.is_marketplace || course.owner_type === "wpu" || course.owner_type === "wsp") {
     throw new ErrorClass(
-      "This is a WSP course and is free. Please use the registration endpoint: POST /api/courses/register",
+      "This is a WPU course and is free. Please use the registration endpoint: POST /api/courses/register",
       400
     );
   }

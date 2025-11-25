@@ -63,9 +63,9 @@
 
 ### **Authentication & Users**
 
-- `students` - WSP students
-- `staff` - WSP lecturers/staff
-- `wsp_admins` - Admin accounts (Super Admin + WSP Admin)
+- `students` - WPU students
+- `staff` - WPU lecturers/staff
+- `wsp_admins` - Admin accounts (Super Admin + WPU Admin)
 - `users` - Legacy user table (for reference)
 - `semester` - Academic semesters
 
@@ -75,12 +75,12 @@
 - `organizations` - Organization accounts
 - `organization_users` - Tutors within organizations
 - `marketplace_transactions` - Course purchase transactions
-- `wsp_commissions` - WSP commission records
+- `wsp_commissions` - WPU commission records
 
 ### **Academic Structure**
 
 - `programs` - Academic programs (BSc Economics, etc.)
-- `courses` - All courses (WSP + Marketplace)
+- `courses` - All courses (WPU + Marketplace)
 - `faculty` - Academic faculties/departments
 - `course_reg` - Student course registrations
 - `school_attended` - Student educational history
@@ -261,15 +261,15 @@
 
 1. **Student purchases marketplace course** → Payment processed
 2. **System calculates automatically**:
-   - WSP Commission = Course Price × Commission Rate (default 15%)
-   - Tutor Earnings = Course Price - WSP Commission
+   - WPU Commission = Course Price × Commission Rate (default 15%)
+   - Tutor Earnings = Course Price - WPU Commission
 3. **Records created**:
    - `marketplace_transactions` - Full transaction details
-   - `wsp_commissions` - WSP commission record
+   - `wsp_commissions` - WPU commission record
 4. **Automatic updates**:
    - Tutor wallet balance increases
    - Tutor total earnings increases
-   - WSP commission marked as "collected"
+   - WPU commission marked as "collected"
 
 ### **Revenue Tracking**
 
@@ -282,7 +282,7 @@
 
 ### **Important Rules**
 
-- **WSP Courses**: FREE for WSP students (no revenue sharing)
+- **WPU Courses**: FREE for WPU students (no revenue sharing)
 - **Marketplace Courses**: PAID (revenue sharing applies)
 - **Commission Rate**: Configurable per tutor/organization (default 15%)
 
@@ -332,9 +332,9 @@
 
 ### **Course Types**
 
-1. **WSP Courses** (`owner_type = "wsp"`)
+1. **WPU Courses** (`owner_type = "wpu"` or `"wsp"` for legacy)
 
-   - Free for WSP students
+   - Free for WPU students
    - Registration: `POST /api/courses/register`
    - No payment required
 

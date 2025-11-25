@@ -66,10 +66,10 @@ export const Courses = db.define(
       allowNull: false,
     },
     owner_type: {
-      type: DataTypes.ENUM("wsp", "sole_tutor", "organization"),
+      type: DataTypes.ENUM("wpu", "wsp", "sole_tutor", "organization"),
       allowNull: false,
-      defaultValue: "wsp",
-      comment: "wsp = WSP owned, sole_tutor = owned by individual tutor, organization = owned by organization",
+      defaultValue: "wpu",
+      comment: "wpu = WPU owned (wsp is legacy), sole_tutor = owned by individual tutor, organization = owned by organization",
     },
     owner_id: {
       type: DataTypes.INTEGER,

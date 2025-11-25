@@ -1,8 +1,8 @@
 import { db } from "../../database/database.js";
 import { DataTypes } from "sequelize";
 
-export const WspCommission = db.define(
-  "WspCommission",
+export const WpuCommission = db.define(
+  "WpuCommission",
   {
     id: {
       type: DataTypes.INTEGER,
@@ -28,7 +28,7 @@ export const WspCommission = db.define(
       type: DataTypes.ENUM("pending", "collected", "refunded"),
       allowNull: false,
       defaultValue: "pending",
-      comment: "pending = not yet collected, collected = in WSP account, refunded = returned to student",
+      comment: "pending = not yet collected, collected = in WPU account, refunded = returned to student",
     },
     collected_at: {
       type: DataTypes.DATE,
@@ -41,7 +41,7 @@ export const WspCommission = db.define(
     },
   },
   {
-    tableName: "wsp_commissions",
+    tableName: "wsp_commissions", // Keep table name for backward compatibility
     timestamps: true,
     createdAt: "created_at",
     updatedAt: false,
@@ -55,4 +55,7 @@ export const WspCommission = db.define(
     ],
   }
 );
+
+// Backward compatibility export
+export const WspCommission = WpuCommission;
 

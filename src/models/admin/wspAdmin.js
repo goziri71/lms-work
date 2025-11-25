@@ -1,8 +1,8 @@
 import { db } from "../../database/database.js";
 import { DataTypes } from "sequelize";
 
-export const WspAdmin = db.define(
-  "WspAdmin",
+export const WpuAdmin = db.define(
+  "WpuAdmin",
   {
     id: {
       type: DataTypes.INTEGER,
@@ -34,10 +34,10 @@ export const WspAdmin = db.define(
       allowNull: true,
     },
     role: {
-      type: DataTypes.ENUM("super_admin", "wsp_admin"),
+      type: DataTypes.ENUM("super_admin", "wpu_admin", "wsp_admin"),
       allowNull: false,
-      defaultValue: "wsp_admin",
-      comment: "super_admin = full control, wsp_admin = assistant",
+      defaultValue: "wpu_admin",
+      comment: "super_admin = full control, wpu_admin = assistant (wsp_admin is legacy)",
     },
     phone: {
       type: DataTypes.STRING,
@@ -94,7 +94,7 @@ export const WspAdmin = db.define(
     },
   },
   {
-    tableName: "wsp_admins",
+    tableName: "wsp_admins", // Keep table name for backward compatibility
     timestamps: true,
     createdAt: "created_at",
     updatedAt: "updated_at",
@@ -112,4 +112,7 @@ export const WspAdmin = db.define(
     ],
   }
 );
+
+// Backward compatibility export
+export const WspAdmin = WpuAdmin;
 

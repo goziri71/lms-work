@@ -1,3 +1,3 @@
-export { WspAdmin } from "./wspAdmin.js";
+export { WpuAdmin, WspAdmin } from "./wspAdmin.js";
 export { AdminActivityLog } from "./adminActivityLog.js";
 

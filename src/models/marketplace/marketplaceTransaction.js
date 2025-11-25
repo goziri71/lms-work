@@ -42,12 +42,12 @@ export const MarketplaceTransaction = db.define(
     commission_rate: {
       type: DataTypes.DECIMAL(5, 2),
       allowNull: false,
-      comment: "WSP commission percentage at time of purchase",
+      comment: "WPU commission percentage at time of purchase",
     },
     wsp_commission: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
-      comment: "Amount WSP receives as commission",
+      comment: "Amount WPU receives as commission",
     },
     tutor_earnings: {
       type: DataTypes.DECIMAL(10, 2),
@@ -73,7 +73,7 @@ export const MarketplaceTransaction = db.define(
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false,
-      comment: "Whether WSP has received the commission",
+      comment: "Whether WPU has received the commission",
     },
     tutor_paid: {
       type: DataTypes.BOOLEAN,

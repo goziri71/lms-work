@@ -39,9 +39,9 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Course not found", 404);
   }
 
-  // IMPORTANT: WSP students get FREE access to WSP courses
+  // IMPORTANT: WPU students get FREE access to WPU courses
   // Marketplace courses (sole_tutor/organization) require payment via purchase endpoint
-  if (course.is_marketplace && course.owner_type !== "wsp") {
+  if (course.is_marketplace && course.owner_type !== "wpu" && course.owner_type !== "wsp") {
     throw new ErrorClass(
       "This is a marketplace course and requires purchase. Please use the purchase endpoint: POST /api/marketplace/courses/purchase",
       400
@@ -82,7 +82,7 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
   res.status(201).json({
     status: true,
     code: 201,
-    message: "Course registered successfully (Free - WSP Course)",
+    message: "Course registered successfully (Free - WPU Course)",
     data: {
       id: registration.id,
       course_id: registration.course_id,
@@ -92,8 +92,8 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
       course_code: course.course_code,
       is_marketplace: course.is_marketplace,
       owner_type: course.owner_type,
-      note: course.owner_type === "wsp" 
-        ? "This is a free WSP course" 
+      note: (course.owner_type === "wpu" || course.owner_type === "wsp")
+        ? "This is a free WPU course" 
         : "Course registered",
     },
   });
@@ -177,7 +177,7 @@ export const getAvailableCourses = TryCatchFunction(async (req, res) => {
   const courses = await Courses.findAll({
     where: {
       ...where,
-      // WSP students can see both WSP courses (free) and marketplace courses (paid)
+      // WPU students can see both WPU courses (free) and marketplace courses (paid)
       // Filter can be added later if needed
     },
     attributes: [
@@ -201,8 +201,8 @@ export const getAvailableCourses = TryCatchFunction(async (req, res) => {
   // Add pricing info for frontend
   const coursesWithPricing = courses.map((course) => {
     const courseData = course.toJSON();
-    if (course.owner_type === "wsp") {
-      courseData.price = 0; // Free for WSP students
+    if (course.owner_type === "wpu" || course.owner_type === "wsp") {
+      courseData.price = 0; // Free for WPU students
       courseData.requires_purchase = false;
     } else if (course.is_marketplace) {
       courseData.requires_purchase = true;
@@ -218,6 +218,6 @@ export const getAvailableCourses = TryCatchFunction(async (req, res) => {
     code: 200,
     message: "Available courses retrieved successfully",
     data: coursesWithPricing,
-    note: "WSP courses are free. Marketplace courses require purchase.",
+    note: "WPU courses are free. Marketplace courses require purchase.",
   });
 });

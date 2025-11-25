@@ -80,7 +80,7 @@ export const getAllMarketplaceTransactions = TryCatchFunction(async (req, res) =
 });
 
 /**
- * Get WSP revenue statistics
+ * Get WPU revenue statistics
  */
 export const getWspRevenueStatistics = TryCatchFunction(async (req, res) => {
   const { start_date, end_date } = req.query;
@@ -123,7 +123,7 @@ export const getWspRevenueStatistics = TryCatchFunction(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: "WSP revenue statistics retrieved successfully",
+    message: "WPU revenue statistics retrieved successfully",
     data: {
       ...stats,
       pendingPayouts: pendingPayouts || 0,

@@ -48,7 +48,7 @@ export const createAdmin = TryCatchFunction(async (req, res) => {
     password: hashedPassword,
     fname,
     lname,
-    role: role || "wsp_admin",
+    role: role || "wpu_admin",
     permissions: permissions || undefined,
     status: "active",
     created_by: req.user.id,
@@ -64,7 +64,7 @@ export const createAdmin = TryCatchFunction(async (req, res) => {
       recipient_type: "admin",
       recipient_id: admin.id,
       email_type: "admin_welcome",
-      subject: "Welcome to WSP Admin System - Your Account is Ready!",
+      subject: "Welcome to WPU Admin System - Your Account is Ready!",
       status: "sent",
     });
   } catch (emailError) {

@@ -9,7 +9,7 @@ import { db } from "../database/database.js";
 /**
  * Calculate commission and earnings
  * @param {number} coursePrice - Price of the course
- * @param {number} commissionRate - WSP commission percentage (e.g., 15 for 15%)
+ * @param {number} commissionRate - WPU commission percentage (e.g., 15 for 15%)
  * @returns {Object} - { wspCommission, tutorEarnings }
  */
 export function calculateRevenue(coursePrice, commissionRate) {
@@ -29,7 +29,7 @@ export function calculateRevenue(coursePrice, commissionRate) {
  * Process marketplace course purchase and distribute revenue
  * 
  * IMPORTANT: This function ONLY processes marketplace courses (sole_tutor/organization)
- * WSP courses are FREE for WSP students and should use the regular registration endpoint
+ * WPU courses are FREE for WPU students and should use the regular registration endpoint
  * 
  * @param {Object} purchaseData - Purchase information
  * @param {number} purchaseData.course_id - Course ID
@@ -49,10 +49,10 @@ export async function processMarketplacePurchase(purchaseData) {
   }
 
   // CRITICAL: Only marketplace courses (sole_tutor/organization) require payment
-  // WSP courses (owner_type = "wsp") are FREE and should NOT use this function
-  if (!course.is_marketplace || course.owner_type === "wsp") {
+  // WPU courses (owner_type = "wpu" or "wsp") are FREE and should NOT use this function
+  if (!course.is_marketplace || course.owner_type === "wpu" || course.owner_type === "wsp") {
     throw new Error(
-      "This is a WSP course and is free. Revenue sharing only applies to marketplace courses (sole_tutor/organization)."
+      "This is a WPU course and is free. Revenue sharing only applies to marketplace courses (sole_tutor/organization)."
     );
   }
 
@@ -97,7 +97,7 @@ export async function processMarketplacePurchase(purchaseData) {
     payment_reference: payment_reference || null,
   });
 
-  // Create WSP commission record
+  // Create WPU commission record
   await WspCommission.create({
     transaction_id: transaction.id,
     amount: wspCommission,
@@ -128,7 +128,7 @@ export async function processMarketplacePurchase(purchaseData) {
 }
 
 /**
- * Get revenue statistics for WSP
+ * Get revenue statistics for WPU
  */
 export async function getWspRevenueStats(startDate, endDate) {
   const where = {};

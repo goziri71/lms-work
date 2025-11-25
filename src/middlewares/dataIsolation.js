@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import { db } from "../database/database.js";
 
 /**
@@ -11,10 +12,10 @@ export const addDataIsolation = (req, res, next) => {
     return next();
   }
 
-  // WSP Admin - can see WSP data only
+  // WPU Admin - can see WPU data only
   if (req.user?.userType === "admin") {
     req.dataIsolation = {
-      owner_type: "wsp",
+      owner_type: { [Op.in]: ["wpu", "wsp"] }, // Support both wpu and legacy wsp
       owner_id: null,
     };
     return next();
@@ -47,10 +48,10 @@ export const addDataIsolation = (req, res, next) => {
     return next();
   }
 
-  // Staff/Student - can only see WSP data
+  // Staff/Student - can only see WPU data
   if (req.user?.userType === "staff" || req.user?.userType === "student") {
     req.dataIsolation = {
-      owner_type: "wsp",
+      owner_type: { [Op.in]: ["wpu", "wsp"] }, // Support both wpu and legacy wsp
       owner_id: null,
     };
     return next();

@@ -89,7 +89,7 @@ export const Organization = db.define(
       type: DataTypes.DECIMAL(5, 2),
       allowNull: false,
       defaultValue: 15.0,
-      comment: "WSP commission percentage",
+      comment: "WPU commission percentage",
     },
     rating: {
       type: DataTypes.DECIMAL(3, 2),

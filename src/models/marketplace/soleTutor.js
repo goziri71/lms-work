@@ -95,7 +95,7 @@ export const SoleTutor = db.define(
       type: DataTypes.DECIMAL(5, 2),
       allowNull: false,
       defaultValue: 15.0,
-      comment: "WSP commission percentage (default 15%)",
+      comment: "WPU commission percentage (default 15%)",
     },
     rating: {
       type: DataTypes.DECIMAL(3, 2),

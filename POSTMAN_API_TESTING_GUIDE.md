@@ -285,19 +285,19 @@ Authorization: Bearer {{student_token}}
       "purchase_endpoint": "/api/marketplace/courses/purchase"
     }
   ],
-  "note": "WSP courses are free. Marketplace courses require purchase."
+  "note": "WPU courses are free. Marketplace courses require purchase."
 }
 ```
 
 **For Frontend:**
 
-- Show FREE badge for WSP courses
+- Show FREE badge for WPU courses
 - Show PRICE for marketplace courses
 - Use different buttons: "Register" vs "Purchase"
 
 ---
 
-### **10. Register for WSP Course (FREE)**
+### **10. Register for WPU Course (FREE)**
 
 **POST** `/api/courses/register`
 
@@ -324,7 +324,7 @@ Authorization: Bearer {{student_token}}
 {
   "status": true,
   "code": 201,
-  "message": "Course registered successfully (Free - WSP Course)",
+  "message": "Course registered successfully (Free - WPU Course)",
   "data": {
     "id": 123,
     "course_id": 1,
@@ -334,7 +334,7 @@ Authorization: Bearer {{student_token}}
     "course_code": "ECO101",
     "is_marketplace": false,
     "owner_type": "wsp",
-    "note": "This is a free WSP course"
+    "note": "This is a free WPU course"
   }
 }
 ```
@@ -645,7 +645,7 @@ Authorization: Bearer {{staff_token}}
 **For Frontend:**
 
 - Save token
-- Check role (super_admin or wsp_admin)
+- Check role (super_admin or wpu_admin, wsp_admin is legacy)
 - Redirect based on permissions
 
 ---
@@ -1954,7 +1954,7 @@ Authorization: Bearer {{super_admin_token}}
 **For Frontend:**
 
 - Show admin list
-- Display roles (super_admin, wsp_admin)
+- Display roles (super_admin, wpu_admin, wsp_admin is legacy)
 - Show permissions
 
 ---
@@ -1977,7 +1977,7 @@ Authorization: Bearer {{super_admin_token}}
   "password": "Admin123",
   "fname": "New",
   "lname": "Admin",
-  "role": "wsp_admin",
+  "role": "wpu_admin",
   "permissions": {
     "students": {
       "view": true,
@@ -2210,7 +2210,7 @@ Authorization: Bearer {{super_admin_token}}
 **For Frontend:**
 
 - Show course list with filters
-- Display owner type (WSP/Marketplace)
+- Display owner type (WPU/Marketplace)
 - Enable CRUD operations
 
 ---
@@ -2290,7 +2290,7 @@ Authorization: Bearer {{super_admin_token}}
 **For Frontend:**
 
 - Show form with all fields
-- Allow setting owner_type (wsp/sole_tutor/organization)
+- Allow setting owner_type (wpu/sole_tutor/organization, wsp is legacy)
 - If marketplace, require owner_id
 
 ---
@@ -3138,12 +3138,12 @@ Authorization: Bearer {{super_admin_token}}
         "course_price": 15000,
         "currency": "NGN",
         "commission_rate": 15,
-        "wsp_commission": 2250,
+        "wpu_commission": 2250,
         "tutor_earnings": 12750,
         "payment_status": "completed",
         "course": { "id": 2, "title": "Advanced Mathematics", "course_code": "MATH301" },
         "student": { "id": 10, "fname": "John", "lname": "Doe", "email": "john@example.com" },
-        "wspCommission": { "id": 1, "amount": 2250, "status": "collected" }
+        "wpuCommission": { "id": 1, "amount": 2250, "status": "collected" }
       }
     ],
     "pagination": { ... }
@@ -3160,7 +3160,7 @@ Authorization: Bearer {{super_admin_token}}
 
 ---
 
-#### **2. Get WSP Revenue Statistics**
+#### **2. Get WPU Revenue Statistics**
 
 **GET** `/api/admin/revenue/wsp-stats`
 
@@ -3180,7 +3180,7 @@ Authorization: Bearer {{super_admin_token}}
 ```json
 {
   "success": true,
-  "message": "WSP revenue statistics retrieved successfully",
+  "message": "WPU revenue statistics retrieved successfully",
   "data": {
     "totalCommission": 50000,
     "totalRevenue": 333333,
@@ -3539,7 +3539,7 @@ Authorization: Bearer {{student_token}}
 **Important:**
 
 - Only works for marketplace courses (`is_marketplace: true`, `owner_type: sole_tutor` or `organization`)
-- WSP courses are FREE - use `/api/courses/register` instead
+- WPU courses are FREE - use `/api/courses/register` instead
 
 ---
 
@@ -3572,8 +3572,8 @@ Authorization: Bearer {{student_token}}
 
    - Login as Super Admin
    - Test all Super Admin endpoints
-   - Create WSP Admin
-   - Test WSP Admin permissions
+   - Create WPU Admin
+   - Test WPU Admin permissions
 
 5. **Marketplace Flow**
    - Register sole tutor
@@ -3632,9 +3632,9 @@ Authorization: Bearer {{student_token}}
 
 ### **Course Registration vs Purchase**
 
-1. **WSP Courses** (`owner_type: "wsp"`):
+1. **WPU Courses** (`owner_type: "wpu"` or `"wsp"` for legacy):
 
-   - FREE for WSP students
+   - FREE for WPU students
    - Use: `POST /api/courses/register`
    - No payment required
 
@@ -3651,7 +3651,7 @@ Authorization: Bearer {{student_token}}
    - Full access to all endpoints
    - Can manage everything
 
-2. **WSP Admin:**
+2. **WPU Admin:**
 
    - Limited permissions
    - Can view students/staff
@@ -3661,7 +3661,7 @@ Authorization: Bearer {{student_token}}
 3. **Students:**
 
    - Can view their courses
-   - Can register for WSP courses
+   - Can register for WPU courses
    - Can purchase marketplace courses
 
 4. **Staff:**
