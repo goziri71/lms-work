@@ -102,7 +102,7 @@ export const createSemester = TryCatchFunction(async (req, res) => {
     start_date,
     end_date,
     status = "pending",
-  } = req.body;
+  } = req.body || {};
 
   if (!academic_year || !semester || !start_date || !end_date) {
     throw new ErrorClass(
@@ -111,7 +111,12 @@ export const createSemester = TryCatchFunction(async (req, res) => {
     );
   }
 
-  if (semester !== 1 && semester !== 2) {
+  if (
+    semester !== 1 &&
+    semester !== 2 &&
+    semester !== "1" &&
+    semester !== "2"
+  ) {
     throw new ErrorClass("Semester must be 1 or 2", 400);
   }
 
@@ -126,16 +131,21 @@ export const createSemester = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("End date must be after start date", 400);
   }
 
+  // Convert semester input (1 or 2) to database format ("1ST" or "2ND")
+  const semesterValue = semester === 1 || semester === "1" ? "1ST" : "2ND";
+
+  // academic_year is stored as VARCHAR (e.g., "2019/2020"), so compare as string
+  // semester is stored as VARCHAR (e.g., "1ST", "2ND"), so compare as string
   const existingSemester = await Semester.findOne({
     where: {
-      academic_year: parseInt(academic_year),
-      semester: parseInt(semester),
+      academic_year: academic_year,
+      semester: semesterValue,
     },
   });
 
   if (existingSemester) {
     throw new ErrorClass(
-      `Semester ${semester} for academic year ${academic_year} already exists`,
+      `Semester ${semesterValue} for academic year ${academic_year} already exists`,
       409
     );
   }
@@ -151,14 +161,29 @@ export const createSemester = TryCatchFunction(async (req, res) => {
     );
   }
 
-  const newSemester = await Semester.create({
-    academic_year: parseInt(academic_year),
-    semester: parseInt(semester),
-    start_date: startDate,
-    end_date: endDate,
-    status: status,
-    date: new Date(),
-  });
+  // Format dates as YYYY-MM-DD strings (database columns are VARCHAR)
+  const formattedStartDate = startDate.toISOString().split("T")[0];
+  const formattedEndDate = endDate.toISOString().split("T")[0];
+
+  // Use raw SQL to bypass Sequelize's type conversion for date fields
+  // The database columns are VARCHAR, but Sequelize model defines them as DATE
+  const [result] = await Semester.sequelize.query(
+    `INSERT INTO "semester" ("academic_year", "semester", "start_date", "end_date", "status", "date") 
+     VALUES (:academicYear, :semester, :startDate, :endDate, :status, NOW()) 
+     RETURNING *`,
+    {
+      replacements: {
+        academicYear: academic_year,
+        semester: semesterValue,
+        startDate: formattedStartDate,
+        endDate: formattedEndDate,
+        status: status,
+      },
+      type: Semester.sequelize.QueryTypes.SELECT,
+    }
+  );
+
+  const newSemester = result[0];
 
   try {
     if (req.user && req.user.id) {
@@ -189,7 +214,8 @@ export const createSemester = TryCatchFunction(async (req, res) => {
 
 export const updateSemester = TryCatchFunction(async (req, res) => {
   const { id } = req.params;
-  const { academic_year, semester, start_date, end_date, status } = req.body;
+  const { academic_year, semester, start_date, end_date, status } =
+    req.body || {};
 
   const semesterRecord = await Semester.findByPk(id);
   if (!semesterRecord) {
@@ -219,23 +245,33 @@ export const updateSemester = TryCatchFunction(async (req, res) => {
     }
   }
 
+  // Convert semester input (1 or 2) to database format ("1ST" or "2ND") if provided
+  const semesterValue =
+    semester !== undefined
+      ? semester === 1 || semester === "1"
+        ? "1ST"
+        : "2ND"
+      : semesterRecord.semester;
+
+  const academicYearValue =
+    academic_year !== undefined ? academic_year : semesterRecord.academic_year;
+
+  // Check if the combination already exists (only if academic_year or semester is being changed)
   if (
     (academic_year && academic_year !== semesterRecord.academic_year) ||
-    (semester && semester !== semesterRecord.semester)
+    (semester && semesterValue !== semesterRecord.semester)
   ) {
     const existingSemester = await Semester.findOne({
       where: {
-        academic_year: academic_year || semesterRecord.academic_year,
-        semester: semester || semesterRecord.semester,
-        id: { [Semester.sequelize.Op.ne]: id },
+        academic_year: academicYearValue,
+        semester: semesterValue,
+        id: { [Op.ne]: id },
       },
     });
 
     if (existingSemester) {
       throw new ErrorClass(
-        `Semester ${semester || semesterRecord.semester} for academic year ${
-          academic_year || semesterRecord.academic_year
-        } already exists`,
+        `Semester ${semesterValue} for academic year ${academicYearValue} already exists`,
         409
       );
     }
@@ -247,20 +283,65 @@ export const updateSemester = TryCatchFunction(async (req, res) => {
       {
         where: {
           status: "active",
-          id: { [Semester.sequelize.Op.ne]: id },
+          id: { [Op.ne]: id },
         },
       }
     );
   }
 
-  if (academic_year !== undefined)
-    semesterRecord.academic_year = parseInt(academic_year);
-  if (semester !== undefined) semesterRecord.semester = parseInt(semester);
-  if (start_date) semesterRecord.start_date = new Date(start_date);
-  if (end_date) semesterRecord.end_date = new Date(end_date);
-  if (status !== undefined) semesterRecord.status = status;
+  // Build update object with formatted dates
+  const updateData = {};
 
-  await semesterRecord.save();
+  if (academic_year !== undefined) updateData.academic_year = academic_year;
+  if (semester !== undefined) updateData.semester = semesterValue;
+  if (start_date) {
+    const startDateObj = new Date(start_date);
+    updateData.start_date = startDateObj.toISOString().split("T")[0]; // Store as string "YYYY-MM-DD"
+  }
+  if (end_date) {
+    const endDateObj = new Date(end_date);
+    updateData.end_date = endDateObj.toISOString().split("T")[0]; // Store as string "YYYY-MM-DD"
+  }
+  if (status !== undefined) updateData.status = status;
+
+  // Use raw SQL for date fields to bypass Sequelize's type conversion
+  // The database columns are VARCHAR, but Sequelize model defines them as DATE
+  // This causes type conversion issues, so we use raw SQL for dates
+  if (Object.keys(updateData).length > 0) {
+    // If we have date fields, use raw SQL for those
+    if (updateData.start_date || updateData.end_date) {
+      const setClauses = [];
+      const replacements = { id: parseInt(id) };
+
+      if (updateData.start_date) {
+        setClauses.push('"start_date" = :startDate');
+        replacements.startDate = updateData.start_date;
+      }
+      if (updateData.end_date) {
+        setClauses.push('"end_date" = :endDate');
+        replacements.endDate = updateData.end_date;
+      }
+
+      await Semester.sequelize.query(
+        `UPDATE "semester" SET ${setClauses.join(", ")} WHERE "id" = :id`,
+        {
+          replacements,
+          type: Semester.sequelize.QueryTypes.UPDATE,
+        }
+      );
+
+      // Remove date fields from updateData and use regular update for the rest
+      delete updateData.start_date;
+      delete updateData.end_date;
+    }
+
+    // Update non-date fields using regular Sequelize update
+    if (Object.keys(updateData).length > 0) {
+      await Semester.update(updateData, { where: { id } });
+    }
+
+    await semesterRecord.reload();
+  }
 
   try {
     if (req.user && req.user.id) {
@@ -327,7 +408,7 @@ export const closeSemester = TryCatchFunction(async (req, res) => {
 
 export const extendSemester = TryCatchFunction(async (req, res) => {
   const { id } = req.params;
-  const { new_end_date, reason } = req.body;
+  const { new_end_date, reason } = req.body || {};
 
   if (!new_end_date) {
     throw new ErrorClass("New end date is required", 400);
@@ -343,17 +424,36 @@ export const extendSemester = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Invalid date format", 400);
   }
 
-  if (newEndDate <= semester.start_date) {
+  // Format date as YYYY-MM-DD string (database column is VARCHAR(15))
+  const formattedEndDate = newEndDate.toISOString().split("T")[0];
+
+  // Compare dates properly
+  const currentEndDate = new Date(semester.end_date);
+  const currentStartDate = new Date(semester.start_date);
+
+  if (newEndDate <= currentStartDate) {
     throw new ErrorClass("New end date must be after start date", 400);
   }
 
-  if (newEndDate <= semester.end_date) {
+  if (newEndDate <= currentEndDate) {
     throw new ErrorClass("New end date must be after current end date", 400);
   }
 
   const oldEndDate = semester.end_date;
-  semester.end_date = newEndDate;
-  await semester.save();
+
+  // Use raw SQL to bypass Sequelize's type conversion completely
+  // The database column is VARCHAR(15), so we need to save as string
+  // Sequelize.update() still tries to convert based on model definition (DataTypes.DATE)
+  await Semester.sequelize.query(
+    `UPDATE "semester" SET "end_date" = :endDate WHERE "id" = :id`,
+    {
+      replacements: { endDate: formattedEndDate, id: parseInt(id) },
+      type: Semester.sequelize.QueryTypes.UPDATE,
+    }
+  );
+
+  // Reload the semester to get the updated value
+  await semester.reload();
 
   try {
     if (req.user && req.user.id) {
@@ -402,7 +502,7 @@ export const activateSemester = TryCatchFunction(async (req, res) => {
     {
       where: {
         status: "active",
-        id: { [Semester.sequelize.Op.ne]: id },
+        id: { [Op.ne]: id },
       },
     }
   );

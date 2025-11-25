@@ -118,10 +118,63 @@ export const requirePermission = (resource, action) => {
 /**
  * Helper function to log admin actions
  * Use in controllers after successful operations
+ * 
+ * @param {number} adminId - Admin ID
+ * @param {string} action - Action performed (e.g., "created_notice", "updated_faculty")
+ * @param {string} targetType - Type of target (e.g., "notice", "faculty", "student")
+ * @param {number} targetId - ID of the affected entity
+ * @param {string|object} descriptionOrMetadata - Description string OR metadata object
+ * @param {object} metadata - Additional metadata (optional, only if descriptionOrMetadata is a string)
  */
-export const logAdminActivity = async (adminId, action, targetType, targetId, description, metadata = {}) => {
+export const logAdminActivity = async (adminId, action, targetType, targetId, descriptionOrMetadata, metadata = {}) => {
   try {
     const { AdminActivityLog } = await import("../models/admin/adminActivityLog.js");
+    
+    // Determine if descriptionOrMetadata is a string (description) or object (metadata)
+    let description = null;
+    let finalMetadata = {};
+    
+    if (typeof descriptionOrMetadata === "string") {
+      // If it's a string, it's the description, and metadata is the 6th parameter
+      description = descriptionOrMetadata;
+      finalMetadata = metadata || {};
+    } else if (typeof descriptionOrMetadata === "object" && descriptionOrMetadata !== null) {
+      // If it's an object, it's metadata, generate description from action
+      finalMetadata = descriptionOrMetadata;
+      // Generate a human-readable description from the action
+      const actionParts = action.split("_");
+      const verb = actionParts[0]; // "created", "updated", "deleted", etc.
+      const noun = actionParts.slice(1).join(" "); // "notice", "sole tutor", etc.
+      
+      // Build description from metadata if available
+      const metadataKeys = Object.keys(finalMetadata);
+      if (metadataKeys.length > 0) {
+        const details = metadataKeys
+          .filter(key => !["changes", "before", "after"].includes(key))
+          .map(key => {
+            const value = finalMetadata[key];
+            if (typeof value === "string" || typeof value === "number") {
+              return `${key}: ${value}`;
+            }
+            return null;
+          })
+          .filter(Boolean)
+          .join(", ");
+        
+        description = `${verb.charAt(0).toUpperCase() + verb.slice(1)} ${noun}${details ? ` (${details})` : ""}`;
+      } else {
+        description = `${verb.charAt(0).toUpperCase() + verb.slice(1)} ${noun}`;
+      }
+    }
+    
+    // Handle changes object separately (for before/after tracking)
+    let changes = null;
+    if (finalMetadata.changes) {
+      changes = finalMetadata.changes;
+      // Remove changes from metadata to avoid duplication
+      const { changes: _, ...restMetadata } = finalMetadata;
+      finalMetadata = restMetadata;
+    }
     
     await AdminActivityLog.create({
       admin_id: adminId,
@@ -129,7 +182,8 @@ export const logAdminActivity = async (adminId, action, targetType, targetId, de
       target_type: targetType,
       target_id: targetId,
       description,
-      metadata,
+      changes,
+      metadata: Object.keys(finalMetadata).length > 0 ? finalMetadata : null,
       result: "success",
     });
   } catch (error) {
