@@ -10,6 +10,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "echo \"No build step needed for JS—just run npm start\"",
     "migrate:course-reg": "node src/scripts/migrateCourseReg.js",
+    "migrate:courses": "node src/scripts/migrateCoursesFromSQL.js",
+    "update:owner-type": "node src/scripts/updateCoursesOwnerType.js",
     "db:introspect": "node src/scripts/introspect.js",
     "fix:course-reg": "node src/scripts/fixCourseRegIds.js",
     "migrate:library": "node src/scripts/migrateLibrary.js",
