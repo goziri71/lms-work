@@ -206,9 +206,7 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
         "DESC",
       ],
       [
-        CourseReg.sequelize.literal(
-          `COALESCE(course_reg.course_reg_id, 0)`
-        ),
+        CourseReg.sequelize.literal(`COALESCE(course_reg.course_reg_id, 0)`),
         "DESC",
       ],
       ["academic_year", "DESC"],
@@ -224,20 +222,33 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
       {
         model: Exam,
         as: "exam",
-        attributes: ["id", "title", "course_id", "exam_type", "duration_minutes", "academic_year", "semester"],
+        attributes: [
+          "id",
+          "title",
+          "course_id",
+          "exam_type",
+          "duration_minutes",
+          "academic_year",
+          "semester",
+        ],
       },
     ],
     order: [["started_at", "DESC"]],
   });
 
   // Get course details for exams (since Exam is in Library DB, we need to fetch courses separately)
-  const examCourseIds = [...new Set(examAttempts.map(a => a.exam?.course_id).filter(Boolean))];
-  const examCourses = examCourseIds.length > 0 ? await Courses.findAll({
-    where: { id: { [Op.in]: examCourseIds } },
-    attributes: ["id", "title", "course_code"],
-  }) : [];
-  
-  const courseMap = new Map(examCourses.map(c => [c.id, c]));
+  const examCourseIds = [
+    ...new Set(examAttempts.map((a) => a.exam?.course_id).filter(Boolean)),
+  ];
+  const examCourses =
+    examCourseIds.length > 0
+      ? await Courses.findAll({
+          where: { id: { [Op.in]: examCourseIds } },
+          attributes: ["id", "title", "course_code"],
+        })
+      : [];
+
+  const courseMap = new Map(examCourses.map((c) => [c.id, c]));
 
   // Get wallet funding transactions
   const fundingTransactions = await Funding.findAll({
@@ -284,7 +295,9 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
   // Group course registrations by semester/academic year for Registrations section
   const registrationsBySemester = {};
   courseRegistrations.forEach((reg) => {
-    const key = `${reg.academic_year || 'Unknown'}_${reg.semester || 'Unknown'}`;
+    const key = `${reg.academic_year || "Unknown"}_${
+      reg.semester || "Unknown"
+    }`;
     if (!registrationsBySemester[key]) {
       registrationsBySemester[key] = {
         academic_year: reg.academic_year,
@@ -293,7 +306,7 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
         courses: [],
         registration_date: reg.date,
         school_fees: null,
-        registration_status: 'pending', // Will be updated based on school fees
+        registration_status: "pending", // Will be updated based on school fees
       };
     }
     registrationsBySemester[key].course_count++;
@@ -308,7 +321,9 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
 
   // Match school fees with registrations to determine registration status
   schoolFeesHistory.forEach((fee) => {
-    const key = `${fee.academic_year || 'Unknown'}_${fee.semester || 'Unknown'}`;
+    const key = `${fee.academic_year || "Unknown"}_${
+      fee.semester || "Unknown"
+    }`;
     if (registrationsBySemester[key]) {
       registrationsBySemester[key].school_fees = {
         id: fee.id,
@@ -320,10 +335,10 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
         currency: fee.currency,
       };
       // Update registration status based on school fees
-      if (fee.status === 'Paid') {
-        registrationsBySemester[key].registration_status = 'registered';
+      if (fee.status === "Paid") {
+        registrationsBySemester[key].registration_status = "registered";
       } else if (fee.amount > 0) {
-        registrationsBySemester[key].registration_status = 'pending_payment';
+        registrationsBySemester[key].registration_status = "pending_payment";
       }
     } else {
       // School fees without course registrations (semester registration only)
@@ -342,34 +357,57 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
           teller_no: fee.teller_no,
           currency: fee.currency,
         },
-        registration_status: fee.status === 'Paid' ? 'registered' : 'pending_payment',
+        registration_status:
+          fee.status === "Paid" ? "registered" : "pending_payment",
       };
     }
   });
 
   // Convert to array and sort by academic year and semester (newest first)
-  const registrations = Object.values(registrationsBySemester)
-    .sort((a, b) => {
-      // Sort by academic year (descending), then by semester
-      if (a.academic_year !== b.academic_year) {
-        return (b.academic_year || '').localeCompare(a.academic_year || '');
-      }
-      // Sort semester: 2ND before 1ST, or by semester number
-      const semesterOrder = { '2ND': 2, '2': 2, '1ST': 1, '1': 1 };
-      return (semesterOrder[b.semester] || 0) - (semesterOrder[a.semester] || 0);
-    });
+  const registrations = Object.values(registrationsBySemester).sort((a, b) => {
+    // Sort by academic year (descending), then by semester
+    if (a.academic_year !== b.academic_year) {
+      return (b.academic_year || "").localeCompare(a.academic_year || "");
+    }
+    // Sort semester: 2ND before 1ST, or by semester number
+    const semesterOrder = { "2ND": 2, 2: 2, "1ST": 1, 1: 1 };
+    return (semesterOrder[b.semester] || 0) - (semesterOrder[a.semester] || 0);
+  });
 
-  // Format course registrations with results
-  const courses = courseRegistrations.map((reg) => ({
-    registration: {
-      id: reg.id,
-      academic_year: reg.academic_year,
-      semester: reg.semester,
-      level: reg.level,
-      date: reg.date,
-      ref: reg.ref,
-    },
-    course: {
+  // Group course registrations by academic_year, semester, and date
+  const coursesBySemester = {};
+
+  courseRegistrations.forEach((reg) => {
+    const academicYear = reg.academic_year || "Unknown";
+    const semester = reg.semester || "Unknown";
+    const key = `${academicYear}_${semester}`;
+
+    if (!coursesBySemester[key]) {
+      // Use course_order date if available, otherwise use registration date
+      // For the group date, use the earliest date in that semester
+      const regDate = reg.courseOrder?.date
+        ? new Date(reg.courseOrder.date).toISOString().split("T")[0]
+        : reg.date || new Date().toISOString().split("T")[0];
+
+      coursesBySemester[key] = {
+        academic_year: academicYear,
+        semester: semester,
+        date: regDate, // Will be updated to earliest date
+        courses: [],
+      };
+    }
+
+    // Update date to earliest registration date in this semester
+    const regDate = reg.courseOrder?.date
+      ? new Date(reg.courseOrder.date).toISOString().split("T")[0]
+      : reg.date || new Date().toISOString().split("T")[0];
+
+    if (regDate < coursesBySemester[key].date) {
+      coursesBySemester[key].date = regDate;
+    }
+
+    // Add course with full details
+    coursesBySemester[key].courses.push({
       id: reg.course?.id,
       title: reg.course?.title,
       course_code: reg.course?.course_code,
@@ -382,19 +420,49 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
       program: reg.course?.program,
       faculty: reg.course?.faculty,
       instructor: reg.course?.instructor,
-    },
-    results: {
-      first_ca: reg.first_ca,
-      second_ca: reg.second_ca,
-      third_ca: reg.third_ca,
-      exam_score: reg.exam_score,
-      total_score: reg.first_ca + reg.second_ca + reg.third_ca + reg.exam_score,
-    },
-  }));
+      registration: {
+        id: reg.id,
+        level: reg.level,
+        date: reg.date,
+        ref: reg.ref,
+        course_reg_id: reg.course_reg_id,
+      },
+      results: {
+        first_ca: reg.first_ca,
+        second_ca: reg.second_ca,
+        third_ca: reg.third_ca,
+        exam_score: reg.exam_score,
+        total_score:
+          reg.first_ca + reg.second_ca + reg.third_ca + reg.exam_score,
+      },
+    });
+  });
+
+  // Sort courses within each semester by course_code
+  Object.values(coursesBySemester).forEach((group) => {
+    group.courses.sort((a, b) => {
+      const codeA = a.course_code || "";
+      const codeB = b.course_code || "";
+      return codeA.localeCompare(codeB);
+    });
+  });
+
+  // Convert to array and sort by academic year (newest first), then semester (2ND before 1ST)
+  const courses = Object.values(coursesBySemester).sort((a, b) => {
+    // Sort by academic year (descending - newest first)
+    if (a.academic_year !== b.academic_year) {
+      return (b.academic_year || "").localeCompare(a.academic_year || "");
+    }
+    // Sort semester: 2ND before 1ST
+    const semesterOrder = { "2ND": 2, 2: 2, "1ST": 1, 1: 1 };
+    return (semesterOrder[b.semester] || 0) - (semesterOrder[a.semester] || 0);
+  });
 
   // Format exam attempts with course info
   const exams = examAttempts.map((attempt) => {
-    const course = attempt.exam?.course_id ? courseMap.get(attempt.exam.course_id) : null;
+    const course = attempt.exam?.course_id
+      ? courseMap.get(attempt.exam.course_id)
+      : null;
     return {
       id: attempt.id,
       exam_id: attempt.exam_id,
@@ -405,20 +473,28 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
       graded_at: attempt.graded_at,
       total_score: attempt.total_score,
       max_score: attempt.max_score,
-      exam: attempt.exam ? {
-        ...attempt.exam.toJSON(),
-        course: course || null,
-      } : null,
+      exam: attempt.exam
+        ? {
+            ...attempt.exam.toJSON(),
+            course: course || null,
+          }
+        : null,
     };
   });
 
   // Log activity
   try {
     if (req.user && req.user.id) {
-      await logAdminActivity(req.user.id, "viewed_student_full_details", "student", id, {
-        student_name: `${student.fname} ${student.lname}`,
-        student_email: student.email,
-      });
+      await logAdminActivity(
+        req.user.id,
+        "viewed_student_full_details",
+        "student",
+        id,
+        {
+          student_name: `${student.fname} ${student.lname}`,
+          student_email: student.email,
+        }
+      );
     }
   } catch (logError) {
     console.error("Error logging admin activity:", logError);

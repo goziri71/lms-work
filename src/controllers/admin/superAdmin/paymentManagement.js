@@ -2,10 +2,12 @@ import { Funding } from "../../../models/payment/funding.js";
 import { SchoolFees } from "../../../models/payment/schoolFees.js";
 import { CourseOrder } from "../../../models/payment/courseOrder.js";
 import { Students } from "../../../models/auth/student.js";
+import { Semester } from "../../../models/auth/semester.js";
 import { db } from "../../../database/database.js";
 import { ErrorClass } from "../../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../../utils/tryCatch/index.js";
 import { logAdminActivity } from "../../../middlewares/adminAuthorize.js";
+import { Op } from "sequelize";
 
 /**
  * Get all funding transactions
@@ -397,6 +399,156 @@ export const getPaymentOverview = TryCatchFunction(async (req, res) => {
       funding: fundingStats,
       schoolFees: schoolFeesStats,
       courseOrders: courseOrderStats[0] || { count: 0, total: 0 },
+    },
+  });
+});
+
+/**
+ * Manage student wallet - Add credit or debit
+ * POST /api/admin/students/:id/wallet/transaction
+ * Super Admin Only - For manual wallet corrections when automatic balance update fails
+ */
+export const manageStudentWallet = TryCatchFunction(async (req, res) => {
+  const { id } = req.params;
+  const { type, amount, service_name, ref, notes, semester, academic_year, currency } = req.body || {};
+
+  // Validate required fields
+  if (!type || !amount || !service_name) {
+    throw new ErrorClass("type, amount, and service_name are required", 400);
+  }
+
+  // Validate type
+  if (type !== "Credit" && type !== "Debit") {
+    throw new ErrorClass("type must be 'Credit' or 'Debit'", 400);
+  }
+
+  // Validate amount
+  const amountNum = Number(amount);
+  if (isNaN(amountNum) || amountNum <= 0) {
+    throw new ErrorClass("amount must be a positive number", 400);
+  }
+
+  // Verify student exists
+  const student = await Students.findByPk(id);
+  if (!student) {
+    throw new ErrorClass("Student not found", 404);
+  }
+
+  // Get current wallet balance
+  const totalCredits = await Funding.sum("amount", {
+    where: { student_id: id, type: "Credit" },
+  });
+  const totalDebits = await Funding.sum("amount", {
+    where: { student_id: id, type: "Debit" },
+  });
+  const currentBalance = (totalCredits || 0) - (totalDebits || 0);
+
+  // Validate: Prevent negative balance on debit
+  if (type === "Debit" && amountNum > currentBalance) {
+    throw new ErrorClass(
+      `Insufficient balance. Current balance: ${currentBalance}, Attempted debit: ${amountNum}`,
+      400
+    );
+  }
+
+  // Get current semester if not provided
+  let currentSemester = null;
+  if (!semester || !academic_year) {
+    const currentDate = new Date();
+    const today = currentDate.toISOString().split("T")[0];
+    currentSemester = await Semester.findOne({
+      where: {
+        [Op.and]: [
+          Semester.sequelize.literal(`DATE(start_date) <= '${today}'`),
+          Semester.sequelize.literal(`DATE(end_date) >= '${today}'`),
+        ],
+      },
+      order: [["id", "DESC"]],
+    });
+
+    if (!currentSemester) {
+      currentSemester = await Semester.findOne({
+        where: Semester.sequelize.where(
+          Semester.sequelize.fn("UPPER", Semester.sequelize.col("status")),
+          "ACTIVE"
+        ),
+        order: [["id", "DESC"]],
+      });
+    }
+  }
+
+  // Calculate new balance
+  const newBalance = type === "Credit" 
+    ? currentBalance + amountNum 
+    : currentBalance - amountNum;
+
+  // Create funding transaction
+  const funding = await Funding.create({
+    student_id: id,
+    amount: amountNum,
+    type: type,
+    service_name: service_name,
+    ref: ref || null,
+    date: new Date().toISOString().split("T")[0],
+    semester: semester || currentSemester?.semester || null,
+    academic_year: academic_year || currentSemester?.academic_year || null,
+    currency: currency || student.currency || "NGN",
+    balance: newBalance.toString(),
+  });
+
+  // Update student wallet_balance
+  await student.update({
+    wallet_balance: newBalance,
+  });
+
+  // Log admin activity
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(
+        req.user.id,
+        `wallet_${type.toLowerCase()}`,
+        "student",
+        id,
+        {
+          student_name: `${student.fname} ${student.lname}`,
+          student_email: student.email,
+          amount: amountNum,
+          type: type,
+          service_name: service_name,
+          previous_balance: currentBalance,
+          new_balance: newBalance,
+          notes: notes || null,
+        }
+      );
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
+
+  res.status(201).json({
+    success: true,
+    message: `Wallet ${type.toLowerCase()} processed successfully`,
+    data: {
+      transaction: {
+        id: funding.id,
+        student_id: id,
+        type: type,
+        amount: amountNum,
+        service_name: service_name,
+        ref: ref || null,
+        date: funding.date,
+        currency: funding.currency,
+      },
+      wallet: {
+        previous_balance: currentBalance,
+        new_balance: newBalance,
+        student: {
+          id: student.id,
+          name: `${student.fname} ${student.lname}`,
+          email: student.email,
+          matric_number: student.matric_number,
+        },
+      },
     },
   });
 });

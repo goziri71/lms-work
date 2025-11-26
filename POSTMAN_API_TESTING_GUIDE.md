@@ -2864,6 +2864,193 @@ Authorization: Bearer {{super_admin_token}}
 
 ---
 
+#### **8. Manage Student Wallet (Credit/Debit)**
+
+**POST** `/api/admin/students/:id/wallet/transaction`
+
+**Purpose:** Super Admin can manually add credit or debit to a student's wallet when automatic balance updates fail. This is a correction/adjustment tool.
+
+**Headers:**
+
+```
+Authorization: Bearer {{super_admin_token}}
+Content-Type: application/json
+```
+
+**URL Parameters:**
+
+- `id` (required): Student ID
+
+**Request Body:**
+
+```json
+{
+  "type": "Credit", // Required: "Credit" or "Debit"
+  "amount": 5000, // Required: Positive number
+  "service_name": "Manual Credit", // Required: Description (e.g., "Refund", "Adjustment", "Manual Credit")
+  "ref": "REF-12345", // Optional: Transaction reference ID
+  "notes": "Balance correction", // Optional: Admin notes
+  "semester": "1ST", // Optional: Auto-fetched from current semester if not provided
+  "academic_year": "2025/2026", // Optional: Auto-fetched from current semester if not provided
+  "currency": "NGN" // Optional: Defaults to student's currency
+}
+```
+
+**Example Request - Add Credit:**
+
+```json
+{
+  "type": "Credit",
+  "amount": 10000,
+  "service_name": "Refund for Course Cancellation",
+  "ref": "REF-2025-001",
+  "notes": "Student requested refund after course was cancelled"
+}
+```
+
+**Example Request - Add Debit:**
+
+```json
+{
+  "type": "Debit",
+  "amount": 5000,
+  "service_name": "Manual Adjustment",
+  "ref": "ADJ-2025-001",
+  "notes": "Correcting over-credited balance"
+}
+```
+
+**Response (Success - 201):**
+
+```json
+{
+  "success": true,
+  "message": "Wallet credit processed successfully",
+  "data": {
+    "transaction": {
+      "id": 123,
+      "student_id": 1,
+      "type": "Credit",
+      "amount": 10000,
+      "service_name": "Refund for Course Cancellation",
+      "ref": "REF-2025-001",
+      "date": "2025-01-15",
+      "currency": "NGN"
+    },
+    "wallet": {
+      "previous_balance": 5000,
+      "new_balance": 15000,
+      "student": {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com",
+        "matric_number": "WPU/2024/001"
+      }
+    }
+  }
+}
+```
+
+**Error Responses:**
+
+**400 - Validation Error:**
+
+```json
+{
+  "status": false,
+  "code": 400,
+  "message": "type, amount, and service_name are required"
+}
+```
+
+**400 - Invalid Type:**
+
+```json
+{
+  "status": false,
+  "code": 400,
+  "message": "type must be 'Credit' or 'Debit'"
+}
+```
+
+**400 - Insufficient Balance (Debit):**
+
+```json
+{
+  "status": false,
+  "code": 400,
+  "message": "Insufficient balance. Current balance: 5000, Attempted debit: 10000"
+}
+```
+
+**404 - Student Not Found:**
+
+```json
+{
+  "status": false,
+  "code": 404,
+  "message": "Student not found"
+}
+```
+
+**For Frontend:**
+
+1. **When to Use:**
+
+   - When automatic wallet balance updates fail
+   - Manual corrections/adjustments needed
+   - Refunds or special credits
+   - Balance reconciliation
+
+2. **UI Flow:**
+
+   - Navigate to student details page
+   - Click "Manage Wallet" button (Super Admin only)
+   - Show current balance prominently
+   - Form with:
+     - Radio buttons: Credit / Debit
+     - Amount input (with validation)
+     - Service name dropdown or text input
+     - Reference field (optional)
+     - Notes textarea (optional)
+   - Show preview: "Balance will change from X to Y"
+   - Confirm button
+
+3. **Validation:**
+
+   - Amount must be > 0
+   - For Debit: Check if amount > current balance (show error)
+   - Service name is required
+   - Show warning if attempting large amounts
+
+4. **After Success:**
+
+   - Show success message with new balance
+   - Refresh student wallet section
+   - Log activity (visible in admin activity logs)
+
+5. **Testing Steps:**
+   ```
+   1. Get student ID from GET /api/admin/students
+   2. Check current wallet balance from GET /api/admin/students/:id/full
+   3. POST /api/admin/students/:id/wallet/transaction with Credit
+   4. Verify balance increased
+   5. POST with Debit (amount less than balance)
+   6. Verify balance decreased
+   7. Try Debit with amount > balance (should fail)
+   8. Check funding transactions: GET /api/admin/payments/fundings?student_id=:id
+   ```
+
+**Important Notes:**
+
+- ⚠️ **No Negative Balance:** System prevents debits that would result in negative balance
+- 🔒 **Super Admin Only:** Only super admins can access this endpoint
+- 📝 **Audit Trail:** All transactions are logged in admin activity logs
+- 🔄 **Auto Balance Update:** Both `funding` table and `student.wallet_balance` are updated
+- 📅 **Semester Auto-Fill:** If semester/academic_year not provided, uses current active semester
+
+---
+
 ### **TUTOR MANAGEMENT** (Super Admin Only)
 
 #### **Sole Tutors**

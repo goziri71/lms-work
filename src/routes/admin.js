@@ -89,6 +89,7 @@ import {
   getAllCourseOrders,
   getCourseOrderStats,
   getPaymentOverview,
+  manageStudentWallet,
 } from "../controllers/admin/superAdmin/paymentManagement.js";
 import {
   getAllSoleTutors,
@@ -276,6 +277,11 @@ router.get(
   requireSuperAdmin,
   getCourseOrderStats
 );
+
+// ============================================
+// STUDENT WALLET MANAGEMENT (Super Admin Only)
+// ============================================
+router.post("/students/:id/wallet/transaction", requireSuperAdmin, manageStudentWallet);
 
 // ============================================
 // TUTOR MANAGEMENT (Super Admin Only)
