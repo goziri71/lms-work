@@ -12,6 +12,10 @@ import {
   getAvailableSemesters,
   getAvailableCourses,
 } from "../controllers/courses/courseRegistration.js";
+import {
+  getMyAllocatedCourses,
+  registerAllocatedCourses,
+} from "../controllers/student/courseAllocation.js";
 import { authorize } from "../middlewares/authorize.js";
 
 const router = Router();
@@ -48,5 +52,9 @@ router.post("/register", authorize, registerCourse);
 router.delete("/register/:registrationId", authorize, unregisterCourse);
 router.get("/semesters", authorize, getAvailableSemesters);
 router.get("/available", authorize, getAvailableCourses);
+
+// Course allocation endpoints (for allocated courses)
+router.get("/allocated", authorize, getMyAllocatedCourses);
+router.post("/register-allocated", authorize, registerAllocatedCourses);
 
 export default router;

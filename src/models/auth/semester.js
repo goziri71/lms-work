@@ -33,6 +33,11 @@ export const Semester = db.define(
       type: DataTypes.DATE,
       allowNull: false,
     },
+    registration_deadline: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "Deadline for course registration (extendable by admin)",
+    },
   },
   {
     tableName: "semester", // Specify exact table name

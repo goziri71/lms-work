@@ -65,10 +65,41 @@ export const CourseReg = db.define(
       type: DataTypes.INTEGER,
       allowNull: false,
     },
+    registration_status: {
+      type: DataTypes.ENUM("allocated", "registered", "cancelled"),
+      allowNull: true,
+      defaultValue: "allocated",
+      comment:
+        "allocated = Admin allocated, registered = Student registered & paid, cancelled = Cancelled",
+      // Note: If ENUM doesn't exist in DB, Sequelize will use VARCHAR
+    },
+    allocated_price: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: true,
+      comment: "Price at time of allocation (for historical reference)",
+    },
+    allocated_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "When course was allocated to student",
+    },
+    registered_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "When student registered and paid",
+    },
   },
   {
     tableName: "course_reg",
     timestamps: false, // Explicitly disable timestamps
     freezeTableName: true,
+    indexes: [
+      {
+        fields: ["registration_status"],
+      },
+      {
+        fields: ["student_id", "academic_year", "semester"],
+      },
+    ],
   }
 );

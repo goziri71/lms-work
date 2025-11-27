@@ -50,6 +50,18 @@ import {
   getCourseStats,
 } from "../controllers/admin/superAdmin/courseManagement.js";
 import {
+  setCoursePrice,
+  bulkSetCoursePrices,
+  getCoursePrices,
+  copyCoursePrices,
+} from "../controllers/admin/superAdmin/coursePricingManagement.js";
+import {
+  allocateCourses,
+  getAllocatedCourses,
+  removeAllocation,
+  bulkRemoveAllocations,
+} from "../controllers/admin/superAdmin/courseAllocationManagement.js";
+import {
   getAllSemesters,
   getSemesterById,
   getCurrentSemester,
@@ -60,6 +72,7 @@ import {
   activateSemester,
   deleteSemester,
   getSemesterStats,
+  extendRegistrationDeadline,
 } from "../controllers/admin/superAdmin/semesterManagement.js";
 import {
   getAllFaculties,
@@ -221,6 +234,26 @@ router.put("/courses/:id", requireSuperAdmin, updateCourse);
 router.delete("/courses/:id", requireSuperAdmin, deleteCourse);
 
 // ============================================
+// COURSE PRICING MANAGEMENT (Super Admin Only)
+// ============================================
+router.post("/courses/pricing", requireSuperAdmin, setCoursePrice);
+router.post("/courses/pricing/bulk", requireSuperAdmin, bulkSetCoursePrices);
+router.get("/courses/pricing", requireSuperAdmin, getCoursePrices);
+router.post("/courses/pricing/copy", requireSuperAdmin, copyCoursePrices);
+
+// ============================================
+// COURSE ALLOCATION MANAGEMENT (Super Admin Only)
+// ============================================
+router.post("/courses/allocate", requireSuperAdmin, allocateCourses);
+router.get("/courses/allocations", requireSuperAdmin, getAllocatedCourses);
+router.delete("/courses/allocate/:id", requireSuperAdmin, removeAllocation);
+router.delete(
+  "/courses/allocate/bulk",
+  requireSuperAdmin,
+  bulkRemoveAllocations
+);
+
+// ============================================
 // SEMESTER MANAGEMENT (Super Admin Only)
 // ============================================
 router.get("/semesters", requireSuperAdmin, getAllSemesters);
@@ -232,6 +265,11 @@ router.put("/semesters/:id", requireSuperAdmin, updateSemester);
 router.patch("/semesters/:id/close", requireSuperAdmin, closeSemester);
 router.patch("/semesters/:id/extend", requireSuperAdmin, extendSemester);
 router.patch("/semesters/:id/activate", requireSuperAdmin, activateSemester);
+router.patch(
+  "/semesters/:id/extend-deadline",
+  requireSuperAdmin,
+  extendRegistrationDeadline
+);
 router.delete("/semesters/:id", requireSuperAdmin, deleteSemester);
 
 // ============================================
@@ -281,7 +319,11 @@ router.get(
 // ============================================
 // STUDENT WALLET MANAGEMENT (Super Admin Only)
 // ============================================
-router.post("/students/:id/wallet/transaction", requireSuperAdmin, manageStudentWallet);
+router.post(
+  "/students/:id/wallet/transaction",
+  requireSuperAdmin,
+  manageStudentWallet
+);
 
 // ============================================
 // TUTOR MANAGEMENT (Super Admin Only)

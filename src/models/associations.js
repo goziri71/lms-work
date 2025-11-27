@@ -2,6 +2,7 @@
 import { Students } from "./auth/student.js";
 import { Staff } from "./auth/staff.js";
 import { Courses } from "./course/courses.js";
+import { CourseSemesterPricing } from "./course/courseSemesterPricing.js";
 import { CourseReg } from "./course_reg.js";
 import { Semester } from "./auth/semester.js";
 import { Modules } from "./modules/modules.js";
@@ -17,7 +18,12 @@ import { Program } from "./program/program.js";
 import { WspAdmin } from "./admin/wspAdmin.js";
 import { AdminActivityLog } from "./admin/adminActivityLog.js";
 import { Faculty } from "./faculty/faculty.js";
-import { CourseOrder, Funding, PaymentSetup, SchoolFees } from "./payment/index.js";
+import {
+  CourseOrder,
+  Funding,
+  PaymentSetup,
+  SchoolFees,
+} from "./payment/index.js";
 import { GeneralSetup } from "./settings/generalSetup.js";
 import { Notice } from "./notice/notice.js";
 import { SchoolAttended } from "./auth/schoolAttended.js";
@@ -251,6 +257,17 @@ export const setupAssociations = () => {
   Faculty.hasMany(Courses, {
     foreignKey: "faculty_id",
     as: "courses",
+  });
+
+  // Course Semester Pricing associations
+  // Courses -> CourseSemesterPricing (One-to-Many)
+  Courses.hasMany(CourseSemesterPricing, {
+    foreignKey: "course_id",
+    as: "semesterPricing",
+  });
+  CourseSemesterPricing.belongsTo(Courses, {
+    foreignKey: "course_id",
+    as: "course",
   });
 
   // Payment associations

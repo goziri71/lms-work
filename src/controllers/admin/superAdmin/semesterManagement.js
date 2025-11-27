@@ -536,6 +536,84 @@ export const activateSemester = TryCatchFunction(async (req, res) => {
   });
 });
 
+/**
+ * Extend registration deadline for a semester
+ * PATCH /api/admin/semesters/:id/extend-deadline
+ */
+export const extendRegistrationDeadline = TryCatchFunction(async (req, res) => {
+  const { id } = req.params;
+  const { new_deadline, reason } = req.body || {};
+
+  if (!new_deadline) {
+    throw new ErrorClass("new_deadline is required", 400);
+  }
+
+  const semester = await Semester.findByPk(id);
+  if (!semester) {
+    throw new ErrorClass("Semester not found", 404);
+  }
+
+  // Validate deadline is a valid date
+  const deadlineDate = new Date(new_deadline);
+  if (isNaN(deadlineDate.getTime())) {
+    throw new ErrorClass("Invalid deadline date format", 400);
+  }
+
+  // Format as YYYY-MM-DD for VARCHAR(15) column
+  const formattedDeadline = deadlineDate.toISOString().split("T")[0];
+
+  const oldDeadline = semester.registration_deadline;
+
+  // Update using raw SQL to handle VARCHAR date field
+  await Semester.sequelize.query(
+    `UPDATE semester SET registration_deadline = :deadline WHERE id = :id`,
+    {
+      replacements: { deadline: formattedDeadline, id: parseInt(id) },
+      type: Semester.sequelize.QueryTypes.UPDATE,
+    }
+  );
+
+  await semester.reload();
+
+  // Log activity
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(
+        req.user.id,
+        "extended_registration_deadline",
+        "semester",
+        id,
+        {
+          academic_year: semester.academic_year,
+          semester: semester.semester,
+          old_deadline: oldDeadline,
+          new_deadline: formattedDeadline,
+          reason: reason || null,
+        }
+      );
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Registration deadline extended successfully",
+    data: {
+      semester: {
+        id: semester.id,
+        academic_year: semester.academic_year,
+        semester: semester.semester,
+        registration_deadline: semester.registration_deadline,
+      },
+      extension: {
+        old_deadline: oldDeadline,
+        new_deadline: formattedDeadline,
+      },
+    },
+  });
+});
+
 export const deleteSemester = TryCatchFunction(async (req, res) => {
   const { id } = req.params;
 

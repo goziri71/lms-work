@@ -39,9 +39,31 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Course not found", 404);
   }
 
+  // IMPORTANT: For WPU courses, students can only register for courses in their program
+  if (
+    (course.owner_type === "wpu" || course.owner_type === "wsp") &&
+    !course.is_marketplace
+  ) {
+    // Check if course matches student's program
+    if (
+      course.program_id &&
+      student.program_id &&
+      course.program_id !== student.program_id
+    ) {
+      throw new ErrorClass(
+        "You can only register for courses in your program. This course is not part of your program.",
+        403
+      );
+    }
+  }
+
   // IMPORTANT: WPU students get FREE access to WPU courses
   // Marketplace courses (sole_tutor/organization) require payment via purchase endpoint
-  if (course.is_marketplace && course.owner_type !== "wpu" && course.owner_type !== "wsp") {
+  if (
+    course.is_marketplace &&
+    course.owner_type !== "wpu" &&
+    course.owner_type !== "wsp"
+  ) {
     throw new ErrorClass(
       "This is a marketplace course and requires purchase. Please use the purchase endpoint: POST /api/marketplace/courses/purchase",
       400
@@ -92,9 +114,10 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
       course_code: course.course_code,
       is_marketplace: course.is_marketplace,
       owner_type: course.owner_type,
-      note: (course.owner_type === "wpu" || course.owner_type === "wsp")
-        ? "This is a free WPU course" 
-        : "Course registered",
+      note:
+        course.owner_type === "wpu" || course.owner_type === "wsp"
+          ? "This is a free WPU course"
+          : "Course registered",
     },
   });
 });
