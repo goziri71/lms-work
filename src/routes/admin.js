@@ -389,7 +389,7 @@ router.get(
   requireSuperAdmin,
   getAllMarketplaceTransactions
 );
-router.get("/revenue/wsp-stats", requireSuperAdmin, getWspRevenueStatistics);
+router.get("/revenue/wpu-stats", requireSuperAdmin, getWspRevenueStatistics);
 router.get(
   "/revenue/tutor/:owner_type/:owner_id",
   requireSuperAdmin,
