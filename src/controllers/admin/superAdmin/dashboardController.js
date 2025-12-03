@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import { Students } from "../../../models/auth/student.js";
 import { Staff } from "../../../models/auth/staff.js";
 import { WspAdmin } from "../../../models/admin/wspAdmin.js";
@@ -22,7 +23,9 @@ export const getDashboardStats = TryCatchFunction(async (req, res) => {
     activeStaff = await Staff.count({ where: { admin_status: "active" } });
   } catch (error) {
     // If admin_status column doesn't exist, use total count
-    console.warn("admin_status column not found in staff table, using total count");
+    console.warn(
+      "admin_status column not found in staff table, using total count"
+    );
   }
 
   // Get all other counts in parallel
@@ -42,26 +45,39 @@ export const getDashboardStats = TryCatchFunction(async (req, res) => {
   ] = await Promise.all([
     // Students
     Students.count(),
-    Students.count({ where: { admin_status: "active" } }),
-    Students.count({ where: { admin_status: "inactive" } }),
+    Students.count({
+      where: {
+        a_status: "yes",
+        g_status: { [Op.ne]: "Y" },
+        admin_status: "active",
+      },
+    }),
+    Students.count({
+      where: {
+        [Op.or]: [
+          { a_status: { [Op.ne]: "yes" } },
+          { g_status: "Y" },
+          { admin_status: "inactive" },
+        ],
+      },
+    }),
 
-    // Admins
     WspAdmin.count({ where: { status: "active" } }),
 
-    // Programs
     Program.count(),
     Program.count({ where: { status: "Y" } }),
 
-    // Courses
     Courses.count(),
 
-    // Faculties
     Faculty.count(),
 
     // Current Semester
     Semester.findOne({
       where: { status: "active" },
-      order: [["academic_year", "DESC"], ["semester", "DESC"]],
+      order: [
+        ["academic_year", "DESC"],
+        ["semester", "DESC"],
+      ],
     }),
 
     // Enrollments
@@ -71,7 +87,9 @@ export const getDashboardStats = TryCatchFunction(async (req, res) => {
     Funding.count({
       where: {
         date: {
-          [db.Sequelize.Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+          [db.Sequelize.Op.gte]: new Date(
+            Date.now() - 30 * 24 * 60 * 60 * 1000
+          ),
         },
       },
     }),
@@ -79,7 +97,9 @@ export const getDashboardStats = TryCatchFunction(async (req, res) => {
     SchoolFees.count({
       where: {
         date: {
-          [db.Sequelize.Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+          [db.Sequelize.Op.gte]: new Date(
+            Date.now() - 30 * 24 * 60 * 60 * 1000
+          ),
         },
       },
     }),
@@ -175,4 +195,3 @@ export const getDashboardStats = TryCatchFunction(async (req, res) => {
     },
   });
 });
-

@@ -16,6 +16,8 @@ import {
   deactivateStudent,
   activateStudent,
   resetStudentPassword,
+  updateAdmissionStatus,
+  updateGraduationStatus,
   getStudentStats,
 } from "../controllers/admin/superAdmin/studentManagement.js";
 import {
@@ -180,6 +182,16 @@ router.post(
   "/students/:id/reset-password",
   requirePermission("students", "edit"),
   resetStudentPassword
+);
+router.patch(
+  "/students/:id/admission-status",
+  requirePermission("students", "edit"),
+  updateAdmissionStatus
+);
+router.patch(
+  "/students/:id/graduation-status",
+  requirePermission("students", "edit"),
+  updateGraduationStatus
 );
 
 // ============================================

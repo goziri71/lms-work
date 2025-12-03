@@ -19,6 +19,32 @@ import { EmailLog } from "../../../models/email/emailLog.js";
 import { WspAdmin } from "../../../models/admin/wspAdmin.js";
 
 /**
+ * Helper function to check if a student is active
+ * A student is active if:
+ * - a_status = "yes" (admitted)
+ * - g_status = "N" (not graduated)
+ * - admin_status = "active" (admin enabled)
+ */
+export const isStudentActive = (student) => {
+  return (
+    student.a_status === "yes" &&
+    student.g_status !== "Y" &&
+    student.admin_status === "active"
+  );
+};
+
+/**
+ * Helper function to build where clause for active students
+ */
+export const getActiveStudentWhere = () => {
+  return {
+    a_status: "yes",
+    g_status: { [Op.ne]: "Y" },
+    admin_status: "active",
+  };
+};
+
+/**
  * Get all students with pagination and filters
  */
 export const getAllStudents = TryCatchFunction(async (req, res) => {
@@ -839,15 +865,118 @@ export const resetStudentPassword = TryCatchFunction(async (req, res) => {
 });
 
 /**
+ * Update student admission status
+ */
+export const updateAdmissionStatus = TryCatchFunction(async (req, res) => {
+  const { id } = req.params;
+  const { a_status } = req.body;
+
+  // Validate a_status value
+  if (!a_status || (a_status !== "yes" && a_status !== "no")) {
+    throw new ErrorClass(
+      "Invalid admission status. Must be 'yes' or 'no'",
+      400
+    );
+  }
+
+  const student = await Students.findByPk(id);
+
+  if (!student) {
+    throw new ErrorClass("Student not found", 404);
+  }
+
+  const oldStatus = student.a_status;
+  await student.update({ a_status });
+
+  // Log activity
+  await logAdminActivity(
+    req.user.id,
+    "updated_student_admission_status",
+    "student",
+    id,
+    `Updated admission status for student: ${student.fname} ${student.lname} (${oldStatus} → ${a_status})`,
+    {
+      student_id: id,
+      old_status: oldStatus,
+      new_status: a_status,
+    }
+  );
+
+  res.status(200).json({
+    success: true,
+    message: "Student admission status updated successfully",
+    data: {
+      student_id: id,
+      a_status: a_status,
+      previous_status: oldStatus,
+    },
+  });
+});
+
+/**
+ * Update student graduation status
+ */
+export const updateGraduationStatus = TryCatchFunction(async (req, res) => {
+  const { id } = req.params;
+  const { g_status } = req.body;
+
+  // Validate g_status value
+  if (!g_status || (g_status !== "Y" && g_status !== "N")) {
+    throw new ErrorClass("Invalid graduation status. Must be 'Y' or 'N'", 400);
+  }
+
+  const student = await Students.findByPk(id);
+
+  if (!student) {
+    throw new ErrorClass("Student not found", 404);
+  }
+
+  const oldStatus = student.g_status;
+  await student.update({ g_status });
+
+  // Log activity
+  await logAdminActivity(
+    req.user.id,
+    "updated_student_graduation_status",
+    "student",
+    id,
+    `Updated graduation status for student: ${student.fname} ${
+      student.lname
+    } (${oldStatus || "N/A"} → ${g_status})`,
+    {
+      student_id: id,
+      old_status: oldStatus,
+      new_status: g_status,
+    }
+  );
+
+  res.status(200).json({
+    success: true,
+    message: "Student graduation status updated successfully",
+    data: {
+      student_id: id,
+      g_status: g_status,
+      previous_status: oldStatus,
+    },
+  });
+});
+
+/**
  * Get student statistics
  */
 export const getStudentStats = TryCatchFunction(async (req, res) => {
   const totalStudents = await Students.count();
   const activeStudents = await Students.count({
-    where: { admin_status: "active" },
+    where: getActiveStudentWhere(),
   });
   const inactiveStudents = await Students.count({
-    where: { admin_status: "inactive" },
+    where: {
+      [Op.or]: [
+        { a_status: { [Op.ne]: "yes" } },
+        { g_status: "Y" },
+        { admin_status: "inactive" },
+      ],
+    },
   });
 
   // Students by level

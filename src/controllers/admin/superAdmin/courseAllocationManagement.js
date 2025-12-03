@@ -90,7 +90,9 @@ export const allocateCourses = TryCatchFunction(async (req, res) => {
   // Get students based on allocation type
   let students = [];
   const studentWhere = {
-    admin_status: "active", // Only active students
+    a_status: "yes", // Must be admitted
+    g_status: { [Op.ne]: "Y" }, // Must not be graduated
+    admin_status: "active", // Must be admin enabled
   };
 
   if (allocation_type === "program") {
