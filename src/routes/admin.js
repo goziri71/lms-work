@@ -107,6 +107,10 @@ import {
   manageStudentWallet,
 } from "../controllers/admin/superAdmin/paymentManagement.js";
 import {
+  setSchoolFeesConfiguration,
+  getSchoolFeesConfigurations,
+} from "../controllers/admin/superAdmin/schoolFeesManagement.js";
+import {
   getAllSoleTutors,
   getSoleTutorById,
   approveSoleTutor,
@@ -326,6 +330,18 @@ router.get(
   "/payments/school-fees/stats",
   requireSuperAdmin,
   getSchoolFeesStats
+);
+
+// School Fees Configuration (Super Admin Only)
+router.post(
+  "/school-fees/configuration",
+  requireSuperAdmin,
+  setSchoolFeesConfiguration
+);
+router.get(
+  "/school-fees/configuration",
+  requireSuperAdmin,
+  getSchoolFeesConfigurations
 );
 router.get("/payments/course-orders", requireSuperAdmin, getAllCourseOrders);
 router.get(

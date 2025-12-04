@@ -88,12 +88,10 @@ export const allocateCourses = TryCatchFunction(async (req, res) => {
   }
 
   // Get students based on allocation type
+  // Note: admin_status is informational only - all students can login and register
+  // This filtering is just for admin convenience (can filter by status if needed)
   let students = [];
-  const studentWhere = {
-    a_status: "yes", // Must be admitted
-    g_status: { [Op.ne]: "Y" }, // Must not be graduated
-    admin_status: "active", // Must be admin enabled
-  };
+  const studentWhere = {}; // No status restriction - all students can be allocated courses
 
   if (allocation_type === "program") {
     if (!program_id) {

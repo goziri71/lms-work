@@ -19,27 +19,26 @@ import { EmailLog } from "../../../models/email/emailLog.js";
 import { WspAdmin } from "../../../models/admin/wspAdmin.js";
 
 /**
- * Helper function to check if a student is active
- * A student is active if:
- * - a_status = "yes" (admitted)
- * - g_status = "N" (not graduated)
- * - admin_status = "active" (admin enabled)
+ * Helper function to check if a student is active (for admin filtering purposes only)
+ * admin_status is informational only - students can login and do everything regardless
+ * - admin_status = "pending" → shows as pending (needs documentation)
+ * - admin_status = "active" → fully active (documentation submitted and approved)
+ * - admin_status = "inactive" → shows as inactive (for admin reference only)
+ * 
+ * Note: This is used for admin filtering (e.g., course allocation), not for blocking student access
  */
 export const isStudentActive = (student) => {
-  return (
-    student.a_status === "yes" &&
-    student.g_status !== "Y" &&
-    student.admin_status === "active"
-  );
+  return student.admin_status === "active";
 };
 
 /**
- * Helper function to build where clause for active students
+ * Helper function to build where clause for active students (for admin filtering)
+ * Returns students where admin_status = "active" (for admin operations like course allocation)
+ * 
+ * Note: Students can still login and register regardless of status - this is just for admin filtering
  */
 export const getActiveStudentWhere = () => {
   return {
-    a_status: "yes",
-    g_status: { [Op.ne]: "Y" },
     admin_status: "active",
   };
 };
@@ -971,11 +970,7 @@ export const getStudentStats = TryCatchFunction(async (req, res) => {
   });
   const inactiveStudents = await Students.count({
     where: {
-      [Op.or]: [
-        { a_status: { [Op.ne]: "yes" } },
-        { g_status: "Y" },
-        { admin_status: "inactive" },
-      ],
+      admin_status: "inactive", // Banned/disabled
     },
   });
 

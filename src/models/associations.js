@@ -23,6 +23,7 @@ import {
   Funding,
   PaymentSetup,
   SchoolFees,
+  SchoolFeesConfiguration,
 } from "./payment/index.js";
 import { GeneralSetup } from "./settings/generalSetup.js";
 import { Notice } from "./notice/notice.js";

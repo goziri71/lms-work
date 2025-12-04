@@ -16,6 +16,10 @@ import {
   getMyAllocatedCourses,
   registerAllocatedCourses,
 } from "../controllers/student/courseAllocation.js";
+import {
+  getMySchoolFees,
+  paySchoolFees,
+} from "../controllers/student/schoolFees.js";
 import { authorize } from "../middlewares/authorize.js";
 
 const router = Router();
@@ -56,5 +60,9 @@ router.get("/available", authorize, getAvailableCourses);
 // Course allocation endpoints (for allocated courses)
 router.get("/allocated", authorize, getMyAllocatedCourses);
 router.post("/register-allocated", authorize, registerAllocatedCourses);
+
+// School fees endpoints (student)
+router.get("/school-fees", authorize, getMySchoolFees);
+router.post("/school-fees/pay", authorize, paySchoolFees);
 
 export default router;

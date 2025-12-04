@@ -29,27 +29,8 @@ export const studentLogin = TryCatchFunction(async (req, res) => {
       throw new ErrorClass("Invalid email or password", 401);
     }
 
-    // Check if student is active (must be admitted, not graduated, and admin enabled)
-    if (student.a_status !== "yes") {
-      throw new ErrorClass(
-        "Account is not admitted. Please contact administrator.",
-        401
-      );
-    }
-
-    if (student.g_status === "Y") {
-      throw new ErrorClass(
-        "Account is graduated. Please contact administrator for access.",
-        401
-      );
-    }
-
-    if (student.admin_status === "inactive") {
-      throw new ErrorClass(
-        "Account is deactivated. Please contact administrator.",
-        401
-      );
-    }
+    // Students can login regardless of admin_status
+    // admin_status is just informational (pending/active/inactive) for display purposes
 
     // Compare password
     const isPasswordValid = await authService.comparePassword(
@@ -229,29 +210,8 @@ export const login = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("user not found", 401);
   }
 
-  // Check if user is active (for students, check all three statuses)
-  if (userType === "student") {
-    if (user.a_status !== "yes") {
-      throw new ErrorClass(
-        "Account is not admitted. Please contact administrator.",
-        401
-      );
-    }
-
-    if (user.g_status === "Y") {
-      throw new ErrorClass(
-        "Account is graduated. Please contact administrator for access.",
-        401
-      );
-    }
-
-    if (user.admin_status === "inactive") {
-      throw new ErrorClass(
-        "Account is deactivated. Please contact administrator.",
-        401
-      );
-    }
-  }
+  // Students can login regardless of admin_status
+  // admin_status is just informational (pending/active/inactive) for display purposes
 
   // Compare password
   const isPasswordValid = await authService.comparePassword(

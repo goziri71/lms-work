@@ -47,18 +47,12 @@ export const getDashboardStats = TryCatchFunction(async (req, res) => {
     Students.count(),
     Students.count({
       where: {
-        a_status: "yes",
-        g_status: { [Op.ne]: "Y" },
-        admin_status: "active",
+        admin_status: "active", // Fully active (documentation approved)
       },
     }),
     Students.count({
       where: {
-        [Op.or]: [
-          { a_status: { [Op.ne]: "yes" } },
-          { g_status: "Y" },
-          { admin_status: "inactive" },
-        ],
+        admin_status: "inactive", // Banned/disabled
       },
     }),
 
