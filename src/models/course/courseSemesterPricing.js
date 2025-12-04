@@ -44,6 +44,7 @@ export const CourseSemesterPricing = db.define(
   {
     tableName: "course_semester_pricing",
     timestamps: true,
+    underscored: true, // Use snake_case for timestamps (created_at, updated_at)
     freezeTableName: true,
     indexes: [
       {
