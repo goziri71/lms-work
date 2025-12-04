@@ -24,6 +24,7 @@ import {
   PaymentSetup,
   SchoolFees,
   SchoolFeesConfiguration,
+  PaymentTransaction,
 } from "./payment/index.js";
 import { GeneralSetup } from "./settings/generalSetup.js";
 import { Notice } from "./notice/notice.js";
@@ -309,6 +310,16 @@ export const setupAssociations = () => {
     as: "schoolFees",
   });
   SchoolFees.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Students -> PaymentTransaction (One-to-Many)
+  Students.hasMany(PaymentTransaction, {
+    foreignKey: "student_id",
+    as: "paymentTransactions",
+  });
+  PaymentTransaction.belongsTo(Students, {
     foreignKey: "student_id",
     as: "student",
   });

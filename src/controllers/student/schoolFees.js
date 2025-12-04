@@ -5,8 +5,16 @@ import { Students } from "../../models/auth/student.js";
 import { SchoolFees } from "../../models/payment/schoolFees.js";
 import { SchoolFeesConfiguration } from "../../models/payment/schoolFeesConfiguration.js";
 import { Funding } from "../../models/payment/funding.js";
+import { PaymentTransaction } from "../../models/payment/paymentTransaction.js";
 import { Semester } from "../../models/auth/semester.js";
 import { getSchoolFeesForStudent } from "../admin/superAdmin/schoolFeesManagement.js";
+import {
+  verifyTransaction,
+  isTransactionSuccessful,
+  getTransactionAmount,
+  getTransactionCurrency,
+  getTransactionReference,
+} from "../../services/flutterwaveService.js";
 
 /**
  * Get student's school fees information for current academic year
@@ -118,15 +126,27 @@ export const getMySchoolFees = TryCatchFunction(async (req, res) => {
 });
 
 /**
- * Pay school fees (with third-party payment API integration)
- * POST /api/courses/school-fees/pay
+ * Verify and process school fees payment
+ * Frontend sends transaction reference from Flutterwave callback
+ * Backend verifies with Flutterwave API and credits wallet if successful
+ * POST /api/courses/school-fees/verify
  */
-export const paySchoolFees = TryCatchFunction(async (req, res) => {
+export const verifySchoolFeesPayment = TryCatchFunction(async (req, res) => {
   const studentId = Number(req.user?.id);
   const userType = req.user?.userType;
 
   if (userType !== "student") {
-    throw new ErrorClass("Only students can pay school fees", 403);
+    throw new ErrorClass("Only students can verify payments", 403);
+  }
+
+  // Frontend sends transaction reference from Flutterwave callback
+  const { transaction_reference, flutterwave_transaction_id } = req.body || {};
+
+  if (!transaction_reference && !flutterwave_transaction_id) {
+    throw new ErrorClass(
+      "transaction_reference or flutterwave_transaction_id is required",
+      400
+    );
   }
 
   // Get student
@@ -165,7 +185,7 @@ export const paySchoolFees = TryCatchFunction(async (req, res) => {
 
   const academicYear = currentSemester.academic_year?.toString();
 
-  // Check if already paid
+  // Check if already paid for this academic year
   const existingPayment = await SchoolFees.findOne({
     where: {
       student_id: studentId,
@@ -181,7 +201,7 @@ export const paySchoolFees = TryCatchFunction(async (req, res) => {
     );
   }
 
-  // Get school fees configuration
+  // Get school fees configuration to verify amount
   const feesConfig = await getSchoolFeesForStudent(student, academicYear);
 
   if (!feesConfig) {
@@ -191,42 +211,92 @@ export const paySchoolFees = TryCatchFunction(async (req, res) => {
     );
   }
 
-  const amount = parseFloat(feesConfig.amount);
+  const expectedAmount = parseFloat(feesConfig.amount);
   const currency = feesConfig.currency;
 
-  // TODO: Integrate with third-party payment API (Paystack, Flutterwave, etc.)
-  // For now, we'll simulate payment success
-  // In production, you would:
-  // 1. Initialize payment with third-party API
-  // 2. Get payment reference
-  // 3. Verify payment callback/webhook
-  // 4. Then proceed with wallet credit
+  // Verify transaction with Flutterwave API
+  const verificationId = flutterwave_transaction_id || transaction_reference;
+  let verificationResult;
 
-  const { payment_reference, payment_method = "online" } = req.body || {};
-
-  // Simulate payment verification (replace with actual API call)
-  // const paymentVerified = await verifyPaymentWithThirdParty(payment_reference);
-  // if (!paymentVerified) {
-  //   throw new ErrorClass("Payment verification failed", 400);
-  // }
-
-  // For now, assume payment is successful if reference is provided
-  if (!payment_reference) {
+  try {
+    verificationResult = await verifyTransaction(verificationId);
+  } catch (error) {
     throw new ErrorClass(
-      "Payment reference is required. Third-party payment integration pending.",
+      `Payment verification failed: ${error.message}`,
       400
     );
   }
 
+  if (!verificationResult.success || !isTransactionSuccessful(verificationResult.transaction)) {
+    throw new ErrorClass("Payment was not successful", 400);
+  }
+
+  const flutterwaveTransaction = verificationResult.transaction;
+
+  // Verify amount matches
+  const transactionAmount = getTransactionAmount(flutterwaveTransaction);
+  if (Math.abs(transactionAmount - expectedAmount) > 0.01) {
+    throw new ErrorClass(
+      `Payment amount mismatch. Expected: ${expectedAmount}, Received: ${transactionAmount}`,
+      400
+    );
+  }
+
+  // Verify currency matches
+  const transactionCurrency = getTransactionCurrency(flutterwaveTransaction);
+  if (transactionCurrency !== currency) {
+    throw new ErrorClass("Payment currency mismatch", 400);
+  }
+
+  // Check if transaction reference already processed (idempotency)
+  const txRef = getTransactionReference(flutterwaveTransaction);
+  const existingTransaction = await PaymentTransaction.findOne({
+    where: {
+      [Op.or]: [
+        { transaction_reference: txRef },
+        { flutterwave_transaction_id: flutterwaveTransaction.id?.toString() },
+      ],
+      status: "successful",
+    },
+  });
+
+  if (existingTransaction) {
+    return res.status(200).json({
+      success: true,
+      message: "Payment already processed",
+      data: {
+        transaction: {
+          transaction_reference: txRef,
+          status: "successful",
+          amount: transactionAmount,
+        },
+      },
+    });
+  }
+
+  // Create payment transaction record
+  const paymentTransaction = await PaymentTransaction.create({
+    student_id: studentId,
+    transaction_reference: txRef,
+    flutterwave_transaction_id: flutterwaveTransaction.id?.toString(),
+    amount: expectedAmount,
+    currency: currency,
+    status: "successful",
+    payment_type: "school_fees",
+    academic_year: academicYear,
+    processed_at: new Date(),
+    flutterwave_response: flutterwaveTransaction,
+  });
+
   // Create SchoolFees record
   const schoolFee = await SchoolFees.create({
     student_id: studentId,
-    amount: amount,
+    amount: expectedAmount,
     status: "Paid",
     academic_year: academicYear,
-    semester: null, // School fees are yearly, not per semester
+    semester: null,
     date: today,
-    teller_no: payment_reference,
+    teller_no: txRef,
     matric_number: student.matric_number,
     type: "School Fees",
     student_level: student.level,
@@ -242,17 +312,17 @@ export const paySchoolFees = TryCatchFunction(async (req, res) => {
   });
   const currentBalance = (totalCredits || 0) - (totalDebits || 0);
 
-  // Credit wallet with school fees amount
-  const newBalance = currentBalance + amount;
+  // Credit wallet
+  const newBalance = currentBalance + expectedAmount;
 
   const funding = await Funding.create({
     student_id: studentId,
-    amount: amount,
+    amount: expectedAmount,
     type: "Credit",
     service_name: "School Fees Payment",
-    ref: payment_reference,
+    ref: txRef,
     date: today,
-    semester: null, // School fees are yearly
+    semester: null,
     academic_year: academicYear,
     currency: currency,
     balance: newBalance.toString(),
@@ -265,26 +335,20 @@ export const paySchoolFees = TryCatchFunction(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: "School fees paid successfully and wallet credited",
+    message: "Payment verified and processed successfully",
     data: {
       payment: {
         id: schoolFee.id,
-        amount: amount,
+        amount: expectedAmount,
         currency: currency,
         academic_year: academicYear,
-        payment_reference: payment_reference,
+        payment_reference: txRef,
         date: today,
       },
       wallet: {
         previous_balance: currentBalance,
         new_balance: newBalance,
-        credited: amount,
-      },
-      transaction: {
-        id: funding.id,
-        type: "Credit",
-        service_name: "School Fees Payment",
-        ref: payment_reference,
+        credited: expectedAmount,
       },
     },
   });

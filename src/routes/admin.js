@@ -111,6 +111,10 @@ import {
   getSchoolFeesConfigurations,
 } from "../controllers/admin/superAdmin/schoolFeesManagement.js";
 import {
+  manuallyVerifyPayment,
+  getPaymentTransaction,
+} from "../controllers/admin/superAdmin/paymentVerification.js";
+import {
   getAllSoleTutors,
   getSoleTutorById,
   approveSoleTutor,
@@ -342,6 +346,18 @@ router.get(
   "/school-fees/configuration",
   requireSuperAdmin,
   getSchoolFeesConfigurations
+);
+
+// Payment Verification (Super Admin Only)
+router.post(
+  "/payments/verify",
+  requireSuperAdmin,
+  manuallyVerifyPayment
+);
+router.get(
+  "/payments/transactions/:id",
+  requireSuperAdmin,
+  getPaymentTransaction
 );
 router.get("/payments/course-orders", requireSuperAdmin, getAllCourseOrders);
 router.get(
