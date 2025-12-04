@@ -240,13 +240,10 @@ router.get(
   requireSuperAdmin,
   getCoursesByProgram
 );
-router.get("/courses/:id", requireSuperAdmin, getCourseById);
-router.post("/courses", requireSuperAdmin, createCourse);
-router.put("/courses/:id", requireSuperAdmin, updateCourse);
-router.delete("/courses/:id", requireSuperAdmin, deleteCourse);
 
 // ============================================
 // COURSE PRICING MANAGEMENT (Super Admin Only)
+// IMPORTANT: These routes must come BEFORE /courses/:id to avoid route conflicts
 // ============================================
 router.post("/courses/pricing", requireSuperAdmin, setCoursePrice);
 router.post("/courses/pricing/bulk", requireSuperAdmin, bulkSetCoursePrices);
@@ -255,6 +252,7 @@ router.post("/courses/pricing/copy", requireSuperAdmin, copyCoursePrices);
 
 // ============================================
 // COURSE ALLOCATION MANAGEMENT (Super Admin Only)
+// IMPORTANT: These routes must come BEFORE /courses/:id to avoid route conflicts
 // ============================================
 router.post("/courses/allocate", requireSuperAdmin, allocateCourses);
 router.get("/courses/allocations", requireSuperAdmin, getAllocatedCourses);
@@ -264,6 +262,14 @@ router.delete(
   requireSuperAdmin,
   bulkRemoveAllocations
 );
+
+// ============================================
+// COURSE CRUD OPERATIONS (Must come AFTER specific routes)
+// ============================================
+router.get("/courses/:id", requireSuperAdmin, getCourseById);
+router.post("/courses", requireSuperAdmin, createCourse);
+router.put("/courses/:id", requireSuperAdmin, updateCourse);
+router.delete("/courses/:id", requireSuperAdmin, deleteCourse);
 
 // ============================================
 // SEMESTER MANAGEMENT (Super Admin Only)
