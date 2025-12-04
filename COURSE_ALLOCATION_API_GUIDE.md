@@ -25,9 +25,10 @@ This guide covers the new **Course Allocation & Pricing System** that allows sup
 3. [Course Allocation Management (Super Admin)](#course-allocation-management-super-admin)
 4. [Student Course Allocation](#student-course-allocation)
 5. [Registration Deadline Management](#registration-deadline-management)
-6. [Complete Workflow Example](#complete-workflow-example)
-7. [Frontend Implementation Guide](#frontend-implementation-guide)
-8. [Error Handling](#error-handling)
+6. [Student Status Management (Super Admin)](#student-status-management-super-admin)
+7. [Complete Workflow Example](#complete-workflow-example)
+8. [Frontend Implementation Guide](#frontend-implementation-guide)
+9. [Error Handling](#error-handling)
 
 ---
 
@@ -985,6 +986,298 @@ const extendRegistrationDeadline = async (semesterId, newDeadline) => {
 
 ---
 
+## Student Status Management (Super Admin)
+
+Super admins can manage student statuses to control student access and eligibility for course allocation. A student must be **active** to be eligible for course allocation.
+
+### Active Student Definition
+
+A student is considered **active** only if **all three** conditions are met:
+
+1. ✅ `a_status = "yes"` (Admitted)
+2. ✅ `g_status ≠ "Y"` (Not Graduated)
+3. ✅ `admin_status = "active"` (Admin Enabled)
+
+If any of these conditions fail, the student is **inactive** and cannot:
+
+- Log into the system
+- Register for courses
+- Be allocated courses
+
+---
+
+### 1. Update Student Admission Status
+
+Update whether a student has been admitted to the institution.
+
+**Endpoint:** `PATCH /api/admin/students/:id/admission-status`
+
+**Headers:**
+
+```
+Authorization: Bearer {{ADMIN_TOKEN}}
+```
+
+**Request Body:**
+
+```json
+{
+  "a_status": "yes"
+}
+```
+
+**Valid Values:**
+
+- `"yes"` - Student is admitted
+- `"no"` - Student is not admitted
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "message": "Student admission status updated successfully",
+  "data": {
+    "student_id": 123,
+    "a_status": "yes",
+    "previous_status": "no"
+  }
+}
+```
+
+**Error Responses:**
+
+```json
+// Invalid status value
+{
+  "success": false,
+  "message": "Invalid admission status. Must be 'yes' or 'no'",
+  "code": 400
+}
+
+// Student not found
+{
+  "success": false,
+  "message": "Student not found",
+  "code": 404
+}
+```
+
+**Frontend Implementation:**
+
+- Use this when processing student applications
+- Update UI to show admission status
+- Disable course allocation for non-admitted students
+
+---
+
+### 2. Update Student Graduation Status
+
+Mark a student as graduated or not graduated.
+
+**Endpoint:** `PATCH /api/admin/students/:id/graduation-status`
+
+**Headers:**
+
+```
+Authorization: Bearer {{ADMIN_TOKEN}}
+```
+
+**Request Body:**
+
+```json
+{
+  "g_status": "Y"
+}
+```
+
+**Valid Values:**
+
+- `"Y"` - Student is graduated
+- `"N"` - Student is not graduated
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "message": "Student graduation status updated successfully",
+  "data": {
+    "student_id": 123,
+    "g_status": "Y",
+    "previous_status": "N"
+  }
+}
+```
+
+**Error Responses:**
+
+```json
+// Invalid status value
+{
+  "success": false,
+  "message": "Invalid graduation status. Must be 'Y' or 'N'",
+  "code": 400
+}
+
+// Student not found
+{
+  "success": false,
+  "message": "Student not found",
+  "code": 404
+}
+```
+
+**Frontend Implementation:**
+
+- Use this when graduating students at the end of their program
+- Graduated students are automatically inactive
+- Show graduation status in student profile
+
+---
+
+### 3. Activate Student Account
+
+Enable a student's account (sets `admin_status = "active"`).
+
+**Endpoint:** `PATCH /api/admin/students/:id/activate`
+
+**Headers:**
+
+```
+Authorization: Bearer {{ADMIN_TOKEN}}
+```
+
+**Request Body:** (Optional)
+
+```json
+{
+  "reason": "Account reactivated after review"
+}
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "message": "Student activated successfully"
+}
+```
+
+**Frontend Implementation:**
+
+- Use this to enable student access
+- Student must also be admitted (`a_status = "yes"`) and not graduated (`g_status ≠ "Y"`) to be fully active
+
+---
+
+### 4. Deactivate Student Account
+
+Disable a student's account (sets `admin_status = "inactive"`).
+
+**Endpoint:** `PATCH /api/admin/students/:id/deactivate`
+
+**Headers:**
+
+```
+Authorization: Bearer {{ADMIN_TOKEN}}
+```
+
+**Request Body:** (Optional)
+
+```json
+{
+  "reason": "Account suspended due to policy violation"
+}
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "message": "Student deactivated successfully"
+}
+```
+
+**Frontend Implementation:**
+
+- Use this to temporarily disable student access
+- Student will be unable to log in or register for courses
+- Can be reactivated later
+
+---
+
+### Student Status Workflow
+
+**Typical Student Journey:**
+
+1. **Application** → `a_status = "no"`, `g_status = "N"`, `admin_status = "inactive"` → **INACTIVE**
+2. **Admission** → `PATCH /students/:id/admission-status` with `a_status = "yes"` → Still inactive (needs admin activation)
+3. **Admin Activation** → `PATCH /students/:id/activate` → **ACTIVE** (if not graduated)
+4. **Graduation** → `PATCH /students/:id/graduation-status` with `g_status = "Y"` → **INACTIVE** (permanently)
+
+**Important Notes:**
+
+- ✅ All status changes are logged in admin activity logs
+- ✅ Only **active** students can be allocated courses
+- ✅ Only **active** students can log in and register
+- ✅ Graduated students (`g_status = "Y"`) are always inactive, regardless of other statuses
+- ✅ Non-admitted students (`a_status = "no"`) are always inactive
+
+---
+
+### Frontend Implementation Guide
+
+**Student Status Management UI:**
+
+1. **Student List View:**
+
+   - Show status badges: "Active", "Inactive", "Not Admitted", "Graduated"
+   - Filter by status
+   - Quick actions: Activate/Deactivate, Update Admission, Update Graduation
+
+2. **Student Detail View:**
+
+   - Display all three status fields
+   - Show status change history (from activity logs)
+   - Action buttons for each status update
+
+3. **Status Indicators:**
+
+   ```javascript
+   // Check if student is active
+   const isActive =
+     student.a_status === "yes" &&
+     student.g_status !== "Y" &&
+     student.admin_status === "active";
+   ```
+
+4. **Course Allocation Integration:**
+   - Only show active students in allocation dropdowns
+   - Show warning if trying to allocate to inactive student
+   - Display status in allocation results
+
+**Example Status Badge Component:**
+
+```javascript
+function StudentStatusBadge({ student }) {
+  if (student.g_status === "Y") {
+    return <Badge color="purple">Graduated</Badge>;
+  }
+  if (student.a_status !== "yes") {
+    return <Badge color="orange">Not Admitted</Badge>;
+  }
+  if (student.admin_status === "inactive") {
+    return <Badge color="red">Inactive</Badge>;
+  }
+  return <Badge color="green">Active</Badge>;
+}
+```
+
+---
+
 ## Complete Workflow Example
 
 ### Step-by-Step: Setting Up Course Allocation for a Semester
@@ -1625,6 +1918,8 @@ These are **new** endpoints and don't affect existing functionality:
 5. ✅ `POST /api/admin/courses/allocate` - Allocate courses (NEW)
 6. ✅ `GET /api/admin/courses/allocations` - Get allocations (NEW)
 7. ✅ `PATCH /api/admin/semesters/:id/extend-deadline` - Extend deadline (NEW)
+8. ✅ `PATCH /api/admin/students/:id/admission-status` - Update admission status (NEW)
+9. ✅ `PATCH /api/admin/students/:id/graduation-status` - Update graduation status (NEW)
 
 ---
 
