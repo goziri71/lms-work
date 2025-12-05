@@ -23,10 +23,10 @@ export const getAllCourses = TryCatchFunction(async (req, res) => {
   } = req.query;
 
   const where = {};
-  if (program_id) where.program_id = program_id;
-  if (faculty_id) where.faculty_id = faculty_id;
-  if (staff_id) where.staff_id = staff_id;
-  if (course_level) where.course_level = course_level;
+  if (program_id) where.program_id = parseInt(program_id);
+  if (faculty_id) where.faculty_id = parseInt(faculty_id);
+  if (staff_id) where.staff_id = parseInt(staff_id);
+  if (course_level) where.course_level = parseInt(course_level);
   if (semester) where.semester = semester;
   if (search) {
     where[Op.or] = [
