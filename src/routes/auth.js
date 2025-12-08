@@ -11,6 +11,7 @@ import {
   registerStaff,
   requestPasswordReset,
   resetPassword,
+  changeStudentPassword,
 } from "../controllers/auth/auth.js";
 import { authorize } from "../middlewares/authorize.js";
 
@@ -38,6 +39,9 @@ router.post("/password/reset", resetPassword);
 router.get("/profile", authorize, getProfile);
 router.put("/profile/student", authorize, updateStudentProfile);
 router.put("/profile/staff", authorize, updateStaffProfile);
+
+// Change password endpoint (requires authentication)
+router.post("/password/change", authorize, changeStudentPassword);
 
 // Logout (requires authentication)
 router.post("/logout", authorize, logout);

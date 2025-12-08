@@ -6,6 +6,7 @@ import {
   updateAdminProfile,
   requestAdminPasswordReset,
   resetAdminPassword,
+  changeAdminPassword,
 } from "../controllers/admin/adminAuth.js";
 import {
   getAllStudents,
@@ -155,6 +156,7 @@ router.use(adminAuthorize); // All routes below require admin authentication
 // Admin Profile
 router.get("/profile", getAdminProfile);
 router.put("/profile", updateAdminProfile);
+router.post("/password/change", changeAdminPassword);
 router.post("/logout", adminLogout);
 
 // ============================================

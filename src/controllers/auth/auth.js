@@ -337,6 +337,72 @@ export const logout = TryCatchFunction(async (req, res) => {
   });
 });
 
+// Change student password (requires current password)
+export const changeStudentPassword = TryCatchFunction(async (req, res) => {
+  const { id } = req.user;
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    throw new ErrorClass("Current password and new password are required", 400);
+  }
+
+  if (currentPassword === newPassword) {
+    throw new ErrorClass("New password must be different from current password", 400);
+  }
+
+  // Validate new password strength (optional - add your requirements)
+  if (newPassword.length < 6) {
+    throw new ErrorClass("New password must be at least 6 characters long", 400);
+  }
+
+  const student = await Students.findByPk(id);
+
+  if (!student) {
+    throw new ErrorClass("Student not found", 404);
+  }
+
+  // Verify current password
+  const isPasswordValid = await authService.comparePassword(
+    currentPassword,
+    student.password
+  );
+
+  if (!isPasswordValid) {
+    throw new ErrorClass("Current password is incorrect", 401);
+  }
+
+  // Hash and update password
+  const hashedPassword = authService.hashPassword(newPassword);
+  await student.update({ password: hashedPassword });
+
+  // Send password changed notification email
+  try {
+    await emailService.sendPasswordChangedEmail(student, {
+      userType: "student",
+      ipAddress: req.ip || req.connection.remoteAddress,
+      device: req.get("user-agent") || "Unknown",
+    });
+
+    // Log email sent
+    await EmailLog.create({
+      recipient_email: student.email,
+      recipient_type: "student",
+      recipient_id: student.id,
+      email_type: "password_changed",
+      subject: "Your Password Has Been Changed",
+      status: "sent",
+    });
+  } catch (emailError) {
+    console.error("Error sending password changed email:", emailError);
+    // Don't throw error - password was changed successfully
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Password changed successfully. Notification email sent.",
+  });
+});
+
 // Update student profile
 export const updateStudentProfile = TryCatchFunction(async (req, res) => {
   const { id } = req.user;
