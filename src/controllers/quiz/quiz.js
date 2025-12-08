@@ -27,7 +27,11 @@ export const createQuiz = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const { module_id, duration_minutes, title, description, status } = req.body;
 
-  if (userType !== "staff" && userType !== "admin") {
+  if (
+    userType !== "staff" &&
+    userType !== "admin" &&
+    userType !== "super_admin"
+  ) {
     throw new ErrorClass("Only staff and admins can create quizzes", 403);
   }
 
@@ -70,17 +74,11 @@ export const createQuiz = TryCatchFunction(async (req, res) => {
   // Log admin activity if created by admin
   if (userType === "admin") {
     try {
-      await logAdminActivity(
-        userId,
-        "created_quiz",
-        "quiz",
-        quiz.id,
-        {
-          module_id: module_id,
-          course_id: module.course_id,
-          title: title,
-        }
-      );
+      await logAdminActivity(userId, "created_quiz", "quiz", quiz.id, {
+        module_id: module_id,
+        course_id: module.course_id,
+        title: title,
+      });
     } catch (logError) {
       console.error("Error logging admin activity:", logError);
     }
@@ -95,17 +93,19 @@ export const createQuiz = TryCatchFunction(async (req, res) => {
 });
 
 export const addQuizQuestionsBatch = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
+  const userType = req.user?.userType;
   const quizId = Number(req.params.quizId);
   const { questions } = req.body;
 
   console.log("addQuizQuestionsBatch called with:", {
-    staffId,
+    userId,
+    userType,
     quizId,
     questions,
   });
 
-  if (!Number.isInteger(staffId) || staffId <= 0) {
+  if (!Number.isInteger(userId) || userId <= 0) {
     throw new ErrorClass("Unauthorized or invalid user id", 401);
   }
   if (!Number.isInteger(quizId) || quizId <= 0) {
@@ -177,7 +177,7 @@ export const addQuizQuestionsBatch = TryCatchFunction(async (req, res) => {
           question_text: questionText,
           question_type,
           points,
-          created_by: staffId,
+          created_by: getCreatorId(userType, userId),
         },
         { transaction: trx }
       );
@@ -228,17 +228,32 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
   // console.log("[getStudentQuizzes] courseIdParam:", courseIdParam);
   // console.log("[getStudentQuizzes] moduleIdParam:", moduleIdParam);
 
-  // Allow both students and staff to access quizzes
-  if (userType !== "student" && userType !== "staff") {
-    throw new ErrorClass("Only students and staff can view quiz list", 403);
+  // Allow students, staff, and admins to access quizzes
+  if (
+    userType !== "student" &&
+    userType !== "staff" &&
+    userType !== "admin" &&
+    userType !== "super_admin"
+  ) {
+    throw new ErrorClass(
+      "Only students, staff, and admins can view quiz list",
+      403
+    );
   }
 
   // Build base quiz filter
+  // Admins can see all quizzes, staff only their own, students see all (filtered by enrollment)
   const quizWhere = userType === "staff" ? { created_by: userId } : {};
 
   // Resolve allowed course ids based on role
   let allowedCourseIds = [];
-  if (userType === "staff") {
+  if (userType === "admin" || userType === "super_admin") {
+    // Admins can access all courses - get all course IDs
+    const allCourses = await Courses.findAll({
+      attributes: ["id"],
+    });
+    allowedCourseIds = allCourses.map((c) => c.id);
+  } else if (userType === "staff") {
     const staffCourses = await Courses.findAll({
       where: { staff_id: userId },
       attributes: ["id"],
@@ -333,7 +348,9 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
               model: QuizOptions,
               as: "options",
               attributes:
-                userType === "staff"
+                userType === "staff" ||
+                userType === "admin" ||
+                userType === "super_admin"
                   ? ["id", "option_text", "is_correct"]
                   : ["id", "option_text"],
             },
@@ -392,7 +409,9 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
           options: q.options?.map((opt) => ({
             id: opt.id,
             text: opt.option_text,
-            ...(userType === "staff" && { is_correct: opt.is_correct }), // Staff sees correct answers
+            ...((userType === "staff" ||
+              userType === "admin" ||
+              userType === "super_admin") && { is_correct: opt.is_correct }), // Staff and admins see correct answers
           })),
         })) || [],
     };
@@ -413,7 +432,7 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
           : null,
       };
     } else {
-      // Staff sees additional management info
+      // Staff and admins see additional management info
       return {
         ...baseResponse,
         created_by: quiz.created_by,
@@ -453,7 +472,9 @@ export const getQuiz = TryCatchFunction(async (req, res) => {
             model: QuizOptions,
             as: "options",
             attributes:
-              userType === "staff"
+              userType === "staff" ||
+              userType === "admin" ||
+              userType === "super_admin"
                 ? ["id", "option_text", "is_correct"]
                 : ["id", "option_text"], // Hide correct answers from students
           },
@@ -474,7 +495,10 @@ export const getQuiz = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Module not found", 404);
   }
 
-  if (userType === "staff") {
+  // Admins can access all quizzes
+  if (userType === "admin" || userType === "super_admin") {
+    // No additional check needed - admins have full access
+  } else if (userType === "staff") {
     // Staff must own the course containing this module
     const course = await Courses.findOne({
       where: { id: module.course_id, staff_id: userId },
@@ -498,6 +522,8 @@ export const getQuiz = TryCatchFunction(async (req, res) => {
     if (!enrollment) {
       throw new ErrorClass("You are not enrolled in this course", 403);
     }
+  } else {
+    throw new ErrorClass("Unauthorized access", 403);
   }
 
   // Compute remaining time for students with an in-progress attempt
@@ -882,7 +908,11 @@ export const getQuizStats = TryCatchFunction(async (req, res) => {
   const sort = (req.query?.sort || "date").toString(); // 'score' | 'date'
   const search = (req.query?.search || "").toString().trim().toLowerCase();
 
-  if (userType !== "staff" && userType !== "admin") {
+  if (
+    userType !== "staff" &&
+    userType !== "admin" &&
+    userType !== "super_admin"
+  ) {
     throw new ErrorClass("Only staff and admins can view quiz stats", 403);
   }
   if (!Number.isInteger(userId) || userId <= 0) {
@@ -1307,7 +1337,11 @@ export const updateQuizAttempt = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const quizId = Number(req.params.quizId);
 
-  if (userType !== "staff" && userType !== "admin") {
+  if (
+    userType !== "staff" &&
+    userType !== "admin" &&
+    userType !== "super_admin"
+  ) {
     throw new ErrorClass("Only staff and admins can update quizzes", 403);
   }
   if (!Number.isInteger(userId) || userId <= 0) {
@@ -1575,26 +1609,24 @@ export const updateQuizAttempt = TryCatchFunction(async (req, res) => {
     });
 
     // Log admin activity if admin modified staff-created quiz
-    if (userType === "admin" && accessCheck.isAdminModification && accessCheck.originalCreatorId !== userId) {
+    if (
+      userType === "admin" &&
+      accessCheck.isAdminModification &&
+      accessCheck.originalCreatorId !== userId
+    ) {
       try {
-        await logAdminActivity(
-          userId,
-          "updated_quiz",
-          "quiz",
-          quizId,
-          {
-            module_id: quiz.module_id,
-            course_id: accessCheck.courseId,
-            original_creator_id: accessCheck.originalCreatorId,
-            changes: {
-              before: originalValues,
-              after: {
-                title: quizPayload?.title || originalValues.title,
-                status: quizPayload?.status || originalValues.status,
-              },
+        await logAdminActivity(userId, "updated_quiz", "quiz", quizId, {
+          module_id: quiz.module_id,
+          course_id: accessCheck.courseId,
+          original_creator_id: accessCheck.originalCreatorId,
+          changes: {
+            before: originalValues,
+            after: {
+              title: quizPayload?.title || originalValues.title,
+              status: quizPayload?.status || originalValues.status,
             },
-          }
-        );
+          },
+        });
       } catch (logError) {
         console.error("Error logging admin activity:", logError);
       }
@@ -1617,7 +1649,11 @@ export const deleteQuiz = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const quizId = Number(req.params.quizId);
 
-  if (userType !== "staff" && userType !== "admin") {
+  if (
+    userType !== "staff" &&
+    userType !== "admin" &&
+    userType !== "super_admin"
+  ) {
     throw new ErrorClass("Only staff and admins can delete quizzes", 403);
   }
   if (!Number.isInteger(userId) || userId <= 0) {
@@ -1707,20 +1743,18 @@ export const deleteQuiz = TryCatchFunction(async (req, res) => {
     }
 
     // Log admin activity if admin deleted staff-created quiz
-    if (userType === "admin" && accessCheck.isAdminModification && accessCheck.originalCreatorId !== userId) {
+    if (
+      userType === "admin" &&
+      accessCheck.isAdminModification &&
+      accessCheck.originalCreatorId !== userId
+    ) {
       try {
-        await logAdminActivity(
-          userId,
-          "deleted_quiz",
-          "quiz",
-          quizId,
-          {
-            module_id: quizInfo.module_id,
-            course_id: quizInfo.course_id,
-            title: quizInfo.title,
-            original_creator_id: quizInfo.original_creator_id,
-          }
-        );
+        await logAdminActivity(userId, "deleted_quiz", "quiz", quizId, {
+          module_id: quizInfo.module_id,
+          course_id: quizInfo.course_id,
+          title: quizInfo.title,
+          original_creator_id: quizInfo.original_creator_id,
+        });
       } catch (logError) {
         console.error("Error logging admin activity:", logError);
       }

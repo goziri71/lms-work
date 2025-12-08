@@ -6,6 +6,7 @@ import { authService } from "../../service/authservice.js";
 import { emailService } from "../../services/emailService.js";
 import { EmailLog } from "../../models/email/emailLog.js";
 import { EmailPreference } from "../../models/email/emailPreference.js";
+import { Op, fn, col } from "sequelize";
 import crypto from "crypto";
 
 // Student Login using Sequelize ORM
@@ -177,20 +178,52 @@ export const login = TryCatchFunction(async (req, res) => {
   let userType = null;
 
   // Try to find user in students table first
-  const student = await Students.findOne({
+  // Normalize email: remove all non-printable characters, trim whitespace, and convert to lowercase
+  // This handles hidden characters that might exist in the database
+  const normalizedEmail = email
+    .replace(/[^\x20-\x7E]/g, "") // Remove non-printable ASCII characters
+    .trim()
+    .toLowerCase();
+
+  // First try exact match
+  let student = await Students.findOne({
     where: {
-      email: email.toLowerCase(),
+      email: normalizedEmail,
     },
   });
+
+  // If exact match fails, try case-insensitive search (handles encoding/case issues)
+  if (!student) {
+    student = await Students.findOne({
+      where: {
+        email: {
+          [Op.iLike]: normalizedEmail, // PostgreSQL case-insensitive exact match
+        },
+      },
+    });
+  }
+
+  // If still not found, try with database-level cleaning using literal SQL (handles hidden chars in DB)
+  if (!student) {
+    const { literal } = await import("sequelize");
+    // Escape single quotes in email to prevent SQL injection
+    const escapedEmail = normalizedEmail.replace(/'/g, "''");
+    student = await Students.findOne({
+      where: literal(
+        `LOWER(REGEXP_REPLACE(TRIM(email), '[^\\x20-\\x7E]', '', 'g')) = '${escapedEmail}'`
+      ),
+    });
+  }
 
   if (student) {
     user = student;
     userType = "student";
   } else {
     // Try staff table if not found in students
+    const normalizedStaffEmail = email.trim().toLowerCase();
     const staff = await Staff.findOne({
       where: {
-        email: email.toLowerCase(),
+        email: normalizedStaffEmail,
       },
       include: [
         {
@@ -347,12 +380,18 @@ export const changeStudentPassword = TryCatchFunction(async (req, res) => {
   }
 
   if (currentPassword === newPassword) {
-    throw new ErrorClass("New password must be different from current password", 400);
+    throw new ErrorClass(
+      "New password must be different from current password",
+      400
+    );
   }
 
   // Validate new password strength (optional - add your requirements)
   if (newPassword.length < 6) {
-    throw new ErrorClass("New password must be at least 6 characters long", 400);
+    throw new ErrorClass(
+      "New password must be at least 6 characters long",
+      400
+    );
   }
 
   const student = await Students.findByPk(id);
@@ -674,7 +713,10 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
   }
 
   if (!["student", "staff"].includes(userType)) {
-    throw new ErrorClass("Invalid user type. Must be 'student' or 'staff'", 400);
+    throw new ErrorClass(
+      "Invalid user type. Must be 'student' or 'staff'",
+      400
+    );
   }
 
   // Find user based on type
@@ -693,7 +735,10 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
 
   // Generate secure reset token
   const resetToken = crypto.randomBytes(32).toString("hex");
-  const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
 
   // Save hashed token to user (expires in 1 hour)
   await user.update({
@@ -702,7 +747,9 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
   });
 
   // Create reset URL (adjust based on your frontend)
-  const resetUrl = `${process.env.FRONTEND_URL || "https://pinnacleuniversity.co"}/reset-password?token=${resetToken}&type=${userType}`;
+  const resetUrl = `${
+    process.env.FRONTEND_URL || "https://pinnacleuniversity.co"
+  }/reset-password?token=${resetToken}&type=${userType}`;
 
   // Send password reset email
   try {
@@ -725,14 +772,18 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
       email_type: "password_reset",
       subject: "Password Reset Request - Pinnacle University",
       status: result.success ? "sent" : "failed",
-      error_message: result.success ? null : (result.message || JSON.stringify(result.error)),
+      error_message: result.success
+        ? null
+        : result.message || JSON.stringify(result.error),
       sent_at: result.success ? new Date() : null,
-      metadata: result.success ? null : {
-        error_details: result.error,
-        timestamp: new Date().toISOString(),
-      },
+      metadata: result.success
+        ? null
+        : {
+            error_details: result.error,
+            timestamp: new Date().toISOString(),
+          },
     });
-    
+
     // Option 2: Simplified (auto-fetches from user table - can use this instead)
     // await EmailLog.createForUser({
     //   user_id: user.id,
@@ -780,7 +831,10 @@ export const resetPassword = TryCatchFunction(async (req, res) => {
 
   // Validate input
   if (!token || !newPassword || !userType) {
-    throw new ErrorClass("Token, new password, and user type are required", 400);
+    throw new ErrorClass(
+      "Token, new password, and user type are required",
+      400
+    );
   }
 
   if (!["student", "staff"].includes(userType)) {
@@ -814,6 +868,7 @@ export const resetPassword = TryCatchFunction(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: "Password has been reset successfully. You can now login with your new password.",
+    message:
+      "Password has been reset successfully. You can now login with your new password.",
   });
 });
