@@ -13,6 +13,11 @@ import {
   Discussions,
   DiscussionMessages,
 } from "../../models/modules/discussions.js";
+import {
+  canAccessCourse,
+  getCreatorId,
+} from "../../utils/examAccessControl.js";
+import { logAdminActivity } from "../../middlewares/adminAuthorize.js";
 
 // Helper function to extract base64 images from HTML and upload to Supabase
 const processHtmlImages = async (htmlContent, unitId) => {
@@ -71,11 +76,11 @@ export const uploadMiddleware = upload.single("video");
 
 // Create a module (Library DB) tied to an LMS course
 export const createModule = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
-  console.log(staffId);
+  const userId = Number(req.user?.id);
+  const userType = req.user?.userType;
   const { course_id, title, description, status } = req.body;
 
-  if (!Number.isInteger(staffId) || staffId <= 0) {
+  if (!Number.isInteger(userId) || userId <= 0) {
     throw new ErrorClass("Unauthorized", 401);
   }
   if (!course_id || !title) {
@@ -83,23 +88,39 @@ export const createModule = TryCatchFunction(async (req, res) => {
   }
 
   const course = await Courses.findByPk(course_id);
-  console.log(course);
-  console.log(course.staff_id);
   if (!course) {
     throw new ErrorClass("Course not found", 404);
   }
-  if (course.staff_id !== staffId) {
-    throw new ErrorClass("You do not own this course", 403);
+
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, course_id);
+  if (!hasAccess) {
+    throw new ErrorClass("You do not have permission to create module for this course", 403);
   }
+
+  // Get creator ID (admin ID for admins, staff ID for staff)
+  const creatorId = getCreatorId(userType, userId);
 
   const moduleRecord = await Modules.create({
     course_id,
     title,
     description: description ?? "",
     status: status ?? "draft",
-    created_by: staffId,
-    updated_by: staffId,
+    created_by: creatorId,
+    updated_by: creatorId,
   });
+
+  // Log admin activity if created by admin
+  if (userType === "admin" || userType === "super_admin") {
+    try {
+      await logAdminActivity(userId, "created_module", "module", moduleRecord.id, {
+        course_id: course_id,
+        title: title,
+      });
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
+  }
 
   res.status(201).json({
     status: true,
@@ -112,6 +133,7 @@ export const createModule = TryCatchFunction(async (req, res) => {
 // List modules for a course (Library DB)
 export const getModulesByCourse = TryCatchFunction(async (req, res) => {
   const userId = Number(req.user?.id);
+  const userType = req.user?.userType;
   const courseId = Number(req.params.courseId);
 
   if (!Number.isInteger(courseId) || courseId <= 0) {
@@ -126,13 +148,18 @@ export const getModulesByCourse = TryCatchFunction(async (req, res) => {
   if (!Number.isInteger(userId) || userId <= 0) {
     throw new ErrorClass("Unauthorized", 401);
   }
+
+  // Admins can access all courses
   let authorized = false;
+  if (userType === "admin" || userType === "super_admin") {
+    authorized = true;
+  }
   // Staff path: owner of the course
-  if (course.staff_id === userId) {
+  else if (course.staff_id === userId) {
     authorized = true;
   }
   // Student path: enrolled via course_reg
-  if (!authorized) {
+  else {
     const [rows] = await db.query(
       "SELECT 1 FROM course_reg WHERE course_id = :courseId AND student_id = :studentId LIMIT 1",
       { replacements: { courseId, studentId: userId } }
@@ -166,10 +193,14 @@ export const getModulesByCourse = TryCatchFunction(async (req, res) => {
 
 // Update a module
 export const updateModule = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
+  const userType = req.user?.userType;
   const moduleId = Number(req.params.moduleId);
   const updates = req.body || {};
 
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ErrorClass("Unauthorized", 401);
+  }
   if (!Number.isInteger(moduleId) || moduleId <= 0) {
     throw new ErrorClass("Invalid module id", 400);
   }
@@ -183,16 +214,45 @@ export const updateModule = TryCatchFunction(async (req, res) => {
   if (!course) {
     throw new ErrorClass("Course not found", 404);
   }
-  if (course.staff_id !== staffId) {
-    throw new ErrorClass("You do not own this course", 403);
+
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, moduleRecord.course_id);
+  if (!hasAccess) {
+    throw new ErrorClass("You do not have permission to update this module", 403);
   }
 
   // Protect immutable fields
   delete updates.id;
   delete updates.course_id;
-  updates.updated_by = staffId;
+  updates.updated_by = getCreatorId(userType, userId);
+
+  const originalValues = {
+    title: moduleRecord.title,
+    description: moduleRecord.description,
+    status: moduleRecord.status,
+  };
 
   await moduleRecord.update(updates);
+
+  // Log admin activity if admin modified staff-created module
+  if ((userType === "admin" || userType === "super_admin") && moduleRecord.created_by !== userId) {
+    try {
+      await logAdminActivity(userId, "updated_module", "module", moduleId, {
+        course_id: moduleRecord.course_id,
+        original_creator_id: moduleRecord.created_by,
+        changes: {
+          before: originalValues,
+          after: {
+            title: updates.title || originalValues.title,
+            description: updates.description !== undefined ? updates.description : originalValues.description,
+            status: updates.status || originalValues.status,
+          },
+        },
+      });
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
+  }
 
   res.status(200).json({
     status: true,
@@ -204,9 +264,13 @@ export const updateModule = TryCatchFunction(async (req, res) => {
 
 // Delete a module (will cascade to units via Library DB association)
 export const deleteModule = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
+  const userType = req.user?.userType;
   const moduleId = Number(req.params.moduleId);
 
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ErrorClass("Unauthorized", 401);
+  }
   if (!Number.isInteger(moduleId) || moduleId <= 0) {
     throw new ErrorClass("Invalid module id", 400);
   }
@@ -220,8 +284,31 @@ export const deleteModule = TryCatchFunction(async (req, res) => {
   if (!course) {
     throw new ErrorClass("Course not found", 404);
   }
-  if (course.staff_id !== staffId) {
-    throw new ErrorClass("You do not own this course", 403);
+
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, moduleRecord.course_id);
+  if (!hasAccess) {
+    throw new ErrorClass("You do not have permission to delete this module", 403);
+  }
+
+  const moduleInfo = {
+    id: moduleRecord.id,
+    title: moduleRecord.title,
+    course_id: moduleRecord.course_id,
+    created_by: moduleRecord.created_by,
+  };
+
+  // Log admin activity if admin deleted staff-created module
+  if ((userType === "admin" || userType === "super_admin") && moduleRecord.created_by !== userId) {
+    try {
+      await logAdminActivity(userId, "deleted_module", "module", moduleId, {
+        course_id: moduleRecord.course_id,
+        title: moduleRecord.title,
+        original_creator_id: moduleRecord.created_by,
+      });
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
   }
 
   // Ensure we remove all related data: units and unit_notes
@@ -292,9 +379,13 @@ export const deleteModule = TryCatchFunction(async (req, res) => {
 });
 
 export const createUnit = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
+  const userType = req.user?.userType;
   const { module_id, title, content, content_type, order, status } = req.body;
 
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ErrorClass("Unauthorized", 401);
+  }
   if (!module_id || !title) {
     throw new ErrorClass("module_id and title are required", 400);
   }
@@ -308,9 +399,15 @@ export const createUnit = TryCatchFunction(async (req, res) => {
   if (!course) {
     throw new ErrorClass("Course not found", 404);
   }
-  if (course.staff_id !== staffId) {
-    throw new ErrorClass("You do not own this course", 403);
+
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, moduleRecord.course_id);
+  if (!hasAccess) {
+    throw new ErrorClass("You do not have permission to create unit for this course", 403);
   }
+
+  // Get creator ID (admin ID for admins, staff ID for staff)
+  const creatorId = getCreatorId(userType, userId);
 
   // Create unit first to get ID for image uploads
   const unit = await Units.create({
@@ -320,8 +417,8 @@ export const createUnit = TryCatchFunction(async (req, res) => {
     content_type: content_type ?? "html",
     order: order ?? 1,
     status: status ?? "draft",
-    created_by: staffId,
-    updated_by: staffId,
+    created_by: creatorId,
+    updated_by: creatorId,
   });
 
   // Process images if content exists and is HTML
@@ -332,6 +429,19 @@ export const createUnit = TryCatchFunction(async (req, res) => {
 
   // Update unit with processed content (with image URLs)
   await unit.update({ content: processedContent });
+
+  // Log admin activity if created by admin
+  if (userType === "admin" || userType === "super_admin") {
+    try {
+      await logAdminActivity(userId, "created_unit", "unit", unit.id, {
+        module_id: module_id,
+        course_id: moduleRecord.course_id,
+        title: title,
+      });
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
+  }
 
   res.status(201).json({
     status: true,
@@ -383,9 +493,13 @@ export const createUnit = TryCatchFunction(async (req, res) => {
 // });
 
 export const getUnitsByModule = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
+  const userType = req.user?.userType;
   const moduleId = Number(req.params.moduleId);
 
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ErrorClass("Unauthorized", 401);
+  }
   if (!Number.isInteger(moduleId) || moduleId <= 0) {
     throw new ErrorClass("Invalid module id", 400);
   }
@@ -399,8 +513,11 @@ export const getUnitsByModule = TryCatchFunction(async (req, res) => {
   if (!course) {
     throw new ErrorClass("Course not found", 404);
   }
-  if (Number.isInteger(staffId) && staffId > 0 && course.staff_id !== staffId) {
-    throw new ErrorClass("You do not own this course", 403);
+
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, moduleRecord.course_id);
+  if (!hasAccess) {
+    throw new ErrorClass("You do not have permission to view units for this course", 403);
   }
 
   const units = await Units.findAll({ where: { module_id: moduleId } });
@@ -414,10 +531,14 @@ export const getUnitsByModule = TryCatchFunction(async (req, res) => {
 
 // Also update the updateUnit function to handle images
 export const updateUnit = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
+  const userType = req.user?.userType;
   const unitId = Number(req.params.unitId);
   const updates = req.body || {};
 
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ErrorClass("Unauthorized", 401);
+  }
   if (!Number.isInteger(unitId) || unitId <= 0) {
     throw new ErrorClass("Invalid unit id", 400);
   }
@@ -428,14 +549,30 @@ export const updateUnit = TryCatchFunction(async (req, res) => {
   }
 
   const moduleRecord = await Modules.findByPk(unit.module_id);
+  if (!moduleRecord) {
+    throw new ErrorClass("Module not found", 404);
+  }
+
   const course = await Courses.findByPk(moduleRecord.course_id);
-  if (course.staff_id !== staffId) {
-    throw new ErrorClass("You do not own this course", 403);
+  if (!course) {
+    throw new ErrorClass("Course not found", 404);
+  }
+
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, moduleRecord.course_id);
+  if (!hasAccess) {
+    throw new ErrorClass("You do not have permission to update this unit", 403);
   }
 
   delete updates.id;
   delete updates.module_id;
-  updates.updated_by = staffId;
+  updates.updated_by = getCreatorId(userType, userId);
+
+  const originalValues = {
+    title: unit.title,
+    content: unit.content,
+    status: unit.status,
+  };
 
   // Process images if content is being updated and it's HTML
   if (
@@ -492,9 +629,13 @@ export const updateUnit = TryCatchFunction(async (req, res) => {
 // });
 
 export const deleteUnit = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
+  const userType = req.user?.userType;
   const unitId = Number(req.params.unitId);
 
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ErrorClass("Unauthorized", 401);
+  }
   if (!Number.isInteger(unitId) || unitId <= 0) {
     throw new ErrorClass("Invalid unit id", 400);
   }
@@ -505,10 +646,28 @@ export const deleteUnit = TryCatchFunction(async (req, res) => {
   }
 
   const moduleRecord = await Modules.findByPk(unit.module_id);
-  const course = await Courses.findByPk(moduleRecord.course_id);
-  if (course.staff_id !== staffId) {
-    throw new ErrorClass("You do not own this course", 403);
+  if (!moduleRecord) {
+    throw new ErrorClass("Module not found", 404);
   }
+
+  const course = await Courses.findByPk(moduleRecord.course_id);
+  if (!course) {
+    throw new ErrorClass("Course not found", 404);
+  }
+
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, moduleRecord.course_id);
+  if (!hasAccess) {
+    throw new ErrorClass("You do not have permission to delete this unit", 403);
+  }
+
+  const unitInfo = {
+    id: unit.id,
+    title: unit.title,
+    module_id: unit.module_id,
+    course_id: moduleRecord.course_id,
+    created_by: unit.created_by,
+  };
 
   // Cleanup associated notes and storage
   await dbLibrary.transaction(async (t) => {
@@ -551,6 +710,20 @@ export const deleteUnit = TryCatchFunction(async (req, res) => {
 
     await unit.destroy({ transaction: t });
   });
+
+  // Log admin activity if admin deleted staff-created unit
+  if ((userType === "admin" || userType === "super_admin") && unit.created_by !== userId) {
+    try {
+      await logAdminActivity(userId, "deleted_unit", "unit", unitId, {
+        module_id: unit.module_id,
+        course_id: moduleRecord.course_id,
+        title: unit.title,
+        original_creator_id: unit.created_by,
+      });
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
+  }
 
   res.status(200).json({
     status: true,
