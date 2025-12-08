@@ -213,7 +213,10 @@ export const getCourseById = TryCatchFunction(async (req, res) => {
     },
   ];
 
-  if (userType === "staff") {
+  // Admins can access any course (no restrictions)
+  if (userType === "admin" || userType === "super_admin") {
+    // No additional where clause needed - admins can see all courses
+  } else if (userType === "staff") {
     where = { ...where, staff_id: userId };
   } else if (userType === "student") {
     include.push({
