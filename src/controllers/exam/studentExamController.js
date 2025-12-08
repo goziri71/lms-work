@@ -21,6 +21,12 @@ import {
   paginatedResponse,
 } from "../../utils/pagination.js";
 import { storeExamStartIP } from "../../middlewares/ipTracker.js";
+import {
+  verifyExamPaymentRequirements,
+  checkSchoolFeesPayment,
+  checkCourseFeesPayment,
+  getCurrentAcademicYear,
+} from "../../services/paymentVerificationService.js";
 
 /**
  * GET AVAILABLE EXAMS (Student)
@@ -83,12 +89,40 @@ export const getStudentExams = TryCatchFunction(async (req, res) => {
     offset,
   });
 
+  // Filter out exams for courses where payment is not completed
+  // Get current academic year if not provided
+  const currentAcademicYear = academic_year || (await getCurrentAcademicYear());
+  const schoolFeesPaid = currentAcademicYear
+    ? await checkSchoolFeesPayment(studentId, currentAcademicYear)
+    : false;
+
+  const filteredExams = [];
+  for (const exam of exams) {
+    // Check school fees (for all exams)
+    if (!schoolFeesPaid) {
+      continue; // Skip this exam if school fees not paid
+    }
+
+    // Check course fees for this specific exam's course
+    const coursePayment = await checkCourseFeesPayment(
+      studentId,
+      exam.course_id,
+      exam.academic_year,
+      exam.semester
+    );
+
+    if (coursePayment.paid) {
+      filteredExams.push(exam);
+    }
+  }
+
+  // Return filtered results with correct pagination info
   res
     .status(200)
     .json(
       paginatedResponse(
-        exams,
-        count,
+        filteredExams,
+        filteredExams.length,
         page,
         limit,
         "Exams retrieved successfully"
@@ -130,6 +164,23 @@ export const startExam = TryCatchFunction(async (req, res) => {
 
   if (!enrollment) {
     throw new ErrorClass("You are not enrolled in this course", 403);
+  }
+
+  // Check payment requirements (school fees + course fees)
+  // Admin override: Check if user is admin (for flexibility)
+  const isAdmin = userType === "admin";
+  const adminOverride = isAdmin && req.query?.override_payment === "true";
+
+  const paymentVerification = await verifyExamPaymentRequirements(
+    studentId,
+    exam.course_id,
+    exam.academic_year,
+    exam.semester,
+    adminOverride
+  );
+
+  if (!paymentVerification.allowed) {
+    throw new ErrorClass(paymentVerification.errors.join(" "), 403);
   }
 
   // Check time window

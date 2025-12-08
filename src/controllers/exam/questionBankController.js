@@ -6,17 +6,22 @@ import {
   QuestionTheory,
 } from "../../models/exams/index.js";
 import { Courses } from "../../models/course/courses.js";
+import {
+  canAccessCourse,
+  getCreatorId,
+} from "../../utils/examAccessControl.js";
+import { logAdminActivity } from "../../middlewares/adminAuthorize.js";
 
 /**
  * CREATE OBJECTIVE QUESTION
  * POST /api/exams/bank/questions/objective
  */
 export const createObjectiveQuestion = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can create questions", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can create questions", 403);
   }
 
   const {
@@ -53,18 +58,19 @@ export const createObjectiveQuestion = TryCatchFunction(async (req, res) => {
     );
   }
 
-  // Verify staff owns the course
-  const course = await Courses.findOne({
-    where: { id: course_id, staff_id: staffId },
-  });
-  if (!course) {
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, course_id);
+  if (!hasAccess) {
     throw new ErrorClass("Course not found or access denied", 403);
   }
+
+  // Get creator ID (admin ID for admins, staff ID for staff)
+  const creatorId = getCreatorId(userType, userId);
 
   // Create question bank entry
   const questionBank = await QuestionBank.create({
     course_id,
-    created_by: staffId,
+    created_by: creatorId,
     question_type: "objective",
     difficulty,
     topic,
@@ -89,6 +95,25 @@ export const createObjectiveQuestion = TryCatchFunction(async (req, res) => {
     include: [{ model: QuestionObjective, as: "objective" }],
   });
 
+  // Log admin activity if created by admin
+  if (userType === "admin") {
+    try {
+      await logAdminActivity(
+        userId,
+        "created_question",
+        "question",
+        questionBank.id,
+        {
+          course_id: course_id,
+          question_type: "objective",
+          topic: topic,
+        }
+      );
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
+  }
+
   res.status(201).json({
     status: true,
     code: 201,
@@ -102,11 +127,11 @@ export const createObjectiveQuestion = TryCatchFunction(async (req, res) => {
  * POST /api/exams/bank/questions/theory
  */
 export const createTheoryQuestion = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can create questions", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can create questions", 403);
   }
 
   const {
@@ -128,18 +153,19 @@ export const createTheoryQuestion = TryCatchFunction(async (req, res) => {
     );
   }
 
-  // Verify staff owns the course
-  const course = await Courses.findOne({
-    where: { id: course_id, staff_id: staffId },
-  });
-  if (!course) {
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, course_id);
+  if (!hasAccess) {
     throw new ErrorClass("Course not found or access denied", 403);
   }
+
+  // Get creator ID (admin ID for admins, staff ID for staff)
+  const creatorId = getCreatorId(userType, userId);
 
   // Create question bank entry
   const questionBank = await QuestionBank.create({
     course_id,
-    created_by: staffId,
+    created_by: creatorId,
     question_type: "theory",
     difficulty,
     topic,
@@ -163,6 +189,25 @@ export const createTheoryQuestion = TryCatchFunction(async (req, res) => {
     include: [{ model: QuestionTheory, as: "theory" }],
   });
 
+  // Log admin activity if created by admin
+  if (userType === "admin") {
+    try {
+      await logAdminActivity(
+        userId,
+        "created_question",
+        "question",
+        questionBank.id,
+        {
+          course_id: course_id,
+          question_type: "theory",
+          topic: topic,
+        }
+      );
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
+  }
+
   res.status(201).json({
     status: true,
     code: 201,
@@ -176,12 +221,12 @@ export const createTheoryQuestion = TryCatchFunction(async (req, res) => {
  * PUT /api/exams/bank/questions/objective/:questionId
  */
 export const updateObjectiveQuestion = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
   const questionId = Number(req.params.questionId);
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can update questions", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can update questions", 403);
   }
 
   const questionBank = await QuestionBank.findByPk(questionId, {
@@ -192,13 +237,18 @@ export const updateObjectiveQuestion = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Objective question not found", 404);
   }
 
-  // Verify staff owns the course
-  const course = await Courses.findOne({
-    where: { id: questionBank.course_id, staff_id: staffId },
-  });
-  if (!course) {
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, questionBank.course_id);
+  if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
+
+  // Store original values for audit log
+  const originalCreatorId = questionBank.created_by;
+  const originalValues = {
+    question_text: questionBank.objective.question_text,
+    correct_option: questionBank.objective.correct_option,
+  };
 
   const {
     question_text,
@@ -257,6 +307,32 @@ export const updateObjectiveQuestion = TryCatchFunction(async (req, res) => {
     include: [{ model: QuestionObjective, as: "objective" }],
   });
 
+  // Log admin activity if admin modified staff-created question
+  if (userType === "admin" && originalCreatorId !== userId) {
+    try {
+      await logAdminActivity(
+        userId,
+        "updated_question",
+        "question",
+        questionId,
+        {
+          course_id: questionBank.course_id,
+          question_type: "objective",
+          original_creator_id: originalCreatorId,
+          changes: {
+            before: originalValues,
+            after: {
+              question_text: objectiveUpdates.question_text || originalValues.question_text,
+              correct_option: objectiveUpdates.correct_option || originalValues.correct_option,
+            },
+          },
+        }
+      );
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
+  }
+
   res.status(200).json({
     status: true,
     code: 200,
@@ -270,12 +346,12 @@ export const updateObjectiveQuestion = TryCatchFunction(async (req, res) => {
  * PUT /api/exams/bank/questions/theory/:questionId
  */
 export const updateTheoryQuestion = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
   const questionId = Number(req.params.questionId);
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can update questions", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can update questions", 403);
   }
 
   const questionBank = await QuestionBank.findByPk(questionId, {
@@ -286,13 +362,18 @@ export const updateTheoryQuestion = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Theory question not found", 404);
   }
 
-  // Verify staff owns the course
-  const course = await Courses.findOne({
-    where: { id: questionBank.course_id, staff_id: staffId },
-  });
-  if (!course) {
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, questionBank.course_id);
+  if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
+
+  // Store original values for audit log
+  const originalCreatorId = questionBank.created_by;
+  const originalValues = {
+    question_text: questionBank.theory.question_text,
+    max_marks: questionBank.theory.max_marks,
+  };
 
   const {
     question_text,
@@ -332,6 +413,32 @@ export const updateTheoryQuestion = TryCatchFunction(async (req, res) => {
     include: [{ model: QuestionTheory, as: "theory" }],
   });
 
+  // Log admin activity if admin modified staff-created question
+  if (userType === "admin" && originalCreatorId !== userId) {
+    try {
+      await logAdminActivity(
+        userId,
+        "updated_question",
+        "question",
+        questionId,
+        {
+          course_id: questionBank.course_id,
+          question_type: "theory",
+          original_creator_id: originalCreatorId,
+          changes: {
+            before: originalValues,
+            after: {
+              question_text: theoryUpdates.question_text || originalValues.question_text,
+              max_marks: theoryUpdates.max_marks || originalValues.max_marks,
+            },
+          },
+        }
+      );
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
+  }
+
   res.status(200).json({
     status: true,
     code: 200,
@@ -345,12 +452,12 @@ export const updateTheoryQuestion = TryCatchFunction(async (req, res) => {
  * DELETE /api/exams/bank/questions/:questionId
  */
 export const deleteQuestion = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
   const questionId = Number(req.params.questionId);
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can delete questions", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can delete questions", 403);
   }
 
   const questionBank = await QuestionBank.findByPk(questionId);
@@ -359,16 +466,41 @@ export const deleteQuestion = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Question not found", 404);
   }
 
-  // Verify staff owns the course
-  const course = await Courses.findOne({
-    where: { id: questionBank.course_id, staff_id: staffId },
-  });
-  if (!course) {
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, questionBank.course_id);
+  if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
 
+  // Store question info for audit log before deletion
+  const questionInfo = {
+    id: questionBank.id,
+    course_id: questionBank.course_id,
+    question_type: questionBank.question_type,
+    original_creator_id: questionBank.created_by,
+  };
+
   // Delete question (cascade will handle objective/theory)
   await questionBank.destroy();
+
+  // Log admin activity if admin deleted staff-created question
+  if (userType === "admin" && questionInfo.original_creator_id !== userId) {
+    try {
+      await logAdminActivity(
+        userId,
+        "deleted_question",
+        "question",
+        questionId,
+        {
+          course_id: questionInfo.course_id,
+          question_type: questionInfo.question_type,
+          original_creator_id: questionInfo.original_creator_id,
+        }
+      );
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
+  }
 
   res.status(200).json({
     status: true,
@@ -382,12 +514,12 @@ export const deleteQuestion = TryCatchFunction(async (req, res) => {
  * GET /api/exams/bank/questions/:questionId
  */
 export const getQuestionById = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
   const questionId = Number(req.params.questionId);
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can access questions", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can access questions", 403);
   }
 
   const question = await QuestionBank.findByPk(questionId, {
@@ -401,11 +533,9 @@ export const getQuestionById = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Question not found", 404);
   }
 
-  // Verify staff owns the course
-  const course = await Courses.findOne({
-    where: { id: question.course_id, staff_id: staffId },
-  });
-  if (!course) {
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, question.course_id);
+  if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
 

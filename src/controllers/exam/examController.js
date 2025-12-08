@@ -13,17 +13,23 @@ import {
   getPaginationParams,
   paginatedResponse,
 } from "../../utils/pagination.js";
+import {
+  canAccessCourse,
+  canModifyExam,
+  getCreatorId,
+} from "../../utils/examAccessControl.js";
+import { logAdminActivity } from "../../middlewares/adminAuthorize.js";
 
 /**
- * CREATE EXAM (Staff only)
+ * CREATE EXAM (Staff and Admin)
  * POST /api/exams
  */
 export const createExam = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can create exams", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can create exams", 403);
   }
 
   const {
@@ -59,15 +65,16 @@ export const createExam = TryCatchFunction(async (req, res) => {
     );
   }
 
-  // Verify staff owns the course
-  console.log("🔍 Checking course ownership...");
-  const course = await Courses.findOne({
-    where: { id: course_id, staff_id: staffId },
-  });
-  if (!course) {
+  // Verify user can access the course (admin can access all, staff only their own)
+  console.log("🔍 Checking course access...");
+  const hasAccess = await canAccessCourse(userType, userId, course_id);
+  if (!hasAccess) {
     throw new ErrorClass("Course not found or access denied", 403);
   }
-  console.log("✅ Course found:", course.id);
+  console.log("✅ Course access granted");
+
+  // Get creator ID (admin ID for admins, staff ID for staff)
+  const creatorId = getCreatorId(userType, userId);
 
   // Create exam
   console.log("💾 Creating exam...");
@@ -86,7 +93,7 @@ export const createExam = TryCatchFunction(async (req, res) => {
     selection_mode,
     objective_count,
     theory_count,
-    created_by: staffId,
+    created_by: creatorId,
   });
 
   console.log("✅ Exam created with ID:", exam.id);
@@ -105,6 +112,28 @@ export const createExam = TryCatchFunction(async (req, res) => {
   }
 
   console.log("✅ Exam creation completed successfully");
+
+  // Log admin activity if created by admin
+  if (userType === "admin") {
+    try {
+      await logAdminActivity(
+        userId,
+        "created_exam",
+        "exam",
+        exam.id,
+        {
+          course_id: course_id,
+          title: title,
+          exam_type: exam_type,
+          academic_year: academic_year,
+          semester: semester,
+        }
+      );
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
+  }
+
   res.status(201).json({
     status: true,
     code: 201,
@@ -114,28 +143,38 @@ export const createExam = TryCatchFunction(async (req, res) => {
 });
 
 /**
- * GET ALL EXAMS (Staff - for their courses)
+ * GET ALL EXAMS (Staff - for their courses, Admin - all courses)
  * GET /api/exams
  */
 export const getStaffExams = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can access this endpoint", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can access this endpoint", 403);
   }
 
   const { course_id, academic_year, semester, visibility } = req.query;
   const { page, limit, offset } = getPaginationParams(req);
 
-  // Get courses owned by staff
-  const staffCourses = await Courses.findAll({
-    where: { staff_id: staffId },
-    attributes: ["id"],
-  });
-  const courseIds = staffCourses.map((c) => c.id);
+  // For admins: get all courses, for staff: get only their courses
+  let courseIds = [];
+  if (userType === "admin") {
+    // Admin can see all courses
+    const allCourses = await Courses.findAll({
+      attributes: ["id"],
+    });
+    courseIds = allCourses.map((c) => c.id);
+  } else {
+    // Staff can only see their own courses
+    const staffCourses = await Courses.findAll({
+      where: { staff_id: userId },
+      attributes: ["id"],
+    });
+    courseIds = staffCourses.map((c) => c.id);
+  }
 
-  const where = { course_id: { [Op.in]: courseIds } };
+  const where = courseIds.length > 0 ? { course_id: { [Op.in]: courseIds } } : {};
   if (course_id) where.course_id = Number(course_id);
   if (academic_year) where.academic_year = academic_year;
   if (semester) where.semester = semester;
@@ -162,18 +201,18 @@ export const getStaffExams = TryCatchFunction(async (req, res) => {
 });
 
 /**
- * GET SINGLE EXAM (Staff view - includes all details)
+ * GET SINGLE EXAM (Staff and Admin view - includes all details)
  * GET /api/exams/:examId
  */
 export const getExamById = TryCatchFunction(async (req, res) => {
   console.log("🔍 Get exam by ID endpoint called");
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
   const examId = Number(req.params.examId);
-  console.log("👤 User:", { staffId, userType, examId });
+  console.log("👤 User:", { userId, userType, examId });
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can access this endpoint", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can access this endpoint", 403);
   }
 
   console.log("📚 Fetching exam with includes...");
@@ -204,13 +243,11 @@ export const getExamById = TryCatchFunction(async (req, res) => {
   }
   console.log("✅ Exam found:", exam.id);
 
-  // Verify staff owns the course
-  console.log("🔍 Checking course ownership...");
-  const course = await Courses.findOne({
-    where: { id: exam.course_id, staff_id: staffId },
-  });
-  if (!course) {
-    console.log("❌ Access denied - course not owned by staff");
+  // Verify user can access the course (admin can access all, staff only their own)
+  console.log("🔍 Checking course access...");
+  const hasAccess = await canAccessCourse(userType, userId, exam.course_id);
+  if (!hasAccess) {
+    console.log("❌ Access denied");
     throw new ErrorClass("Access denied", 403);
   }
   console.log("✅ Access granted");
@@ -224,30 +261,32 @@ export const getExamById = TryCatchFunction(async (req, res) => {
 });
 
 /**
- * UPDATE EXAM (Staff only)
+ * UPDATE EXAM (Staff and Admin)
  * PUT /api/exams/:examId
  */
 export const updateExam = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
   const examId = Number(req.params.examId);
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can update exams", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can update exams", 403);
   }
 
-  const exam = await Exam.findByPk(examId);
-  if (!exam) {
-    throw new ErrorClass("Exam not found", 404);
-  }
-
-  // Verify staff owns the course
-  const course = await Courses.findOne({
-    where: { id: exam.course_id, staff_id: staffId },
-  });
-  if (!course) {
+  // Check if user can modify this exam
+  const accessCheck = await canModifyExam(userType, userId, examId);
+  if (!accessCheck.allowed) {
     throw new ErrorClass("Access denied", 403);
   }
+
+  const exam = accessCheck.exam;
+
+  // Store original values for audit log
+  const originalValues = {
+    title: exam.title,
+    visibility: exam.visibility,
+    exam_type: exam.exam_type,
+  };
 
   const {
     title,
@@ -277,6 +316,32 @@ export const updateExam = TryCatchFunction(async (req, res) => {
 
   await exam.update(updates);
 
+  // Log admin activity if admin modified staff-created exam
+  if (userType === "admin" && accessCheck.isAdminModification && accessCheck.originalCreatorId !== userId) {
+    try {
+      await logAdminActivity(
+        userId,
+        "updated_exam",
+        "exam",
+        examId,
+        {
+          course_id: exam.course_id,
+          original_creator_id: accessCheck.originalCreatorId,
+          changes: {
+            before: originalValues,
+            after: {
+              title: updates.title || originalValues.title,
+              visibility: updates.visibility || originalValues.visibility,
+              exam_type: updates.exam_type || originalValues.exam_type,
+            },
+          },
+        }
+      );
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
+  }
+
   res.status(200).json({
     status: true,
     code: 200,
@@ -286,32 +351,54 @@ export const updateExam = TryCatchFunction(async (req, res) => {
 });
 
 /**
- * DELETE EXAM (Staff only)
+ * DELETE EXAM (Staff and Admin)
  * DELETE /api/exams/:examId
  */
 export const deleteExam = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
   const examId = Number(req.params.examId);
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can delete exams", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can delete exams", 403);
   }
 
-  const exam = await Exam.findByPk(examId);
-  if (!exam) {
-    throw new ErrorClass("Exam not found", 404);
-  }
-
-  // Verify staff owns the course
-  const course = await Courses.findOne({
-    where: { id: exam.course_id, staff_id: staffId },
-  });
-  if (!course) {
+  // Check if user can modify this exam
+  const accessCheck = await canModifyExam(userType, userId, examId);
+  if (!accessCheck.allowed) {
     throw new ErrorClass("Access denied", 403);
   }
 
+  const exam = accessCheck.exam;
+
+  // Store exam info for audit log before deletion
+  const examInfo = {
+    id: exam.id,
+    title: exam.title,
+    course_id: exam.course_id,
+    original_creator_id: accessCheck.originalCreatorId,
+  };
+
   await exam.destroy(); // Cascade will handle items, attempts, answers
+
+  // Log admin activity if admin deleted staff-created exam
+  if (userType === "admin" && accessCheck.isAdminModification && accessCheck.originalCreatorId !== userId) {
+    try {
+      await logAdminActivity(
+        userId,
+        "deleted_exam",
+        "exam",
+        examId,
+        {
+          course_id: examInfo.course_id,
+          title: examInfo.title,
+          original_creator_id: examInfo.original_creator_id,
+        }
+      );
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
+  }
 
   res.status(200).json({
     status: true,
@@ -321,15 +408,15 @@ export const deleteExam = TryCatchFunction(async (req, res) => {
 });
 
 /**
- * GET EXAM BANK QUESTIONS (Staff view for exam creation)
+ * GET EXAM BANK QUESTIONS (Staff and Admin view for exam creation)
  * GET /api/exams/bank/questions
  */
 export const getBankQuestions = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can access question bank", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can access question bank", 403);
   }
 
   const {
@@ -344,11 +431,9 @@ export const getBankQuestions = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("course_id is required", 400);
   }
 
-  // Verify staff owns the course
-  const course = await Courses.findOne({
-    where: { id: course_id, staff_id: staffId },
-  });
-  if (!course) {
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, course_id);
+  if (!hasAccess) {
     throw new ErrorClass("Course not found or access denied", 403);
   }
 

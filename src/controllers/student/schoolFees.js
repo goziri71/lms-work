@@ -100,6 +100,16 @@ export const getMySchoolFees = TryCatchFunction(async (req, res) => {
   const amount = parseFloat(feesConfig.amount);
   const currency = feesConfig.currency;
 
+  // Get wallet balance
+  const totalCredits = await Funding.sum("amount", {
+    where: { student_id: studentId, type: "Credit" },
+  });
+  const totalDebits = await Funding.sum("amount", {
+    where: { student_id: studentId, type: "Debit" },
+  });
+  const walletBalance = (totalCredits || 0) - (totalDebits || 0);
+  const canPayFromWallet = walletBalance >= amount;
+
   res.status(200).json({
     success: true,
     message: "School fees information retrieved successfully",
@@ -121,15 +131,21 @@ export const getMySchoolFees = TryCatchFunction(async (req, res) => {
             teller_no: existingPayment.teller_no,
           }
         : null,
+      wallet: {
+        balance: walletBalance,
+        currency: currency,
+        can_pay_from_wallet: canPayFromWallet,
+      },
     },
   });
 });
 
 /**
- * Verify and process school fees payment
- * Frontend sends transaction reference from Flutterwave callback
- * Backend verifies with Flutterwave API and credits wallet if successful
+ * Verify Flutterwave payment and fund wallet only
+ * NOTE: This endpoint is kept for backward compatibility but now only funds wallet
+ * For paying school fees, use paySchoolFeesFromWallet after funding
  * POST /api/courses/school-fees/verify
+ * @deprecated Use /api/wallet/fund instead for wallet funding
  */
 export const verifySchoolFeesPayment = TryCatchFunction(async (req, res) => {
   const studentId = Number(req.user?.id);
@@ -147,6 +163,176 @@ export const verifySchoolFeesPayment = TryCatchFunction(async (req, res) => {
       "transaction_reference or flutterwave_transaction_id is required",
       400
     );
+  }
+
+  // Get student
+  const student = await Students.findByPk(studentId);
+  if (!student) {
+    throw new ErrorClass("Student not found", 404);
+  }
+
+  // Get current semester for academic year
+  const currentDate = new Date();
+  const today = currentDate.toISOString().split("T")[0];
+
+  let currentSemester = await Semester.findOne({
+    where: {
+      [Op.and]: [
+        Semester.sequelize.literal(`DATE(start_date) <= '${today}'`),
+        Semester.sequelize.literal(`DATE(end_date) >= '${today}'`),
+      ],
+    },
+    order: [["id", "DESC"]],
+  });
+
+  if (!currentSemester) {
+    currentSemester = await Semester.findOne({
+      where: Semester.sequelize.where(
+        Semester.sequelize.fn("UPPER", Semester.sequelize.col("status")),
+        "ACTIVE"
+      ),
+      order: [["id", "DESC"]],
+    });
+  }
+
+  const academicYear = currentSemester?.academic_year?.toString() || null;
+
+  // Verify transaction with Flutterwave API
+  const verificationId = flutterwave_transaction_id || transaction_reference;
+  let verificationResult;
+
+  try {
+    verificationResult = await verifyTransaction(verificationId);
+  } catch (error) {
+    throw new ErrorClass(
+      `Payment verification failed: ${error.message}`,
+      400
+    );
+  }
+
+  if (!verificationResult.success || !isTransactionSuccessful(verificationResult.transaction)) {
+    throw new ErrorClass("Payment was not successful", 400);
+  }
+
+  const flutterwaveTransaction = verificationResult.transaction;
+
+  // Get transaction amount and currency
+  const transactionAmount = getTransactionAmount(flutterwaveTransaction);
+  const transactionCurrency = getTransactionCurrency(flutterwaveTransaction);
+
+  // Check if transaction reference already processed (idempotency)
+  const txRef = getTransactionReference(flutterwaveTransaction);
+  const existingTransaction = await PaymentTransaction.findOne({
+    where: {
+      [Op.or]: [
+        { transaction_reference: txRef },
+        { flutterwave_transaction_id: flutterwaveTransaction.id?.toString() },
+      ],
+      status: "successful",
+    },
+  });
+
+  if (existingTransaction) {
+    // Return existing transaction info
+    const totalCredits = await Funding.sum("amount", {
+      where: { student_id: studentId, type: "Credit" },
+    });
+    const totalDebits = await Funding.sum("amount", {
+      where: { student_id: studentId, type: "Debit" },
+    });
+    const currentBalance = (totalCredits || 0) - (totalDebits || 0);
+
+    return res.status(200).json({
+      success: true,
+      message: "Wallet funding already processed",
+      data: {
+        transaction: {
+          transaction_reference: txRef,
+          status: "successful",
+          amount: transactionAmount,
+        },
+        wallet: {
+          balance: currentBalance,
+          currency: transactionCurrency,
+        },
+      },
+    });
+  }
+
+  // Create payment transaction record
+  const paymentTransaction = await PaymentTransaction.create({
+    student_id: studentId,
+    transaction_reference: txRef,
+    flutterwave_transaction_id: flutterwaveTransaction.id?.toString(),
+    amount: transactionAmount,
+    currency: transactionCurrency,
+    status: "successful",
+    payment_type: "wallet_funding",
+    academic_year: academicYear,
+    processed_at: new Date(),
+    flutterwave_response: flutterwaveTransaction,
+  });
+
+  // Get current wallet balance
+  const totalCredits = await Funding.sum("amount", {
+    where: { student_id: studentId, type: "Credit" },
+  });
+  const totalDebits = await Funding.sum("amount", {
+    where: { student_id: studentId, type: "Debit" },
+  });
+  const currentBalance = (totalCredits || 0) - (totalDebits || 0);
+
+  // Credit wallet
+  const newBalance = currentBalance + transactionAmount;
+
+  const funding = await Funding.create({
+    student_id: studentId,
+    amount: transactionAmount,
+    type: "Credit",
+    service_name: "Wallet Funding",
+    ref: txRef,
+    date: today,
+    semester: currentSemester?.semester || null,
+    academic_year: academicYear,
+    currency: transactionCurrency,
+    balance: newBalance.toString(),
+  });
+
+  // Update student wallet_balance
+  await student.update({
+    wallet_balance: newBalance,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Wallet funded successfully",
+    data: {
+      transaction: {
+        transaction_reference: txRef,
+        amount: transactionAmount,
+        currency: transactionCurrency,
+      },
+      wallet: {
+        previous_balance: currentBalance,
+        new_balance: newBalance,
+        credited: transactionAmount,
+        currency: transactionCurrency,
+      },
+    },
+  });
+});
+
+/**
+ * Pay school fees from wallet
+ * Deducts amount from wallet and marks school fees as paid
+ * POST /api/courses/school-fees/pay-from-wallet
+ */
+export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
+  const studentId = Number(req.user?.id);
+  const userType = req.user?.userType;
+
+  if (userType !== "student") {
+    throw new ErrorClass("Only students can pay school fees", 403);
   }
 
   // Get student
@@ -201,7 +387,7 @@ export const verifySchoolFeesPayment = TryCatchFunction(async (req, res) => {
     );
   }
 
-  // Get school fees configuration to verify amount
+  // Get school fees configuration
   const feesConfig = await getSchoolFeesForStudent(student, academicYear);
 
   if (!feesConfig) {
@@ -211,87 +397,54 @@ export const verifySchoolFeesPayment = TryCatchFunction(async (req, res) => {
     );
   }
 
-  const expectedAmount = parseFloat(feesConfig.amount);
+  const amount = parseFloat(feesConfig.amount);
   const currency = feesConfig.currency;
 
-  // Verify transaction with Flutterwave API
-  const verificationId = flutterwave_transaction_id || transaction_reference;
-  let verificationResult;
+  // Get current wallet balance
+  const totalCredits = await Funding.sum("amount", {
+    where: { student_id: studentId, type: "Credit" },
+  });
+  const totalDebits = await Funding.sum("amount", {
+    where: { student_id: studentId, type: "Debit" },
+  });
+  const currentBalance = (totalCredits || 0) - (totalDebits || 0);
 
-  try {
-    verificationResult = await verifyTransaction(verificationId);
-  } catch (error) {
+  // Check if wallet has sufficient balance
+  if (currentBalance < amount) {
     throw new ErrorClass(
-      `Payment verification failed: ${error.message}`,
+      `Insufficient wallet balance. Required: ${amount} ${currency}, Available: ${currentBalance} ${currency}`,
       400
     );
   }
 
-  if (!verificationResult.success || !isTransactionSuccessful(verificationResult.transaction)) {
-    throw new ErrorClass("Payment was not successful", 400);
-  }
+  // Generate transaction reference
+  const txRef = `WALLET-SCHOOL-FEES-${Date.now()}`;
 
-  const flutterwaveTransaction = verificationResult.transaction;
+  // Debit wallet
+  const newBalance = currentBalance - amount;
 
-  // Verify amount matches
-  const transactionAmount = getTransactionAmount(flutterwaveTransaction);
-  if (Math.abs(transactionAmount - expectedAmount) > 0.01) {
-    throw new ErrorClass(
-      `Payment amount mismatch. Expected: ${expectedAmount}, Received: ${transactionAmount}`,
-      400
-    );
-  }
-
-  // Verify currency matches
-  const transactionCurrency = getTransactionCurrency(flutterwaveTransaction);
-  if (transactionCurrency !== currency) {
-    throw new ErrorClass("Payment currency mismatch", 400);
-  }
-
-  // Check if transaction reference already processed (idempotency)
-  const txRef = getTransactionReference(flutterwaveTransaction);
-  const existingTransaction = await PaymentTransaction.findOne({
-    where: {
-      [Op.or]: [
-        { transaction_reference: txRef },
-        { flutterwave_transaction_id: flutterwaveTransaction.id?.toString() },
-      ],
-      status: "successful",
-    },
+  const funding = await Funding.create({
+    student_id: studentId,
+    amount: amount,
+    type: "Debit",
+    service_name: "School Fees Payment",
+    ref: txRef,
+    date: today,
+    semester: currentSemester.semester || null,
+    academic_year: academicYear,
+    currency: currency,
+    balance: newBalance.toString(),
   });
 
-  if (existingTransaction) {
-    return res.status(200).json({
-      success: true,
-      message: "Payment already processed",
-      data: {
-        transaction: {
-          transaction_reference: txRef,
-          status: "successful",
-          amount: transactionAmount,
-        },
-      },
-    });
-  }
-
-  // Create payment transaction record
-  const paymentTransaction = await PaymentTransaction.create({
-    student_id: studentId,
-    transaction_reference: txRef,
-    flutterwave_transaction_id: flutterwaveTransaction.id?.toString(),
-    amount: expectedAmount,
-    currency: currency,
-    status: "successful",
-    payment_type: "school_fees",
-    academic_year: academicYear,
-    processed_at: new Date(),
-    flutterwave_response: flutterwaveTransaction,
+  // Update student wallet_balance
+  await student.update({
+    wallet_balance: newBalance,
   });
 
   // Create SchoolFees record
   const schoolFee = await SchoolFees.create({
     student_id: studentId,
-    amount: expectedAmount,
+    amount: amount,
     status: "Paid",
     academic_year: academicYear,
     semester: null,
@@ -303,43 +456,13 @@ export const verifySchoolFeesPayment = TryCatchFunction(async (req, res) => {
     currency: currency,
   });
 
-  // Get current wallet balance
-  const totalCredits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Credit" },
-  });
-  const totalDebits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Debit" },
-  });
-  const currentBalance = (totalCredits || 0) - (totalDebits || 0);
-
-  // Credit wallet
-  const newBalance = currentBalance + expectedAmount;
-
-  const funding = await Funding.create({
-    student_id: studentId,
-    amount: expectedAmount,
-    type: "Credit",
-    service_name: "School Fees Payment",
-    ref: txRef,
-    date: today,
-    semester: null,
-    academic_year: academicYear,
-    currency: currency,
-    balance: newBalance.toString(),
-  });
-
-  // Update student wallet_balance
-  await student.update({
-    wallet_balance: newBalance,
-  });
-
   res.status(200).json({
     success: true,
-    message: "Payment verified and processed successfully",
+    message: "School fees paid successfully from wallet",
     data: {
       payment: {
         id: schoolFee.id,
-        amount: expectedAmount,
+        amount: amount,
         currency: currency,
         academic_year: academicYear,
         payment_reference: txRef,
@@ -348,9 +471,9 @@ export const verifySchoolFeesPayment = TryCatchFunction(async (req, res) => {
       wallet: {
         previous_balance: currentBalance,
         new_balance: newBalance,
-        credited: expectedAmount,
+        debited: amount,
+        currency: currency,
       },
     },
   });
 });
-

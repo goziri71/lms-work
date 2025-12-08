@@ -16,18 +16,23 @@ import {
   getPaginationParams,
   paginatedResponse,
 } from "../../utils/pagination.js";
+import {
+  canAccessCourse,
+  canModifyExam,
+} from "../../utils/examAccessControl.js";
+import { logAdminActivity } from "../../middlewares/adminAuthorize.js";
 
 /**
- * GET ATTEMPTS FOR GRADING (Staff)
+ * GET ATTEMPTS FOR GRADING (Staff and Admin)
  * GET /api/exams/:examId/attempts
  */
 export const getExamAttempts = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
   const examId = Number(req.params.examId);
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can access grading", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can access grading", 403);
   }
 
   const exam = await Exam.findByPk(examId);
@@ -35,11 +40,9 @@ export const getExamAttempts = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Exam not found", 404);
   }
 
-  // Verify staff owns the course
-  const course = await Courses.findOne({
-    where: { id: exam.course_id, staff_id: staffId },
-  });
-  if (!course) {
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, exam.course_id);
+  if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
 
@@ -92,16 +95,16 @@ export const getExamAttempts = TryCatchFunction(async (req, res) => {
 });
 
 /**
- * GET SINGLE ATTEMPT FOR GRADING (Staff)
+ * GET SINGLE ATTEMPT FOR GRADING (Staff and Admin)
  * GET /api/exams/attempts/:attemptId/grade
  */
 export const getAttemptForGrading = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
   const attemptId = Number(req.params.attemptId);
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can access grading", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can access grading", 403);
   }
 
   const attempt = await ExamAttempt.findByPk(attemptId, {
@@ -144,22 +147,20 @@ export const getAttemptForGrading = TryCatchFunction(async (req, res) => {
     ],
   });
 
-  // Fetch student data separately (different database)
-  const student = await Students.findByPk(attempt.student_id, {
-    attributes: ["id", "fname", "lname", "matric_number", "email"],
-  });
-
   if (!attempt) {
     throw new ErrorClass("Attempt not found", 404);
   }
 
-  // Verify staff owns the course
-  const course = await Courses.findOne({
-    where: { id: attempt.exam.course_id, staff_id: staffId },
-  });
-  if (!course) {
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, attempt.exam.course_id);
+  if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
+
+  // Fetch student data separately (different database)
+  const student = await Students.findByPk(attempt.student_id, {
+    attributes: ["id", "fname", "lname", "matric_number", "email"],
+  });
 
   res.status(200).json({
     status: true,
@@ -173,16 +174,16 @@ export const getAttemptForGrading = TryCatchFunction(async (req, res) => {
 });
 
 /**
- * GRADE THEORY ANSWER (Staff)
+ * GRADE THEORY ANSWER (Staff and Admin)
  * POST /api/exams/answers/theory/:answerId/grade
  */
 export const gradeTheoryAnswer = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
   const answerId = Number(req.params.answerId);
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can grade answers", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can grade answers", 403);
   }
 
   const { awarded_score, feedback } = req.body;
@@ -216,13 +217,16 @@ export const gradeTheoryAnswer = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Answer not found", 404);
   }
 
-  // Verify staff owns the course
-  const course = await Courses.findOne({
-    where: { id: answer.attempt.exam.course_id, staff_id: staffId },
-  });
-  if (!course) {
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, answer.attempt.exam.course_id);
+  if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
+
+  // Get exam info for audit log
+  const exam = answer.attempt.exam;
+  const accessCheck = await canModifyExam(userType, userId, exam.id);
+  const isAdminModification = accessCheck.isAdminModification && accessCheck.originalCreatorId !== userId;
 
   // Validate score doesn't exceed max
   const maxMarks = answer.examItem.question.theory.max_marks;
@@ -230,10 +234,13 @@ export const gradeTheoryAnswer = TryCatchFunction(async (req, res) => {
     throw new ErrorClass(`Score cannot exceed max marks (${maxMarks})`, 400);
   }
 
+  // Store original score for audit log
+  const originalScore = answer.awarded_score;
+
   await answer.update({
     awarded_score,
     feedback,
-    graded_by: staffId,
+    graded_by: userId,
     graded_at: new Date(),
   });
 
@@ -264,10 +271,35 @@ export const gradeTheoryAnswer = TryCatchFunction(async (req, res) => {
         total_score: objectiveScore + theoryScore,
         status: "graded",
         graded_at: new Date(),
-        graded_by: staffId,
+        graded_by: userId,
       },
       { where: { id: attemptId } }
     );
+  }
+
+  // Log admin activity if admin graded staff-created exam
+  if (userType === "admin" && isAdminModification) {
+    try {
+      await logAdminActivity(
+        userId,
+        "graded_exam_answer",
+        "exam_answer",
+        answerId,
+        {
+          exam_id: exam.id,
+          course_id: exam.course_id,
+          attempt_id: attemptId,
+          student_id: answer.attempt.student_id,
+          original_creator_id: accessCheck.originalCreatorId,
+          changes: {
+            before: { awarded_score: originalScore },
+            after: { awarded_score: awarded_score },
+          },
+        }
+      );
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
   }
 
   res.status(200).json({
@@ -279,16 +311,16 @@ export const gradeTheoryAnswer = TryCatchFunction(async (req, res) => {
 });
 
 /**
- * BULK GRADE THEORY ANSWERS (Staff)
+ * BULK GRADE THEORY ANSWERS (Staff and Admin)
  * POST /api/exams/attempts/:attemptId/grade-bulk
  */
 export const bulkGradeTheory = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
   const attemptId = Number(req.params.attemptId);
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can grade answers", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can grade answers", 403);
   }
 
   const { grades } = req.body; // Array of { answer_id, awarded_score, feedback }
@@ -305,13 +337,15 @@ export const bulkGradeTheory = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Attempt not found", 404);
   }
 
-  // Verify staff owns the course
-  const course = await Courses.findOne({
-    where: { id: attempt.exam.course_id, staff_id: staffId },
-  });
-  if (!course) {
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, attempt.exam.course_id);
+  if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
+
+  // Get exam info for audit log
+  const accessCheck = await canModifyExam(userType, userId, attempt.exam_id);
+  const isAdminModification = accessCheck.isAdminModification && accessCheck.originalCreatorId !== userId;
 
   // Grade each answer
   for (const { answer_id, awarded_score, feedback } of grades) {
@@ -338,7 +372,7 @@ export const bulkGradeTheory = TryCatchFunction(async (req, res) => {
       await answer.update({
         awarded_score: validScore,
         feedback,
-        graded_by: staffId,
+        graded_by: userId,
         graded_at: new Date(),
       });
     }
@@ -367,11 +401,33 @@ export const bulkGradeTheory = TryCatchFunction(async (req, res) => {
     total_score: totalScore,
     status: "graded",
     graded_at: new Date(),
-    graded_by: staffId,
+    graded_by: userId,
   });
 
   // Reload to get updated values
   await attempt.reload();
+
+  // Log admin activity if admin graded staff-created exam
+  if (userType === "admin" && isAdminModification) {
+    try {
+      await logAdminActivity(
+        userId,
+        "bulk_graded_exam",
+        "exam_attempt",
+        attemptId,
+        {
+          exam_id: attempt.exam_id,
+          course_id: attempt.exam.course_id,
+          student_id: attempt.student_id,
+          original_creator_id: accessCheck.originalCreatorId,
+          total_score: totalScore,
+          answers_graded: grades.length,
+        }
+      );
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
+  }
 
   res.status(200).json({
     status: true,
@@ -388,16 +444,16 @@ export const bulkGradeTheory = TryCatchFunction(async (req, res) => {
 });
 
 /**
- * GET EXAM STATISTICS (Staff)
+ * GET EXAM STATISTICS (Staff and Admin)
  * GET /api/exams/:examId/statistics
  */
 export const getExamStatistics = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
   const userType = req.user?.userType;
   const examId = Number(req.params.examId);
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can view statistics", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can view statistics", 403);
   }
 
   const exam = await Exam.findByPk(examId);
@@ -405,11 +461,9 @@ export const getExamStatistics = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Exam not found", 404);
   }
 
-  // Verify staff owns the course
-  const course = await Courses.findOne({
-    where: { id: exam.course_id, staff_id: staffId },
-  });
-  if (!course) {
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, exam.course_id);
+  if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
 

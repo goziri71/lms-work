@@ -15,13 +15,23 @@ import {
   syncQuizQuestionToBank,
   deleteQuizQuestionFromBank,
 } from "../../services/examBankSync.js";
+import {
+  canAccessCourse,
+  canModifyQuiz,
+  getCreatorId,
+} from "../../utils/examAccessControl.js";
+import { logAdminActivity } from "../../middlewares/adminAuthorize.js";
 
 export const createQuiz = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
-  console.log(staffId);
+  const userId = Number(req.user?.id);
+  const userType = req.user?.userType;
   const { module_id, duration_minutes, title, description, status } = req.body;
 
-  if (!Number.isInteger(staffId) || staffId <= 0) {
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can create quizzes", 403);
+  }
+
+  if (!Number.isInteger(userId) || userId <= 0) {
     throw new ErrorClass("Unauthorized or invalid user id", 401);
   }
 
@@ -32,28 +42,21 @@ export const createQuiz = TryCatchFunction(async (req, res) => {
   // Verify the module exists
   const module = await Modules.findByPk(module_id);
 
-  console.log(module);
-
   if (!module) {
     throw new ErrorClass("Module not found", 404);
   }
 
-  // Verify the staff owns the course that contains this module
-  const course = await Courses.findOne({
-    where: {
-      id: module.course_id,
-      staff_id: staffId,
-    },
-  });
-
-  console.log(course);
-
-  if (!course) {
+  // Verify user can access the course (admin can access all, staff only their own)
+  const hasAccess = await canAccessCourse(userType, userId, module.course_id);
+  if (!hasAccess) {
     throw new ErrorClass(
       "You don't have permission to create quiz for this module",
       403
     );
   }
+
+  // Get creator ID (admin ID for admins, staff ID for staff)
+  const creatorId = getCreatorId(userType, userId);
 
   const quiz = await Quiz.create({
     module_id,
@@ -61,8 +64,27 @@ export const createQuiz = TryCatchFunction(async (req, res) => {
     description: description || null,
     duration_minutes: duration_minutes || null,
     status: status || "draft",
-    created_by: staffId,
+    created_by: creatorId,
   });
+
+  // Log admin activity if created by admin
+  if (userType === "admin") {
+    try {
+      await logAdminActivity(
+        userId,
+        "created_quiz",
+        "quiz",
+        quiz.id,
+        {
+          module_id: module_id,
+          course_id: module.course_id,
+          title: title,
+        }
+      );
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
+  }
 
   res.status(201).json({
     status: true,
@@ -100,8 +122,9 @@ export const addQuizQuestionsBatch = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Quiz not found", 404);
   }
 
-  // Verify the staff owns this quiz
-  if (quiz.created_by !== staffId) {
+  // Verify user can modify this quiz (admin can modify all, staff only their own)
+  const accessCheck = await canModifyQuiz(userType, userId, quizId);
+  if (!accessCheck.allowed) {
     throw new ErrorClass("You don't have permission to modify this quiz", 403);
   }
 
@@ -859,8 +882,8 @@ export const getQuizStats = TryCatchFunction(async (req, res) => {
   const sort = (req.query?.sort || "date").toString(); // 'score' | 'date'
   const search = (req.query?.search || "").toString().trim().toLowerCase();
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can view quiz stats", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can view quiz stats", 403);
   }
   if (!Number.isInteger(userId) || userId <= 0) {
     throw new ErrorClass("Unauthorized or invalid user id", 401);
@@ -872,6 +895,16 @@ export const getQuizStats = TryCatchFunction(async (req, res) => {
   const quiz = await Quiz.findByPk(quizId);
   if (!quiz) {
     throw new ErrorClass("Quiz not found", 404);
+  }
+
+  // Verify user can access the course (admin can access all, staff only their own)
+  const module = await Modules.findByPk(quiz.module_id);
+  if (!module) {
+    throw new ErrorClass("Module not found", 404);
+  }
+  const hasAccess = await canAccessCourse(userType, userId, module.course_id);
+  if (!hasAccess) {
+    throw new ErrorClass("Access denied", 403);
   }
 
   // Focused per-student view
@@ -1274,8 +1307,8 @@ export const updateQuizAttempt = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const quizId = Number(req.params.quizId);
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can update quizzes", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can update quizzes", 403);
   }
   if (!Number.isInteger(userId) || userId <= 0) {
     throw new ErrorClass("Unauthorized or invalid user id", 401);
@@ -1291,17 +1324,22 @@ export const updateQuizAttempt = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Quiz not found", 404);
   }
 
-  // Verify the staff owns the course that contains this quiz's module
+  // Verify user can modify this quiz (admin can modify all, staff only their own)
+  const accessCheck = await canModifyQuiz(userType, userId, quizId);
+  if (!accessCheck.allowed) {
+    throw new ErrorClass("You don't have permission to modify this quiz", 403);
+  }
+
   const module = await Modules.findByPk(quiz.module_id);
   if (!module) {
     throw new ErrorClass("Module not found", 404);
   }
-  const course = await Courses.findOne({
-    where: { id: module.course_id, staff_id: userId },
-  });
-  if (!course) {
-    throw new ErrorClass("You don't have permission to modify this quiz", 403);
-  }
+
+  // Store original values for audit log
+  const originalValues = {
+    title: quiz.title,
+    status: quiz.status,
+  };
 
   const trx = await dbLibrary.transaction();
   try {
@@ -1536,6 +1574,32 @@ export const updateQuizAttempt = TryCatchFunction(async (req, res) => {
       ],
     });
 
+    // Log admin activity if admin modified staff-created quiz
+    if (userType === "admin" && accessCheck.isAdminModification && accessCheck.originalCreatorId !== userId) {
+      try {
+        await logAdminActivity(
+          userId,
+          "updated_quiz",
+          "quiz",
+          quizId,
+          {
+            module_id: quiz.module_id,
+            course_id: accessCheck.courseId,
+            original_creator_id: accessCheck.originalCreatorId,
+            changes: {
+              before: originalValues,
+              after: {
+                title: quizPayload?.title || originalValues.title,
+                status: quizPayload?.status || originalValues.status,
+              },
+            },
+          }
+        );
+      } catch (logError) {
+        console.error("Error logging admin activity:", logError);
+      }
+    }
+
     res.status(200).json({
       status: true,
       code: 200,
@@ -1553,8 +1617,8 @@ export const deleteQuiz = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const quizId = Number(req.params.quizId);
 
-  if (userType !== "staff") {
-    throw new ErrorClass("Only staff can delete quizzes", 403);
+  if (userType !== "staff" && userType !== "admin") {
+    throw new ErrorClass("Only staff and admins can delete quizzes", 403);
   }
   if (!Number.isInteger(userId) || userId <= 0) {
     throw new ErrorClass("Unauthorized or invalid user id", 401);
@@ -1568,17 +1632,25 @@ export const deleteQuiz = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Quiz not found", 404);
   }
 
-  // Verify staff owns the course that contains the module for this quiz
+  // Verify user can modify this quiz (admin can modify all, staff only their own)
+  const accessCheck = await canModifyQuiz(userType, userId, quizId);
+  if (!accessCheck.allowed) {
+    throw new ErrorClass("You don't have permission to delete this quiz", 403);
+  }
+
   const module = await Modules.findByPk(quiz.module_id);
   if (!module) {
     throw new ErrorClass("Module not found", 404);
   }
-  const course = await Courses.findOne({
-    where: { id: module.course_id, staff_id: userId },
-  });
-  if (!course) {
-    throw new ErrorClass("You don't have permission to delete this quiz", 403);
-  }
+
+  // Store quiz info for audit log before deletion
+  const quizInfo = {
+    id: quiz.id,
+    title: quiz.title,
+    module_id: quiz.module_id,
+    course_id: accessCheck.courseId,
+    original_creator_id: accessCheck.originalCreatorId,
+  };
 
   const trx = await dbLibrary.transaction();
   try {
@@ -1632,6 +1704,26 @@ export const deleteQuiz = TryCatchFunction(async (req, res) => {
       deleteQuizQuestionFromBank(qId).catch((err) =>
         console.error("Failed to delete question from bank:", err)
       );
+    }
+
+    // Log admin activity if admin deleted staff-created quiz
+    if (userType === "admin" && accessCheck.isAdminModification && accessCheck.originalCreatorId !== userId) {
+      try {
+        await logAdminActivity(
+          userId,
+          "deleted_quiz",
+          "quiz",
+          quizId,
+          {
+            module_id: quizInfo.module_id,
+            course_id: quizInfo.course_id,
+            title: quizInfo.title,
+            original_creator_id: quizInfo.original_creator_id,
+          }
+        );
+      } catch (logError) {
+        console.error("Error logging admin activity:", logError);
+      }
     }
   } catch (err) {
     await trx.rollback();

@@ -1,0 +1,181 @@
+import { Op } from "sequelize";
+import { SchoolFees } from "../models/payment/schoolFees.js";
+import { CourseReg } from "../models/course_reg.js";
+import { Courses } from "../models/course/courses.js";
+import { Semester } from "../models/auth/semester.js";
+
+/**
+ * Check if student has paid school fees for the given academic year
+ * @param {number} studentId - Student ID
+ * @param {string} academicYear - Academic year (e.g., "2024/2025")
+ * @returns {Promise<boolean>} - True if school fees are paid
+ */
+export async function checkSchoolFeesPayment(studentId, academicYear) {
+  const payment = await SchoolFees.findOne({
+    where: {
+      student_id: studentId,
+      academic_year: academicYear,
+      status: "Paid",
+    },
+  });
+
+  return !!payment;
+}
+
+/**
+ * Check if student has paid course fees for a specific course
+ * Handles both regular courses (CourseOrder payment) and marketplace courses (enrollment = payment)
+ * @param {number} studentId - Student ID
+ * @param {number} courseId - Course ID
+ * @param {string} academicYear - Academic year
+ * @param {string} semester - Semester
+ * @returns {Promise<{paid: boolean, reason?: string}>} - Payment status
+ */
+export async function checkCourseFeesPayment(
+  studentId,
+  courseId,
+  academicYear,
+  semester
+) {
+  // Get course to determine if it's marketplace or regular
+  const course = await Courses.findByPk(courseId);
+  if (!course) {
+    return { paid: false, reason: "Course not found" };
+  }
+
+  // Get enrollment
+  const enrollment = await CourseReg.findOne({
+    where: {
+      student_id: studentId,
+      course_id: courseId,
+      academic_year: academicYear,
+      semester: semester,
+    },
+  });
+
+  if (!enrollment) {
+    return { paid: false, reason: "Not enrolled in this course" };
+  }
+
+  // Check if it's a marketplace course
+  const isMarketplace =
+    course.is_marketplace &&
+    course.owner_type !== "wpu" &&
+    course.owner_type !== "wsp";
+
+  // Check if it's a free WPU course
+  const isFreeWPU =
+    !course.is_marketplace ||
+    course.owner_type === "wpu" ||
+    course.owner_type === "wsp";
+
+  // For marketplace courses: enrollment = payment (payment done during purchase)
+  if (isMarketplace) {
+    return { paid: true, reason: "Marketplace course - payment done during purchase" };
+  }
+
+  // For free WPU courses: no payment required
+  if (isFreeWPU) {
+    return { paid: true, reason: "Free WPU course - no payment required" };
+  }
+
+  // For regular allocated courses: check if registration_status is "registered" and course_reg_id exists
+  // This indicates payment via CourseOrder
+  if (
+    enrollment.registration_status === "registered" &&
+    enrollment.course_reg_id !== null
+  ) {
+    return { paid: true, reason: "Course registration payment completed" };
+  }
+
+  return {
+    paid: false,
+    reason: "Course registration payment not completed",
+  };
+}
+
+/**
+ * Get current academic year from active semester
+ * @returns {Promise<string|null>} - Academic year string or null
+ */
+export async function getCurrentAcademicYear() {
+  const currentDate = new Date();
+  const today = currentDate.toISOString().split("T")[0];
+
+  let currentSemester = await Semester.findOne({
+    where: {
+      [Op.and]: [
+        Semester.sequelize.literal(`DATE(start_date) <= '${today}'`),
+        Semester.sequelize.literal(`DATE(end_date) >= '${today}'`),
+      ],
+    },
+    order: [["id", "DESC"]],
+  });
+
+  if (!currentSemester) {
+    currentSemester = await Semester.findOne({
+      where: Semester.sequelize.where(
+        Semester.sequelize.fn("UPPER", Semester.sequelize.col("status")),
+        "ACTIVE"
+      ),
+      order: [["id", "DESC"]],
+    });
+  }
+
+  return currentSemester?.academic_year?.toString() || null;
+}
+
+/**
+ * Verify all payment requirements for exam access
+ * @param {number} studentId - Student ID
+ * @param {number} courseId - Course ID
+ * @param {string} academicYear - Academic year
+ * @param {string} semester - Semester
+ * @param {boolean} adminOverride - Whether admin is overriding payment checks
+ * @returns {Promise<{allowed: boolean, errors: string[]}>} - Access status
+ */
+export async function verifyExamPaymentRequirements(
+  studentId,
+  courseId,
+  academicYear,
+  semester,
+  adminOverride = false
+) {
+  const errors = [];
+
+  // Admin override: skip all checks
+  if (adminOverride) {
+    return { allowed: true, errors: [] };
+  }
+
+  // Check school fees payment
+  const schoolFeesPaid = await checkSchoolFeesPayment(studentId, academicYear);
+  if (!schoolFeesPaid) {
+    errors.push(
+      "You cannot take this exam. Please pay your school fees for the current academic year first."
+    );
+  }
+
+  // Check course fees payment
+  const coursePayment = await checkCourseFeesPayment(
+    studentId,
+    courseId,
+    academicYear,
+    semester
+  );
+  if (!coursePayment.paid) {
+    if (coursePayment.reason === "Not enrolled in this course") {
+      errors.push("You are not enrolled in this course.");
+    } else {
+      errors.push(
+        "You cannot take this exam. Please complete course registration payment first."
+      );
+    }
+  }
+
+  return {
+    allowed: errors.length === 0,
+    errors,
+  };
+}
+
