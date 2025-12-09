@@ -771,10 +771,14 @@ export const deleteUnit = TryCatchFunction(async (req, res) => {
 
 // Upload video to Supabase and set unit.video_url
 export const uploadUnitVideo = TryCatchFunction(async (req, res) => {
-  const staffId = Number(req.user?.id);
+  const userId = Number(req.user?.id);
+  let userType = normalizeUserType(req);
   const moduleId = Number(req.params.moduleId);
   const unitId = Number(req.params.unitId);
 
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ErrorClass("Unauthorized", 401);
+  }
   if (
     !Number.isInteger(moduleId) ||
     moduleId <= 0 ||
@@ -788,8 +792,22 @@ export const uploadUnitVideo = TryCatchFunction(async (req, res) => {
   if (!moduleRecord) throw new ErrorClass("Module not found", 404);
   const course = await Courses.findByPk(moduleRecord.course_id);
   if (!course) throw new ErrorClass("Course not found", 404);
-  if (course.staff_id !== staffId)
-    throw new ErrorClass("You do not own this course", 403);
+
+  // Verify user can access the course (admin can access all, staff only their own)
+  // If userType is undefined/null, check if it's staff by course ownership
+  if (!userType) {
+    // Fallback: check if user is staff by course ownership
+    if (course.staff_id === userId) {
+      userType = "staff";
+    } else {
+      throw new ErrorClass("Unauthorized - user type not recognized", 401);
+    }
+  }
+
+  const hasAccess = await canAccessCourse(userType, userId, moduleRecord.course_id);
+  if (!hasAccess) {
+    throw new ErrorClass("You do not have permission to upload video for this course", 403);
+  }
 
   const unit = await Units.findByPk(unitId);
   if (!unit || unit.module_id !== moduleId)
