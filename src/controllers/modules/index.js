@@ -19,6 +19,23 @@ import {
 } from "../../utils/examAccessControl.js";
 import { logAdminActivity } from "../../middlewares/adminAuthorize.js";
 
+// Helper function to normalize userType (handle admin with super_admin role)
+function normalizeUserType(req) {
+  let userType = req.user?.userType;
+  // If userType is "admin" but role is "super_admin", treat as super_admin
+  if (userType === "admin" && req.user?.role === "super_admin") {
+    userType = "super_admin";
+  }
+  // If userType is undefined/null, try to infer from role
+  if (!userType && req.user?.role === "super_admin") {
+    userType = "super_admin";
+  }
+  if (!userType && req.user?.role === "wpu_admin") {
+    userType = "admin";
+  }
+  return userType;
+}
+
 // Helper function to extract base64 images from HTML and upload to Supabase
 const processHtmlImages = async (htmlContent, unitId) => {
   if (!htmlContent) return htmlContent;
@@ -77,7 +94,7 @@ export const uploadMiddleware = upload.single("video");
 // Create a module (Library DB) tied to an LMS course
 export const createModule = TryCatchFunction(async (req, res) => {
   const userId = Number(req.user?.id);
-  const userType = req.user?.userType;
+  let userType = normalizeUserType(req);
   const { course_id, title, description, status } = req.body;
 
   if (!Number.isInteger(userId) || userId <= 0) {
@@ -93,6 +110,16 @@ export const createModule = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
+  // If userType is undefined/null, check if it's staff by course ownership
+  if (!userType) {
+    // Fallback: check if user is staff by course ownership
+    if (course.staff_id === userId) {
+      userType = "staff";
+    } else {
+      throw new ErrorClass("Unauthorized - user type not recognized", 401);
+    }
+  }
+
   const hasAccess = await canAccessCourse(userType, userId, course_id);
   if (!hasAccess) {
     throw new ErrorClass("You do not have permission to create module for this course", 403);
@@ -133,7 +160,7 @@ export const createModule = TryCatchFunction(async (req, res) => {
 // List modules for a course (Library DB)
 export const getModulesByCourse = TryCatchFunction(async (req, res) => {
   const userId = Number(req.user?.id);
-  const userType = req.user?.userType;
+  let userType = normalizeUserType(req);
   const courseId = Number(req.params.courseId);
 
   if (!Number.isInteger(courseId) || courseId <= 0) {
@@ -194,7 +221,7 @@ export const getModulesByCourse = TryCatchFunction(async (req, res) => {
 // Update a module
 export const updateModule = TryCatchFunction(async (req, res) => {
   const userId = Number(req.user?.id);
-  const userType = req.user?.userType;
+  let userType = normalizeUserType(req);
   const moduleId = Number(req.params.moduleId);
   const updates = req.body || {};
 
@@ -265,7 +292,7 @@ export const updateModule = TryCatchFunction(async (req, res) => {
 // Delete a module (will cascade to units via Library DB association)
 export const deleteModule = TryCatchFunction(async (req, res) => {
   const userId = Number(req.user?.id);
-  const userType = req.user?.userType;
+  let userType = normalizeUserType(req);
   const moduleId = Number(req.params.moduleId);
 
   if (!Number.isInteger(userId) || userId <= 0) {
@@ -380,7 +407,7 @@ export const deleteModule = TryCatchFunction(async (req, res) => {
 
 export const createUnit = TryCatchFunction(async (req, res) => {
   const userId = Number(req.user?.id);
-  const userType = req.user?.userType;
+  let userType = normalizeUserType(req);
   const { module_id, title, content, content_type, order, status } = req.body;
 
   if (!Number.isInteger(userId) || userId <= 0) {
@@ -401,6 +428,16 @@ export const createUnit = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
+  // If userType is undefined/null, check if it's staff by course ownership
+  if (!userType) {
+    // Fallback: check if user is staff by course ownership
+    if (course.staff_id === userId) {
+      userType = "staff";
+    } else {
+      throw new ErrorClass("Unauthorized - user type not recognized", 401);
+    }
+  }
+
   const hasAccess = await canAccessCourse(userType, userId, moduleRecord.course_id);
   if (!hasAccess) {
     throw new ErrorClass("You do not have permission to create unit for this course", 403);
@@ -494,7 +531,7 @@ export const createUnit = TryCatchFunction(async (req, res) => {
 
 export const getUnitsByModule = TryCatchFunction(async (req, res) => {
   const userId = Number(req.user?.id);
-  const userType = req.user?.userType;
+  let userType = normalizeUserType(req);
   const moduleId = Number(req.params.moduleId);
 
   if (!Number.isInteger(userId) || userId <= 0) {
@@ -532,7 +569,7 @@ export const getUnitsByModule = TryCatchFunction(async (req, res) => {
 // Also update the updateUnit function to handle images
 export const updateUnit = TryCatchFunction(async (req, res) => {
   const userId = Number(req.user?.id);
-  const userType = req.user?.userType;
+  let userType = normalizeUserType(req);
   const unitId = Number(req.params.unitId);
   const updates = req.body || {};
 
@@ -630,7 +667,7 @@ export const updateUnit = TryCatchFunction(async (req, res) => {
 
 export const deleteUnit = TryCatchFunction(async (req, res) => {
   const userId = Number(req.user?.id);
-  const userType = req.user?.userType;
+  let userType = normalizeUserType(req);
   const unitId = Number(req.params.unitId);
 
   if (!Number.isInteger(userId) || userId <= 0) {
