@@ -344,55 +344,52 @@ export const deleteModule = TryCatchFunction(async (req, res) => {
       where: { module_id: moduleId },
       transaction: t,
     });
-    const unitIds = units.map((u) => u.id);
 
-    if (unitIds.length > 0) {
-      // Delete notes associated with units in this module
-      await UnitNotes.destroy({
-        where: { unit_id: { [Op.in]: unitIds } },
-        transaction: t,
-      });
+    // Delete notes associated with this module (notes are module-level, not unit-level)
+    await UnitNotes.destroy({
+      where: { module_id: moduleId },
+      transaction: t,
+    });
 
-      // Cleanup Supabase storage for each unit (videos and images)
-      const bucket = process.env.VIDEOS_BUCKET || "lmsvideo";
-      for (const unit of units) {
-        // Remove video file if present
-        if (unit.video_url) {
-          try {
-            const url = unit.video_url;
-            const marker = `/storage/v1/object/public/${bucket}/`;
-            const idx = url.indexOf(marker);
-            if (idx !== -1) {
-              const objectPath = url.substring(idx + marker.length);
-              await supabase.storage.from(bucket).remove([objectPath]);
-            }
-          } catch (e) {
-            console.warn(
-              "Failed to remove unit video from storage:",
-              e?.message || e
-            );
-          }
-        }
-        // Remove any images under images/units/<unitId>/
+    // Cleanup Supabase storage for each unit (videos and images)
+    const bucket = process.env.VIDEOS_BUCKET || "lmsvideo";
+    for (const unit of units) {
+      // Remove video file if present
+      if (unit.video_url) {
         try {
-          const folder = `images/units/${unit.id}`;
-          const { data: files } = await supabase.storage
-            .from(bucket)
-            .list(folder, { limit: 100 });
-          if (Array.isArray(files) && files.length > 0) {
-            const paths = files.map((f) => `${folder}/${f.name}`);
-            await supabase.storage.from(bucket).remove(paths);
+          const url = unit.video_url;
+          const marker = `/storage/v1/object/public/${bucket}/`;
+          const idx = url.indexOf(marker);
+          if (idx !== -1) {
+            const objectPath = url.substring(idx + marker.length);
+            await supabase.storage.from(bucket).remove([objectPath]);
           }
         } catch (e) {
           console.warn(
-            "Failed to remove unit images from storage:",
+            "Failed to remove unit video from storage:",
             e?.message || e
           );
         }
       }
-      // Delete units themselves
-      await Units.destroy({ where: { module_id: moduleId }, transaction: t });
+      // Remove any images under images/units/<unitId>/
+      try {
+        const folder = `images/units/${unit.id}`;
+        const { data: files } = await supabase.storage
+          .from(bucket)
+          .list(folder, { limit: 100 });
+        if (Array.isArray(files) && files.length > 0) {
+          const paths = files.map((f) => `${folder}/${f.name}`);
+          await supabase.storage.from(bucket).remove(paths);
+        }
+      } catch (e) {
+        console.warn(
+          "Failed to remove unit images from storage:",
+          e?.message || e
+        );
+      }
     }
+    // Delete units themselves
+    await Units.destroy({ where: { module_id: moduleId }, transaction: t });
 
     // Finally delete the module
     await moduleRecord.destroy({ transaction: t });
@@ -706,9 +703,8 @@ export const deleteUnit = TryCatchFunction(async (req, res) => {
     created_by: unit.created_by,
   };
 
-  // Cleanup associated notes and storage
+  // Cleanup associated storage (notes are module-level, not unit-level, so we don't delete them)
   await dbLibrary.transaction(async (t) => {
-    await UnitNotes.destroy({ where: { unit_id: unitId }, transaction: t });
 
     const bucket = process.env.VIDEOS_BUCKET || "lmsvideo";
     // Remove video file if present
