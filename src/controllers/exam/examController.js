@@ -3,6 +3,9 @@ import { ErrorClass } from "../../utils/errorClass/index.js";
 import {
   Exam,
   ExamItem,
+  ExamAttempt,
+  ExamAnswerObjective,
+  ExamAnswerTheory,
   QuestionBank,
   QuestionObjective,
   QuestionTheory,
@@ -19,6 +22,7 @@ import {
   getCreatorId,
 } from "../../utils/examAccessControl.js";
 import { logAdminActivity } from "../../middlewares/adminAuthorize.js";
+import { dbLibrary } from "../../database/database.js";
 
 /**
  * CREATE EXAM (Staff and Admin)
@@ -379,25 +383,93 @@ export const deleteExam = TryCatchFunction(async (req, res) => {
     original_creator_id: accessCheck.originalCreatorId,
   };
 
-  await exam.destroy(); // Cascade will handle items, attempts, answers
+  // Use transaction to ensure all related records are deleted in correct order
+  const trx = await dbLibrary.transaction();
+  try {
+    // 1) Load related entity ids
+    const examItems = await ExamItem.findAll({
+      where: { exam_id: examId },
+      attributes: ["id"],
+      transaction: trx,
+    });
+    const examItemIds = examItems.map((item) => item.id);
 
-  // Log admin activity if admin deleted staff-created exam
-  if (userType === "admin" && accessCheck.isAdminModification && accessCheck.originalCreatorId !== userId) {
-    try {
-      await logAdminActivity(
-        userId,
-        "deleted_exam",
-        "exam",
-        examId,
-        {
-          course_id: examInfo.course_id,
-          title: examInfo.title,
-          original_creator_id: examInfo.original_creator_id,
-        }
-      );
-    } catch (logError) {
-      console.error("Error logging admin activity:", logError);
+    const examAttempts = await ExamAttempt.findAll({
+      where: { exam_id: examId },
+      attributes: ["id"],
+      transaction: trx,
+    });
+    const attemptIds = examAttempts.map((attempt) => attempt.id);
+
+    // 2) Delete children in correct order (respecting foreign key constraints)
+    // Delete answers that reference exam_items
+    if (examItemIds.length > 0) {
+      await ExamAnswerObjective.destroy({
+        where: { exam_item_id: { [Op.in]: examItemIds } },
+        transaction: trx,
+      });
+
+      await ExamAnswerTheory.destroy({
+        where: { exam_item_id: { [Op.in]: examItemIds } },
+        transaction: trx,
+      });
     }
+
+    // Delete answers that reference exam_attempts (in case there are any orphaned)
+    if (attemptIds.length > 0) {
+      await ExamAnswerObjective.destroy({
+        where: { attempt_id: { [Op.in]: attemptIds } },
+        transaction: trx,
+      });
+
+      await ExamAnswerTheory.destroy({
+        where: { attempt_id: { [Op.in]: attemptIds } },
+        transaction: trx,
+      });
+    }
+
+    // Delete exam attempts
+    if (attemptIds.length > 0) {
+      await ExamAttempt.destroy({
+        where: { id: { [Op.in]: attemptIds } },
+        transaction: trx,
+      });
+    }
+
+    // Delete exam items
+    if (examItemIds.length > 0) {
+      await ExamItem.destroy({
+        where: { id: { [Op.in]: examItemIds } },
+        transaction: trx,
+      });
+    }
+
+    // 3) Finally, delete the exam
+    await Exam.destroy({ where: { id: examId }, transaction: trx });
+
+    await trx.commit();
+
+    // Log admin activity if admin deleted staff-created exam
+    if (userType === "admin" && accessCheck.isAdminModification && accessCheck.originalCreatorId !== userId) {
+      try {
+        await logAdminActivity(
+          userId,
+          "deleted_exam",
+          "exam",
+          examId,
+          {
+            course_id: examInfo.course_id,
+            title: examInfo.title,
+            original_creator_id: examInfo.original_creator_id,
+          }
+        );
+      } catch (logError) {
+        console.error("Error logging admin activity:", logError);
+      }
+    }
+  } catch (err) {
+    await trx.rollback();
+    throw err;
   }
 
   res.status(200).json({
