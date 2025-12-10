@@ -30,6 +30,29 @@ export const Notice = db.define(
       type: DataTypes.INTEGER,
       allowNull: true,
     },
+    expires_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "When the notice expires. Null if permanent.",
+    },
+    is_permanent: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: "If true, notice never expires regardless of expires_at",
+    },
+    status: {
+      type: DataTypes.ENUM("active", "expired", "draft"),
+      allowNull: false,
+      defaultValue: "active",
+      comment: "active = visible, expired = hidden, draft = not published",
+    },
+    target_audience: {
+      type: DataTypes.ENUM("all", "students", "staff", "both"),
+      allowNull: false,
+      defaultValue: "all",
+      comment: "Who can see this notice: all, students only, staff only, or both",
+    },
   },
   {
     tableName: "notice",

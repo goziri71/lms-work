@@ -17,6 +17,7 @@ import adminRoutes from "./src/routes/admin.js";
 import marketplaceRoutes from "./src/routes/marketplace.js";
 import webhookRoutes from "./src/routes/webhooks.js";
 import walletRoutes from "./src/routes/wallet.js";
+import noticeRoutes from "./src/routes/notice.js";
 import { setupAssociations } from "./src/models/associations.js";
 import { setupExamAssociations } from "./src/models/exams/index.js";
 import { setupDiscussionsSocket } from "./src/realtime/discussions.js";
@@ -56,6 +57,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/marketplace", marketplaceRoutes);
 app.use("/api/webhooks", webhookRoutes);
 app.use("/api/wallet", walletRoutes);
+app.use("/api/notices", noticeRoutes);
 app.use("/api", modulesRoutes);
 
 // Health check endpoint
