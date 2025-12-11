@@ -27,17 +27,15 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Course not found", 404);
   }
 
-  // Only marketplace courses (sole_tutor or organization) require payment
-  // WPU courses are free for WPU students
-  if (!course.is_marketplace || course.owner_type === "wpu" || course.owner_type === "wsp") {
-    throw new ErrorClass(
-      "This is a WPU course and is free. Please use the registration endpoint: POST /api/courses/register",
-      400
-    );
+  // Check if course is available on marketplace
+  if (!course.is_marketplace || course.marketplace_status !== "published") {
+    throw new ErrorClass("This course is not available on marketplace", 400);
   }
 
-  if (course.marketplace_status !== "published") {
-    throw new ErrorClass("This course is not available for purchase", 400);
+  // Validate course price
+  const coursePrice = parseFloat(course.price || 0);
+  if (coursePrice <= 0) {
+    throw new ErrorClass("Course price is invalid or not set", 400);
   }
 
   // Verify student exists
@@ -83,6 +81,9 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
     date: currentDate,
   });
 
+  // Build response based on course type
+  const isWPUCourse = course.owner_type === "wpu" || course.owner_type === "wsp";
+  
   res.status(201).json({
     success: true,
     message: "Course purchased and enrollment successful",
@@ -91,8 +92,12 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
         id: result.transaction.id,
         course_price: result.revenue.coursePrice,
         wsp_commission: result.revenue.wspCommission,
-        tutor_earnings: result.revenue.tutorEarnings,
+        tutor_earnings: isWPUCourse ? null : result.revenue.tutorEarnings, // Null for WPU courses
         commission_rate: result.revenue.commissionRate,
+        owner_type: course.owner_type,
+        note: isWPUCourse 
+          ? "WPU marketplace course - 100% revenue to WPU" 
+          : "Regular marketplace course - commission split applied",
       },
       enrollment: {
         course_id: course_id,

@@ -188,6 +188,8 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     semester,
     exam_fee,
     currency = "NGN",
+    is_marketplace = false,
+    marketplace_status,
   } = req.body;
 
   if (!title || !course_code || !program_id || !staff_id) {
@@ -226,6 +228,28 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Course with this code already exists", 409);
   }
 
+  // Validate marketplace fields if provided
+  if (is_marketplace === true) {
+    if (marketplace_status) {
+      const validStatuses = ["draft", "pending", "approved", "rejected", "published"];
+      if (!validStatuses.includes(marketplace_status)) {
+        throw new ErrorClass(
+          `marketplace_status must be one of: ${validStatuses.join(", ")}`,
+          400
+        );
+      }
+    }
+    // If marketplace but no status, default to "draft"
+    const finalMarketplaceStatus = marketplace_status || "draft";
+    // If published, require price
+    if (finalMarketplaceStatus === "published" && (!price || parseFloat(price) <= 0)) {
+      throw new ErrorClass(
+        "Course price must be set and greater than 0 for published marketplace courses",
+        400
+      );
+    }
+  }
+
   const course = await Courses.create({
     title: title.trim(),
     course_code: course_code.trim().toUpperCase(),
@@ -239,6 +263,8 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     semester: semester || null,
     exam_fee: exam_fee || null,
     currency: currency || "NGN",
+    is_marketplace: is_marketplace || false,
+    marketplace_status: is_marketplace ? (marketplace_status || "draft") : null,
     date: new Date(),
   });
 
@@ -291,6 +317,8 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
     semester,
     exam_fee,
     currency,
+    is_marketplace,
+    marketplace_status,
   } = req.body;
 
   const course = await Courses.findByPk(id);
@@ -305,6 +333,8 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
     faculty_id: course.faculty_id,
     staff_id: course.staff_id,
     price: course.price,
+    is_marketplace: course.is_marketplace,
+    marketplace_status: course.marketplace_status,
   };
 
   // Verify program if being changed
@@ -343,6 +373,46 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
     }
   }
 
+  // Validate marketplace fields
+  if (is_marketplace !== undefined) {
+    course.is_marketplace = is_marketplace;
+    // If setting to marketplace, require marketplace_status
+    if (is_marketplace === true && !marketplace_status) {
+      // If not provided, default to "draft"
+      if (course.marketplace_status === null || course.marketplace_status === undefined) {
+        course.marketplace_status = "draft";
+      }
+    }
+    // If setting to false, clear marketplace_status
+    if (is_marketplace === false) {
+      course.marketplace_status = null;
+    }
+  }
+
+  if (marketplace_status !== undefined) {
+    const validStatuses = ["draft", "pending", "approved", "rejected", "published"];
+    if (marketplace_status && !validStatuses.includes(marketplace_status)) {
+      throw new ErrorClass(
+        `marketplace_status must be one of: ${validStatuses.join(", ")}`,
+        400
+      );
+    }
+    course.marketplace_status = marketplace_status;
+    
+    // If setting to published, require is_marketplace = true
+    if (marketplace_status === "published") {
+      course.is_marketplace = true;
+      // Validate price is set for marketplace courses
+      const finalPrice = price !== undefined ? price : course.price;
+      if (!finalPrice || parseFloat(finalPrice) <= 0) {
+        throw new ErrorClass(
+          "Course price must be set and greater than 0 for marketplace courses",
+          400
+        );
+      }
+    }
+  }
+
   // Update course
   if (title) course.title = title.trim();
   if (course_code) course.course_code = course_code.trim().toUpperCase();
@@ -370,6 +440,8 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
         faculty_id: course.faculty_id,
         staff_id: course.staff_id,
         price: course.price,
+        is_marketplace: course.is_marketplace,
+        marketplace_status: course.marketplace_status,
       },
     },
   });

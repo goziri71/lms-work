@@ -28,8 +28,9 @@ export function calculateRevenue(coursePrice, commissionRate) {
 /**
  * Process marketplace course purchase and distribute revenue
  * 
- * IMPORTANT: This function ONLY processes marketplace courses (sole_tutor/organization)
- * WPU courses are FREE for WPU students and should use the regular registration endpoint
+ * Handles both:
+ * - WPU marketplace courses: 100% revenue to WPU (no commission split)
+ * - Regular marketplace courses (sole_tutor/organization): Commission split
  * 
  * @param {Object} purchaseData - Purchase information
  * @param {number} purchaseData.course_id - Course ID
@@ -48,12 +49,9 @@ export async function processMarketplacePurchase(purchaseData) {
     throw new Error("Course not found");
   }
 
-  // CRITICAL: Only marketplace courses (sole_tutor/organization) require payment
-  // WPU courses (owner_type = "wpu" or "wsp") are FREE and should NOT use this function
-  if (!course.is_marketplace || course.owner_type === "wpu" || course.owner_type === "wsp") {
-    throw new Error(
-      "This is a WPU course and is free. Revenue sharing only applies to marketplace courses (sole_tutor/organization)."
-    );
+  // Check if course is on marketplace
+  if (!course.is_marketplace || course.marketplace_status !== "published") {
+    throw new Error("Course is not available on marketplace");
   }
 
   // Get course price
@@ -62,6 +60,45 @@ export async function processMarketplacePurchase(purchaseData) {
     throw new Error("Course price is invalid");
   }
 
+  // Handle WPU marketplace courses (100% revenue to WPU)
+  if (course.owner_type === "wpu" || course.owner_type === "wsp") {
+    // WPU marketplace course - 100% revenue to WPU, no commission split
+    const transaction = await MarketplaceTransaction.create({
+      course_id,
+      student_id,
+      owner_type: "wpu", // Use "wpu" for transaction record
+      owner_id: null, // WPU courses don't have owner_id
+      course_price: coursePrice,
+      currency: course.currency || "NGN",
+      commission_rate: 0, // No commission (100% to WPU)
+      wsp_commission: coursePrice, // 100% to WPU
+      tutor_earnings: 0, // No tutor earnings
+      payment_status: "completed",
+      payment_method: payment_method || "unknown",
+      payment_reference: payment_reference || null,
+    });
+
+    // Create WPU commission record (100% of course price)
+    await WspCommission.create({
+      transaction_id: transaction.id,
+      amount: coursePrice,
+      currency: course.currency || "NGN",
+      status: "collected",
+      collected_at: new Date(),
+    });
+
+    return {
+      transaction,
+      revenue: {
+        coursePrice,
+        wspCommission: coursePrice, // 100% to WPU
+        tutorEarnings: 0, // No tutor earnings
+        commissionRate: 0, // No commission
+      },
+    };
+  }
+
+  // Handle regular marketplace courses (sole_tutor/organization) - commission split
   // Get owner (tutor or organization)
   let owner;
   if (course.owner_type === "sole_tutor") {

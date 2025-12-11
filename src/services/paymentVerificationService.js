@@ -57,19 +57,17 @@ export async function checkCourseFeesPayment(
     return { paid: false, reason: "Not enrolled in this course" };
   }
 
-  // Check if it's a marketplace course
+  // Check if it's a marketplace course (any owner type - including WPU marketplace)
   const isMarketplace =
-    course.is_marketplace &&
-    course.owner_type !== "wpu" &&
-    course.owner_type !== "wsp";
+    course.is_marketplace === true &&
+    course.marketplace_status === "published";
 
-  // Check if it's a free WPU course
+  // Check if it's a free WPU course (not on marketplace)
   const isFreeWPU =
-    !course.is_marketplace ||
-    course.owner_type === "wpu" ||
-    course.owner_type === "wsp";
+    (course.owner_type === "wpu" || course.owner_type === "wsp") &&
+    (!course.is_marketplace || course.marketplace_status !== "published");
 
-  // For marketplace courses: enrollment = payment (payment done during purchase)
+  // For marketplace courses (including WPU marketplace): enrollment = payment (payment done during purchase)
   if (isMarketplace) {
     return { paid: true, reason: "Marketplace course - payment done during purchase" };
   }

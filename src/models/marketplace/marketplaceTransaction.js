@@ -20,14 +20,14 @@ export const MarketplaceTransaction = db.define(
       comment: "FK to students table - who purchased",
     },
     owner_type: {
-      type: DataTypes.ENUM("sole_tutor", "organization"),
+      type: DataTypes.ENUM("wpu", "sole_tutor", "organization"),
       allowNull: false,
-      comment: "Type of course owner",
+      comment: "Type of course owner (wpu = WPU marketplace course, sole_tutor/organization = regular marketplace)",
     },
     owner_id: {
       type: DataTypes.INTEGER,
-      allowNull: false,
-      comment: "ID of course owner (sole_tutor.id or organization.id)",
+      allowNull: true, // Allow null for WPU courses (they don't have owner_id)
+      comment: "ID of course owner (sole_tutor.id or organization.id, null for WPU courses)",
     },
     course_price: {
       type: DataTypes.DECIMAL(10, 2),

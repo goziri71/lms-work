@@ -22,7 +22,8 @@
     "setup:marketplace": "node setup-marketplace-tables.js",
     "setup:email-logs": "node setup-email-logs-table.js",
     "cleanup:database": "node scripts/cleanup-database.js",
-    "check:quotes": "node scripts/check-remaining-quotes.js"
+    "check:quotes": "node scripts/check-remaining-quotes.js",
+    "migrate:marketplace-enum": "node scripts/migrate-marketplace-transaction-enum.js"
   },
   "keywords": [],
   "author": "",

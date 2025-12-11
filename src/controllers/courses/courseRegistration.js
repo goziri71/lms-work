@@ -39,10 +39,23 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Course not found", 404);
   }
 
-  // IMPORTANT: For WPU courses, students can only register for courses in their program
+  // IMPORTANT: Check if WPU course is listed on marketplace
+  // If listed on marketplace, it requires payment (even for WPU students)
   if (
     (course.owner_type === "wpu" || course.owner_type === "wsp") &&
-    !course.is_marketplace
+    course.is_marketplace === true &&
+    course.marketplace_status === "published"
+  ) {
+    throw new ErrorClass(
+      "This WPU course is listed on marketplace and requires purchase. Please use the purchase endpoint: POST /api/marketplace/courses/purchase",
+      400
+    );
+  }
+
+  // IMPORTANT: For non-marketplace WPU courses, students can only register for courses in their program
+  if (
+    (course.owner_type === "wpu" || course.owner_type === "wsp") &&
+    (!course.is_marketplace || course.marketplace_status !== "published")
   ) {
     // Check if course matches student's program
     if (
@@ -57,8 +70,7 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
     }
   }
 
-  // IMPORTANT: WPU students get FREE access to WPU courses
-  // Marketplace courses (sole_tutor/organization) require payment via purchase endpoint
+  // IMPORTANT: Marketplace courses (sole_tutor/organization) require payment via purchase endpoint
   if (
     course.is_marketplace &&
     course.owner_type !== "wpu" &&
@@ -225,9 +237,19 @@ export const getAvailableCourses = TryCatchFunction(async (req, res) => {
   const coursesWithPricing = courses.map((course) => {
     const courseData = course.toJSON();
     if (course.owner_type === "wpu" || course.owner_type === "wsp") {
-      courseData.price = 0; // Free for WPU students
-      courseData.requires_purchase = false;
+      // Check if WPU course is listed on marketplace
+      if (course.is_marketplace === true && course.marketplace_status === "published") {
+        // Marketplace WPU course - requires purchase
+        courseData.price = parseFloat(course.price) || 0;
+        courseData.requires_purchase = true;
+        courseData.purchase_endpoint = "/api/marketplace/courses/purchase";
+      } else {
+        // Regular WPU course - free
+        courseData.price = 0;
+        courseData.requires_purchase = false;
+      }
     } else if (course.is_marketplace) {
+      // Regular marketplace course (sole_tutor/organization)
       courseData.requires_purchase = true;
       courseData.purchase_endpoint = "/api/marketplace/courses/purchase";
     } else {

@@ -70,11 +70,17 @@ export const allocateCourses = TryCatchFunction(async (req, res) => {
     );
   }
 
-  // Validate courses exist and are WPU courses
+  // Validate courses exist and are WPU courses (not marketplace)
   const courses = await Courses.findAll({
     where: {
       id: { [Op.in]: course_ids },
       owner_type: { [Op.in]: ["wpu", "wsp"] }, // Only WPU courses
+      // Exclude marketplace WPU courses (they should be purchased, not allocated)
+      [Op.or]: [
+        { is_marketplace: false },
+        { marketplace_status: { [Op.ne]: "published" } },
+        { marketplace_status: null },
+      ],
     },
   });
 
