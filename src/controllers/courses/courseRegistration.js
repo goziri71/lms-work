@@ -4,10 +4,13 @@ import { Students } from "../../models/auth/student.js";
 import { Courses } from "../../models/course/courses.js";
 import { CourseReg } from "../../models/course_reg.js";
 import { Semester } from "../../models/auth/semester.js";
+import { CourseOrder } from "../../models/payment/courseOrder.js";
+import { Funding } from "../../models/payment/funding.js";
 
 /**
- * STUDENT REGISTER FOR COURSE
+ * STUDENT REGISTER FOR COURSE(S)
  * POST /api/courses/register
+ * Supports both single course (course_id) and multiple courses (course_ids array)
  */
 export const registerCourse = TryCatchFunction(async (req, res) => {
   const studentId = Number(req.user?.id);
@@ -17,14 +20,24 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Only students can register for courses", 403);
   }
 
-  const { course_id, academic_year, semester, level } = req.body;
+  const { course_id, course_ids, academic_year, semester, level } = req.body;
 
-  // Validate required fields
-  if (!course_id || !academic_year || !semester) {
+  // Support both single course_id and multiple course_ids
+  let coursesToRegister = [];
+  if (course_ids && Array.isArray(course_ids) && course_ids.length > 0) {
+    coursesToRegister = course_ids;
+  } else if (course_id) {
+    coursesToRegister = [course_id];
+  } else {
     throw new ErrorClass(
-      "course_id, academic_year, and semester are required",
+      "Either course_id or course_ids array is required",
       400
     );
+  }
+
+  // Validate required fields
+  if (!academic_year || !semester) {
+    throw new ErrorClass("academic_year and semester are required", 400);
   }
 
   // Verify student exists
@@ -33,103 +46,233 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Student not found", 404);
   }
 
-  // Verify course exists
-  const course = await Courses.findByPk(course_id);
-  if (!course) {
-    throw new ErrorClass("Course not found", 404);
+  // Get all courses to register
+  const courses = await Courses.findAll({
+    where: {
+      id: coursesToRegister,
+    },
+  });
+
+  if (courses.length !== coursesToRegister.length) {
+    const foundIds = courses.map((c) => c.id);
+    const missingIds = coursesToRegister.filter((id) => !foundIds.includes(id));
+    throw new ErrorClass(
+      `Some courses not found: ${missingIds.join(", ")}`,
+      404
+    );
   }
 
-  // IMPORTANT: Check if WPU course is listed on marketplace
-  // If listed on marketplace, it requires payment (even for WPU students)
-  if (
-    (course.owner_type === "wpu" || course.owner_type === "wsp") &&
-    course.is_marketplace === true &&
-    course.marketplace_status === "published"
-  ) {
+  // Validate each course
+  const courseDetails = [];
+  let totalAmount = 0;
+  const errors = [];
+
+  for (const course of courses) {
+    // IMPORTANT: Check if WPU course is listed on marketplace
+    if (
+      (course.owner_type === "wpu" || course.owner_type === "wsp") &&
+      course.is_marketplace === true &&
+      course.marketplace_status === "published"
+    ) {
+      errors.push({
+        course_id: course.id,
+        course_code: course.course_code,
+        error: "This WPU course is listed on marketplace and requires purchase",
+      });
+      continue;
+    }
+
+    // IMPORTANT: For non-marketplace WPU courses, students can only register for courses in their program
+    if (
+      (course.owner_type === "wpu" || course.owner_type === "wsp") &&
+      (!course.is_marketplace || course.marketplace_status !== "published")
+    ) {
+      // Check if course matches student's program
+      if (
+        course.program_id &&
+        student.program_id &&
+        course.program_id !== student.program_id
+      ) {
+        errors.push({
+          course_id: course.id,
+          course_code: course.course_code,
+          error: "This course is not part of your program",
+        });
+        continue;
+      }
+    }
+
+    // IMPORTANT: Marketplace courses (sole_tutor/organization) require payment via purchase endpoint
+    if (
+      course.is_marketplace &&
+      course.owner_type !== "wpu" &&
+      course.owner_type !== "wsp"
+    ) {
+      errors.push({
+        course_id: course.id,
+        course_code: course.course_code,
+        error: "This is a marketplace course and requires purchase",
+      });
+      continue;
+    }
+
+    // Check if already registered
+    const existingReg = await CourseReg.findOne({
+      where: {
+        student_id: studentId,
+        course_id: course.id,
+        academic_year: academic_year,
+        semester: semester,
+      },
+    });
+
+    if (existingReg) {
+      errors.push({
+        course_id: course.id,
+        course_code: course.course_code,
+        error: "Already registered for this course",
+      });
+      continue;
+    }
+
+    // Get course price from courses.price
+    const coursePrice = parseFloat(course.price) || 0;
+    totalAmount += coursePrice;
+
+    courseDetails.push({
+      course_id: course.id,
+      course_title: course.title,
+      course_code: course.course_code,
+      price: coursePrice,
+      currency: course.currency || "NGN",
+    });
+  }
+
+  // If there are errors, return them
+  if (errors.length > 0) {
     throw new ErrorClass(
-      "This WPU course is listed on marketplace and requires purchase. Please use the purchase endpoint: POST /api/marketplace/courses/purchase",
+      `Some courses cannot be registered: ${errors.map((e) => e.course_code).join(", ")}`,
       400
     );
   }
 
-  // IMPORTANT: For non-marketplace WPU courses, students can only register for courses in their program
-  if (
-    (course.owner_type === "wpu" || course.owner_type === "wsp") &&
-    (!course.is_marketplace || course.marketplace_status !== "published")
-  ) {
-    // Check if course matches student's program
-    if (
-      course.program_id &&
-      student.program_id &&
-      course.program_id !== student.program_id
-    ) {
+  if (courseDetails.length === 0) {
+    throw new ErrorClass("No valid courses to register", 400);
+  }
+
+  // Check wallet balance if total amount > 0
+  if (totalAmount > 0) {
+    const totalCredits = await Funding.sum("amount", {
+      where: { student_id: studentId, type: "Credit" },
+    });
+    const totalDebits = await Funding.sum("amount", {
+      where: { student_id: studentId, type: "Debit" },
+    });
+    const walletBalance = (totalCredits || 0) - (totalDebits || 0);
+
+    if (walletBalance < totalAmount) {
       throw new ErrorClass(
-        "You can only register for courses in your program. This course is not part of your program.",
-        403
+        `Insufficient wallet balance. Required: ${totalAmount}, Available: ${walletBalance}`,
+        400
       );
     }
   }
 
-  // IMPORTANT: Marketplace courses (sole_tutor/organization) require payment via purchase endpoint
-  if (
-    course.is_marketplace &&
-    course.owner_type !== "wpu" &&
-    course.owner_type !== "wsp"
-  ) {
-    throw new ErrorClass(
-      "This is a marketplace course and requires purchase. Please use the purchase endpoint: POST /api/marketplace/courses/purchase",
-      400
-    );
+  // Create CourseOrder if payment is required
+  let courseOrder = null;
+  let funding = null;
+  const registrationDate = new Date();
+  const today = registrationDate.toISOString().split("T")[0];
+
+  if (totalAmount > 0) {
+    // Create CourseOrder
+    courseOrder = await CourseOrder.create({
+      student_id: studentId,
+      amount: totalAmount.toString(),
+      currency: student.currency || "NGN",
+      date: registrationDate,
+      semester: semester,
+      academic_year: academic_year,
+      level: level || student.level || "100",
+    });
+
+    // Create Funding transaction (Debit)
+    const totalCredits = await Funding.sum("amount", {
+      where: { student_id: studentId, type: "Credit" },
+    });
+    const totalDebits = await Funding.sum("amount", {
+      where: { student_id: studentId, type: "Debit" },
+    });
+    const walletBalance = (totalCredits || 0) - (totalDebits || 0);
+
+    funding = await Funding.create({
+      student_id: studentId,
+      amount: totalAmount,
+      type: "Debit",
+      service_name: "Course Registration",
+      date: today,
+      semester: semester,
+      academic_year: academic_year,
+      currency: student.currency || "NGN",
+      balance: (walletBalance - totalAmount).toString(),
+      ref: `COURSE-REG-${courseOrder.id}`,
+    });
+
+    // Update wallet balance
+    await student.update({
+      wallet_balance: walletBalance - totalAmount,
+    });
   }
 
-  // Check if already registered
-  const existingReg = await CourseReg.findOne({
-    where: {
+  // Create registrations for all courses
+  const registrations = [];
+  for (const courseDetail of courseDetails) {
+    const registration = await CourseReg.create({
       student_id: studentId,
-      course_id: course_id,
+      course_id: courseDetail.course_id,
       academic_year: academic_year,
       semester: semester,
-    },
-  });
+      level: level || student.level || "100",
+      course_reg_id: courseOrder ? courseOrder.id : null,
+      registration_status: "registered",
+      registered_at: registrationDate,
+      first_ca: 0,
+      second_ca: 0,
+      third_ca: 0,
+      exam_score: 0,
+      date: today,
+    });
 
-  if (existingReg) {
-    throw new ErrorClass(
-      "You are already registered for this course in this session",
-      400
-    );
+    registrations.push({
+      id: registration.id,
+      course_id: courseDetail.course_id,
+      course_title: courseDetail.course_title,
+      course_code: courseDetail.course_code,
+      price: courseDetail.price,
+    });
   }
-
-  // Create registration
-  const registration = await CourseReg.create({
-    student_id: studentId,
-    course_id: course_id,
-    academic_year: academic_year,
-    semester: semester,
-    level: level || student.level || "100",
-    first_ca: 0,
-    second_ca: 0,
-    third_ca: 0,
-    exam_score: 0,
-    date: new Date().toISOString().split("T")[0],
-  });
 
   res.status(201).json({
     status: true,
     code: 201,
-    message: "Course registered successfully (Free - WPU Course)",
+    message: `Successfully registered for ${registrations.length} course(s)`,
     data: {
-      id: registration.id,
-      course_id: registration.course_id,
-      academic_year: registration.academic_year,
-      semester: registration.semester,
-      course_title: course.title,
-      course_code: course.course_code,
-      is_marketplace: course.is_marketplace,
-      owner_type: course.owner_type,
-      note:
-        course.owner_type === "wpu" || course.owner_type === "wsp"
-          ? "This is a free WPU course"
-          : "Course registered",
+      total_amount: totalAmount,
+      currency: student.currency || "NGN",
+      course_count: registrations.length,
+      courses: registrations,
+      payment: totalAmount > 0 && courseOrder && funding
+        ? {
+            order_id: courseOrder.id,
+            transaction_id: funding.id,
+            amount_paid: totalAmount,
+            previous_balance: parseFloat(funding.balance) + totalAmount,
+            new_balance: parseFloat(funding.balance),
+          }
+        : null,
+      note: totalAmount === 0
+        ? "Free WPU courses - no payment required"
+        : `Total payment: ${totalAmount} ${student.currency || "NGN"}`,
     },
   });
 });
@@ -225,6 +368,7 @@ export const getAvailableCourses = TryCatchFunction(async (req, res) => {
       "semester",
       "price",
       "exam_fee",
+      "currency",
       "staff_id",
       "owner_type",
       "is_marketplace",
@@ -233,27 +377,33 @@ export const getAvailableCourses = TryCatchFunction(async (req, res) => {
     order: [["course_code", "ASC"]],
   });
 
-  // Add pricing info for frontend
+  // Add pricing info for frontend - use courses.price directly
   const coursesWithPricing = courses.map((course) => {
     const courseData = course.toJSON();
+    // Get price from courses.price column directly
+    const coursePrice = parseFloat(course.price) || 0;
+    const courseCurrency = course.currency || "NGN";
+    
+    // Always include price and currency
+    courseData.price = coursePrice;
+    courseData.currency = courseCurrency;
+    
     if (course.owner_type === "wpu" || course.owner_type === "wsp") {
       // Check if WPU course is listed on marketplace
       if (course.is_marketplace === true && course.marketplace_status === "published") {
         // Marketplace WPU course - requires purchase
-        courseData.price = parseFloat(course.price) || 0;
         courseData.requires_purchase = true;
         courseData.purchase_endpoint = "/api/marketplace/courses/purchase";
       } else {
-        // Regular WPU course - free
-        courseData.price = 0;
-        courseData.requires_purchase = false;
+        // Regular WPU course - use price from courses.price (can be 0 for free)
+        courseData.requires_purchase = coursePrice > 0;
       }
     } else if (course.is_marketplace) {
       // Regular marketplace course (sole_tutor/organization)
       courseData.requires_purchase = true;
       courseData.purchase_endpoint = "/api/marketplace/courses/purchase";
     } else {
-      courseData.requires_purchase = false;
+      courseData.requires_purchase = coursePrice > 0;
     }
     return courseData;
   });

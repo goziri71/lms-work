@@ -49,6 +49,7 @@ import {
   getCourseById,
   createCourse,
   updateCourse,
+  updateCoursePrice,
   deleteCourse,
   getCourseStats,
 } from "../controllers/admin/superAdmin/courseManagement.js";
@@ -278,6 +279,7 @@ router.delete(
 // ============================================
 router.get("/courses/:id", requireSuperAdmin, getCourseById);
 router.post("/courses", requireSuperAdmin, createCourse);
+router.put("/courses/:id/price", requireSuperAdmin, updateCoursePrice); // Must come before /courses/:id
 router.put("/courses/:id", requireSuperAdmin, updateCourse);
 router.delete("/courses/:id", requireSuperAdmin, deleteCourse);
 

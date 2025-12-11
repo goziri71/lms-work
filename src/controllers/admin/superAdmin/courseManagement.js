@@ -300,6 +300,69 @@ export const createCourse = TryCatchFunction(async (req, res) => {
 });
 
 /**
+ * Update course price
+ * PUT /api/admin/courses/:id/price
+ */
+export const updateCoursePrice = TryCatchFunction(async (req, res) => {
+  const { id } = req.params;
+  const { price, currency } = req.body;
+
+  if (!price) {
+    throw new ErrorClass("Price is required", 400);
+  }
+
+  const course = await Courses.findByPk(id);
+  if (!course) {
+    throw new ErrorClass("Course not found", 404);
+  }
+
+  // Validate price is positive
+  const priceNum = parseFloat(price);
+  if (isNaN(priceNum) || priceNum < 0) {
+    throw new ErrorClass("Price must be a positive number", 400);
+  }
+
+  const oldPrice = course.price;
+
+  // Update course price
+  course.price = priceNum.toString();
+  if (currency) {
+    course.currency = currency;
+  }
+  await course.save();
+
+  // Log activity
+  await logAdminActivity(req.user.id, "updated_course_price", "course", id, {
+    changes: {
+      before: {
+        price: oldPrice,
+        currency: course.currency,
+      },
+      after: {
+        price: course.price,
+        currency: course.currency,
+      },
+    },
+    course_title: course.title,
+    course_code: course.course_code,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Course price updated successfully",
+    data: {
+      course: {
+        id: course.id,
+        title: course.title,
+        course_code: course.course_code,
+        price: parseFloat(course.price),
+        currency: course.currency,
+      },
+    },
+  });
+});
+
+/**
  * Update course
  */
 export const updateCourse = TryCatchFunction(async (req, res) => {
