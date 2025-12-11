@@ -16,7 +16,9 @@ import { Op } from "sequelize";
 export const getActiveNotices = TryCatchFunction(async (req, res) => {
   const userId = Number(req.user?.id);
   const userType = req.user?.userType;
-  const courseIdParam = req.query?.course_id ? Number(req.query.course_id) : null;
+  const courseIdParam = req.query?.course_id
+    ? Number(req.query.course_id)
+    : null;
 
   if (!Number.isInteger(userId) || userId <= 0) {
     throw new ErrorClass("Unauthorized", 401);
@@ -76,41 +78,67 @@ export const getActiveNotices = TryCatchFunction(async (req, res) => {
     );
   }
 
-  // Build where clause for active, non-expired notices
-  const where = {
-    status: "active",
-    [Op.and]: [
-      // Expiration check: permanent OR not expired OR no expiration date
-      {
-        [Op.or]: [
-          { is_permanent: true },
-          { expires_at: { [Op.gt]: now } },
-          { expires_at: null },
-        ],
-      },
-      // Target audience filter
-      userType === "student"
-        ? { target_audience: { [Op.in]: ["all", "students", "both"] } }
-        : { target_audience: { [Op.in]: ["all", "staff", "both"] } },
-      // Course filter
-      {
-        [Op.or]: courseFilter,
-      },
-    ],
-  };
+  // Build where clause - try with new columns first, fallback if migration hasn't run
+  let notices;
+  try {
+    const where = {
+      status: "active",
+      [Op.and]: [
+        // Expiration check: permanent OR not expired OR no expiration date
+        {
+          [Op.or]: [
+            { is_permanent: true },
+            { expires_at: { [Op.gt]: now } },
+            { expires_at: null },
+          ],
+        },
+        // Target audience filter
+        userType === "student"
+          ? { target_audience: { [Op.in]: ["all", "students", "both"] } }
+          : { target_audience: { [Op.in]: ["all", "staff", "both"] } },
+        // Course filter
+        {
+          [Op.or]: courseFilter,
+        },
+      ],
+    };
 
-  const notices = await Notice.findAll({
-    where,
-    include: [
-      {
-        model: Courses,
-        as: "course",
-        attributes: ["id", "title", "course_code"],
-        required: false,
-      },
-    ],
-    order: [["date", "DESC"]],
-  });
+    notices = await Notice.findAll({
+      where,
+      include: [
+        {
+          model: Courses,
+          as: "course",
+          attributes: ["id", "title", "course_code"],
+          required: false,
+        },
+      ],
+      order: [["date", "DESC"]],
+    });
+  } catch (error) {
+    // If columns don't exist yet (migration not run), return all notices (backward compatible)
+    if (error.message && error.message.includes("does not exist")) {
+      const where = {
+        [Op.or]: courseFilter,
+      };
+
+      notices = await Notice.findAll({
+        where,
+        attributes: ["id", "title", "note", "date", "token", "course_id"],
+        include: [
+          {
+            model: Courses,
+            as: "course",
+            attributes: ["id", "title", "course_code"],
+            required: false,
+          },
+        ],
+        order: [["date", "DESC"]],
+      });
+    } else {
+      throw error;
+    }
+  }
 
   res.status(200).json({
     status: true,
@@ -119,4 +147,3 @@ export const getActiveNotices = TryCatchFunction(async (req, res) => {
     data: notices,
   });
 });
-
