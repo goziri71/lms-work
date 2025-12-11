@@ -522,21 +522,41 @@ export const getQuestionById = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Only staff and admins can access questions", 403);
   }
 
-  const question = await QuestionBank.findByPk(questionId, {
-    include: [
-      { model: QuestionObjective, as: "objective" },
-      { model: QuestionTheory, as: "theory" },
-    ],
+  // First, check if question exists without includes to verify it's in the database
+  const questionExists = await QuestionBank.findByPk(questionId, {
+    attributes: ["id", "course_id", "question_type"],
   });
 
-  if (!question) {
+  if (!questionExists) {
     throw new ErrorClass("Question not found", 404);
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, question.course_id);
+  const hasAccess = await canAccessCourse(userType, userId, questionExists.course_id);
   if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
+  }
+
+  // Now load the question with the appropriate association based on question_type
+  const includeOptions = [];
+  if (questionExists.question_type === "objective") {
+    includeOptions.push({ model: QuestionObjective, as: "objective", required: false });
+  } else if (questionExists.question_type === "theory") {
+    includeOptions.push({ model: QuestionTheory, as: "theory", required: false });
+  } else {
+    // If question_type is unknown, include both (backward compatibility)
+    includeOptions.push(
+      { model: QuestionObjective, as: "objective", required: false },
+      { model: QuestionTheory, as: "theory", required: false }
+    );
+  }
+
+  const question = await QuestionBank.findByPk(questionId, {
+    include: includeOptions,
+  });
+
+  if (!question) {
+    throw new ErrorClass("Question not found", 404);
   }
 
   res.status(200).json({
