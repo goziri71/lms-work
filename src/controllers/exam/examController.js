@@ -516,12 +516,20 @@ export const getBankQuestions = TryCatchFunction(async (req, res) => {
   const { count, rows: questions } = await QuestionBank.findAndCountAll({
     where,
     include: [
-      { model: QuestionObjective, as: "objective" },
-      { model: QuestionTheory, as: "theory" },
+      { 
+        model: QuestionObjective, 
+        as: "objective",
+        required: false,
+      },
+      { 
+        model: QuestionTheory, 
+        as: "theory",
+        required: false,
+      },
     ],
-    order: [["created_at", "DESC"]],
-    limit,
-    offset,
+    order: [["id", "DESC"]], // Order by ID instead of created_at to avoid ambiguity
+    limit: limit || 20,
+    offset: offset || 0,
   });
 
   res
