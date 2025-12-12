@@ -3,6 +3,7 @@ import { Semester } from "../../../models/auth/semester.js";
 import { ErrorClass } from "../../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../../utils/tryCatch/index.js";
 import { logAdminActivity } from "../../../middlewares/adminAuthorize.js";
+import { allocateCoursesToAllStudents } from "../../../services/automaticCourseAllocationService.js";
 
 export const getAllSemesters = TryCatchFunction(async (req, res) => {
   const { page = 1, limit = 20, status, academic_year, semester } = req.query;
@@ -203,11 +204,35 @@ export const createSemester = TryCatchFunction(async (req, res) => {
     console.error("Error logging admin activity:", logError);
   }
 
+  // Automatically allocate courses if semester is created as "active"
+  let allocationResult = null;
+  if (status === "active") {
+    try {
+      allocationResult = await allocateCoursesToAllStudents(
+        newSemester.academic_year,
+        newSemester.semester
+      );
+      console.log(
+        `✅ Automatic course allocation completed: ${allocationResult.allocated} allocated, ${allocationResult.skipped} skipped`
+      );
+    } catch (allocationError) {
+      console.error("Error during automatic course allocation:", allocationError);
+      // Don't fail the semester creation if allocation fails
+    }
+  }
+
   res.status(201).json({
     success: true,
     message: "Semester created successfully",
     data: {
       semester: newSemester,
+      allocation: allocationResult
+        ? {
+            allocated: allocationResult.allocated,
+            skipped: allocationResult.skipped,
+            errors: allocationResult.errors?.length || 0,
+          }
+        : null,
     },
   });
 });
@@ -527,11 +552,33 @@ export const activateSemester = TryCatchFunction(async (req, res) => {
     console.error("Error logging admin activity:", logError);
   }
 
+  // Automatically allocate courses when semester is activated
+  let allocationResult = null;
+  try {
+    allocationResult = await allocateCoursesToAllStudents(
+      semester.academic_year,
+      semester.semester
+    );
+    console.log(
+      `✅ Automatic course allocation completed: ${allocationResult.allocated} allocated, ${allocationResult.skipped} skipped`
+    );
+  } catch (allocationError) {
+    console.error("Error during automatic course allocation:", allocationError);
+    // Don't fail the semester activation if allocation fails
+  }
+
   res.status(200).json({
     success: true,
     message: "Semester activated successfully",
     data: {
       semester,
+      allocation: allocationResult
+        ? {
+            allocated: allocationResult.allocated,
+            skipped: allocationResult.skipped,
+            errors: allocationResult.errors?.length || 0,
+          }
+        : null,
     },
   });
 });

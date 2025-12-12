@@ -8,6 +8,10 @@ import { ErrorClass } from "../../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../../utils/tryCatch/index.js";
 import { logAdminActivity } from "../../../middlewares/adminAuthorize.js";
 import { CourseSemesterPricing } from "../../../models/course/courseSemesterPricing.js";
+import {
+  allocateCoursesToAllStudents,
+  getCurrentActiveSemester,
+} from "../../../services/automaticCourseAllocationService.js";
 
 // Helper function to get course price for semester
 const getCoursePriceForSemester = async (courseId, academicYear, semester) => {
@@ -303,6 +307,98 @@ export const allocateCourses = TryCatchFunction(async (req, res) => {
     },
   });
 });
+
+/**
+ * Automatically allocate courses to all active students for current semester
+ * POST /api/admin/courses/allocate-all-students
+ * 
+ * This endpoint allows admin to manually trigger course allocation for all students.
+ * Courses are matched based on: program_id, course_level (vs student level), and semester.
+ */
+export const allocateCoursesToAllStudentsEndpoint = TryCatchFunction(
+  async (req, res) => {
+    const { academic_year, semester } = req.body || {};
+
+    let targetAcademicYear;
+    let targetSemester;
+
+    // If academic_year and semester provided, use them; otherwise use current active semester
+    if (academic_year && semester) {
+      targetAcademicYear = academic_year;
+      // Convert semester to "1ST" or "2ND" format if needed
+      if (semester === 1 || semester === "1") {
+        targetSemester = "1ST";
+      } else if (semester === 2 || semester === "2") {
+        targetSemester = "2ND";
+      } else {
+        targetSemester = semester.toString().toUpperCase();
+      }
+    } else {
+      // Get current active semester
+      const currentSemester = await getCurrentActiveSemester();
+      if (!currentSemester) {
+        throw new ErrorClass(
+          "No active semester found. Please provide academic_year and semester, or activate a semester first.",
+          404
+        );
+      }
+      targetAcademicYear = currentSemester.academic_year;
+      targetSemester = currentSemester.semester?.toString();
+    }
+
+    // Validate semester format
+    if (targetSemester !== "1ST" && targetSemester !== "2ND") {
+      throw new ErrorClass(
+        `Invalid semester format. Must be "1ST" or "2ND", got: ${targetSemester}`,
+        400
+      );
+    }
+
+    // Run allocation
+    const allocationResult = await allocateCoursesToAllStudents(
+      targetAcademicYear,
+      targetSemester
+    );
+
+    // Log admin activity
+    try {
+      if (req.user && req.user.id) {
+        await logAdminActivity(
+          req.user.id,
+          "allocated_courses_all_students",
+          "course_allocation",
+          null,
+          {
+            academic_year: targetAcademicYear,
+            semester: targetSemester,
+            allocated: allocationResult.allocated,
+            skipped: allocationResult.skipped,
+          }
+        );
+      }
+    } catch (logError) {
+      console.error("Error logging admin activity:", logError);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Course allocation completed for ${targetSemester} semester ${targetAcademicYear}`,
+      data: {
+        academic_year: targetAcademicYear,
+        semester: targetSemester,
+        allocation: {
+          allocated: allocationResult.allocated,
+          skipped: allocationResult.skipped,
+          errors: allocationResult.errors?.length || 0,
+        },
+        errors:
+          allocationResult.errors && allocationResult.errors.length > 0
+            ? allocationResult.errors
+            : undefined,
+      },
+    });
+  }
+);
 
 /**
  * Get allocated courses for students

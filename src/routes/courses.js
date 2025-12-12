@@ -7,10 +7,7 @@ import {
   getMyCourseParticipants,
 } from "../controllers/courses/courses.js";
 import {
-  registerCourse,
-  unregisterCourse,
   getAvailableSemesters,
-  getAvailableCourses,
 } from "../controllers/courses/courseRegistration.js";
 import {
   getMyAllocatedCourses,
@@ -52,11 +49,11 @@ router.get("/:courseId/participants", authorize, getCourseParticipants);
 // Student-accessible participants for ALL their enrolled courses (no courseId)
 router.get("/participants", authorize, getMyCourseParticipants);
 
-// Course registration endpoints
-router.post("/register", authorize, registerCourse);
-router.delete("/register/:registrationId", authorize, unregisterCourse);
+// Course registration endpoints (removed - students only use allocated courses)
+// router.post("/register", authorize, registerCourse); // REMOVED - use /register-allocated instead
+// router.delete("/register/:registrationId", authorize, unregisterCourse); // REMOVED
+// router.get("/available", authorize, getAvailableCourses); // REMOVED - use /allocated instead
 router.get("/semesters", authorize, getAvailableSemesters);
-router.get("/available", authorize, getAvailableCourses);
 
 // Course allocation endpoints (for allocated courses)
 router.get("/allocated", authorize, getMyAllocatedCourses);

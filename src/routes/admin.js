@@ -61,6 +61,7 @@ import {
 } from "../controllers/admin/superAdmin/coursePricingManagement.js";
 import {
   allocateCourses,
+  allocateCoursesToAllStudentsEndpoint,
   getAllocatedCourses,
   removeAllocation,
   bulkRemoveAllocations,
@@ -266,6 +267,7 @@ router.post("/courses/pricing/copy", requireSuperAdmin, copyCoursePrices);
 // IMPORTANT: These routes must come BEFORE /courses/:id to avoid route conflicts
 // ============================================
 router.post("/courses/allocate", requireSuperAdmin, allocateCourses);
+router.post("/courses/allocate-all-students", requireSuperAdmin, allocateCoursesToAllStudentsEndpoint);
 router.get("/courses/allocations", requireSuperAdmin, getAllocatedCourses);
 router.delete("/courses/allocate/:id", requireSuperAdmin, removeAllocation);
 router.delete(
