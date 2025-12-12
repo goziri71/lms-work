@@ -7,6 +7,7 @@ import {
   ExamAnswerTheory,
   ExamItem,
   QuestionBank,
+  QuestionObjective,
   QuestionTheory,
 } from "../../models/exams/index.js";
 import { Courses } from "../../models/course/courses.js";
@@ -121,7 +122,13 @@ export const getAttemptForGrading = TryCatchFunction(async (req, res) => {
               {
                 model: QuestionBank,
                 as: "question",
-                include: ["objective"],
+                include: [
+                  {
+                    model: QuestionObjective,
+                    as: "objective",
+                    required: false,
+                  },
+                ],
               },
             ],
           },
@@ -138,7 +145,13 @@ export const getAttemptForGrading = TryCatchFunction(async (req, res) => {
               {
                 model: QuestionBank,
                 as: "question",
-                include: ["theory"],
+                include: [
+                  {
+                    model: QuestionTheory,
+                    as: "theory",
+                    required: false,
+                  },
+                ],
               },
             ],
           },

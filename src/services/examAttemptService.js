@@ -3,6 +3,8 @@ import {
   ExamItem,
   ExamAttempt,
   QuestionBank,
+  QuestionObjective,
+  QuestionTheory,
 } from "../models/exams/index.js";
 import { Op } from "sequelize";
 
@@ -144,7 +146,18 @@ export async function getAttemptQuestions(attemptId) {
           {
             model: QuestionBank,
             as: "question",
-            include: ["objective", "theory"],
+            include: [
+              {
+                model: QuestionObjective,
+                as: "objective",
+                required: false,
+              },
+              {
+                model: QuestionTheory,
+                as: "theory",
+                required: false,
+              },
+            ],
           },
         ],
         order: [["order", "ASC"]],
@@ -158,7 +171,18 @@ export async function getAttemptQuestions(attemptId) {
           {
             model: QuestionBank,
             as: "question",
-            include: ["objective", "theory"],
+            include: [
+              {
+                model: QuestionObjective,
+                as: "objective",
+                required: false,
+              },
+              {
+                model: QuestionTheory,
+                as: "theory",
+                required: false,
+              },
+            ],
           },
         ],
         order: [["order", "ASC"]],

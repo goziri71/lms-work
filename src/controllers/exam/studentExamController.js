@@ -335,7 +335,18 @@ export const submitAnswer = TryCatchFunction(async (req, res) => {
       {
         model: QuestionBank,
         as: "question",
-        include: ["objective", "theory"],
+        include: [
+          {
+            model: QuestionObjective,
+            as: "objective",
+            required: false,
+          },
+          {
+            model: QuestionTheory,
+            as: "theory",
+            required: false,
+          },
+        ],
       },
     ],
   });
