@@ -503,13 +503,19 @@ export const getBankQuestions = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("course_id is required", 400);
   }
 
+  // Validate and convert course_id to number
+  const courseIdNum = Number(course_id);
+  if (isNaN(courseIdNum) || courseIdNum <= 0) {
+    throw new ErrorClass("Invalid course_id. Must be a positive number", 400);
+  }
+
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, course_id);
+  const hasAccess = await canAccessCourse(userType, userId, courseIdNum);
   if (!hasAccess) {
     throw new ErrorClass("Course not found or access denied", 403);
   }
 
-  const where = { course_id: Number(course_id), status };
+  const where = { course_id: courseIdNum, status };
   if (question_type) where.question_type = question_type;
   if (difficulty) where.difficulty = difficulty;
 
