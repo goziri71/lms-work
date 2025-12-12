@@ -516,10 +516,19 @@ export const deleteQuestion = TryCatchFunction(async (req, res) => {
 export const getQuestionById = TryCatchFunction(async (req, res) => {
   const userId = Number(req.user?.id);
   const userType = req.user?.userType;
-  const questionId = Number(req.params.questionId);
+  const questionIdParam = req.params.questionId;
 
   if (userType !== "staff" && userType !== "admin") {
     throw new ErrorClass("Only staff and admins can access questions", 403);
+  }
+
+  // Validate questionId is a valid number
+  const questionId = Number(questionIdParam);
+  if (isNaN(questionId) || questionId <= 0 || !Number.isInteger(questionId)) {
+    throw new ErrorClass(
+      `Invalid question ID. Use GET /api/exams/bank/questions?course_id=X&question_type=Y to filter questions by type.`,
+      400
+    );
   }
 
   // First, check if question exists without includes to verify it's in the database
