@@ -5,6 +5,7 @@ import { Staff } from "../../models/auth/staff.js";
 import { Courses } from "../../models/course/courses.js";
 import { CourseReg } from "../../models/course_reg.js";
 import { Op } from "sequelize";
+import { checkCourseFeesPayment } from "../../services/paymentVerificationService.js";
 
 export const getStudentCourses = TryCatchFunction(async (req, res) => {
   // Accept either /student/:startYear/:endYear/:semester or query params
@@ -61,6 +62,8 @@ export const getStudentCourses = TryCatchFunction(async (req, res) => {
         "exam_score",
         "date",
         "ref",
+        "registration_status",
+        "course_reg_id",
       ],
       where:
         academicYear || semester
@@ -89,11 +92,43 @@ export const getStudentCourses = TryCatchFunction(async (req, res) => {
   if (!data) {
     throw new ErrorClass("No courses found", 404);
   }
+
+  // Add paid boolean to each course
+  const coursesWithPaidStatus = await Promise.all(
+    data.map(async (course) => {
+      const courseData = course.toJSON();
+      const registration = courseData.registration;
+
+      // Determine if course is paid
+      let paid = false;
+
+      if (registration) {
+        const regAcademicYear = registration.academic_year;
+        const regSemester = registration.semester;
+
+        // Check payment status using the payment verification service
+        const paymentStatus = await checkCourseFeesPayment(
+          parsedStudentId,
+          courseData.id,
+          regAcademicYear,
+          regSemester
+        );
+
+        paid = paymentStatus.paid;
+      }
+
+      // Add paid field to course data
+      courseData.paid = paid;
+
+      return courseData;
+    })
+  );
+
   res.status(200).json({
     status: true,
     code: 200,
     message: "Courses fetched successfully",
-    data: data,
+    data: coursesWithPaidStatus,
   });
 });
 
