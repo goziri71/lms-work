@@ -24,7 +24,7 @@ import { WspAdmin } from "../../../models/admin/wspAdmin.js";
  * - admin_status = "pending" → shows as pending (needs documentation)
  * - admin_status = "active" → fully active (documentation submitted and approved)
  * - admin_status = "inactive" → shows as inactive (for admin reference only)
- * 
+ *
  * Note: This is used for admin filtering (e.g., course allocation), not for blocking student access
  */
 export const isStudentActive = (student) => {
@@ -34,7 +34,7 @@ export const isStudentActive = (student) => {
 /**
  * Helper function to build where clause for active students (for admin filtering)
  * Returns students where admin_status = "active" (for admin operations like course allocation)
- * 
+ *
  * Note: Students can still login and register regardless of status - this is just for admin filtering
  */
 export const getActiveStudentWhere = () => {
@@ -50,7 +50,9 @@ export const getAllStudents = TryCatchFunction(async (req, res) => {
   const { page = 1, limit = 20, status, level, program_id, search } = req.query;
 
   const where = {};
-  if (status) where.admin_status = status;
+  if (status) {
+    where.admin_status = { [Op.iLike]: status.trim() };
+  }
   if (level) where.level = level;
   if (program_id) where.program_id = program_id;
   if (search) {

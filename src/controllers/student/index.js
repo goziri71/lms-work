@@ -46,7 +46,7 @@ export const getAllStudents = TryCatchFunction(async (req, res) => {
   }
 
   if (status) {
-    whereClause.admin_status = status;
+    whereClause.admin_status = { [Op.iLike]: status.trim() };
   }
 
   if (level) {
