@@ -4,6 +4,8 @@ import { Students } from "../../models/auth/student.js";
 import { Staff } from "../../models/auth/staff.js";
 import { Courses } from "../../models/course/courses.js";
 import { CourseReg } from "../../models/course_reg.js";
+import { Program } from "../../models/program/program.js";
+import { Faculty } from "../../models/faculty/faculty.js";
 import { Op } from "sequelize";
 import { checkCourseFeesPayment } from "../../services/paymentVerificationService.js";
 
@@ -249,6 +251,18 @@ export const getCourseById = TryCatchFunction(async (req, res) => {
   let where = { id: courseId };
   let include = [
     {
+      model: Program,
+      as: "program",
+      attributes: ["id", "title"],
+      required: false,
+    },
+    {
+      model: Faculty,
+      as: "faculty",
+      attributes: ["id", "name"],
+      required: false,
+    },
+    {
       model: Staff,
       as: "instructor",
       attributes: ["id", "full_name", "email", "phone"],
@@ -279,16 +293,25 @@ export const getCourseById = TryCatchFunction(async (req, res) => {
     include,
     attributes: [
       "id",
+      "faculty_id",
+      "program_id",
       "title",
-      "course_code",
       "course_unit",
+      "price",
       "course_type",
       "course_level",
       "semester",
-      "price",
+      "user_id",
+      "course_code",
+      "token",
       "exam_fee",
       "currency",
       "staff_id",
+      "owner_type",
+      "owner_id",
+      "is_marketplace",
+      "marketplace_status",
+      "date",
     ],
   });
 
@@ -296,11 +319,77 @@ export const getCourseById = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Course not found", 404);
   }
 
+  const courseData = course.toJSON();
+
+  // If student is enrolled, get registration info and paid status
+  if (userType === "student") {
+    // Check for program course enrollment (semester-based)
+    const programEnrollment = await CourseReg.findOne({
+      where: {
+        student_id: userId,
+        course_id: courseId,
+        registration_status: { [Op.ne]: "marketplace_purchased" },
+        academic_year: { [Op.ne]: null },
+        semester: { [Op.ne]: null },
+      },
+      order: [["id", "DESC"]], // Get most recent enrollment
+    });
+
+    // Check for marketplace enrollment (lifetime access)
+    const marketplaceEnrollment = await CourseReg.findOne({
+      where: {
+        student_id: userId,
+        course_id: courseId,
+        registration_status: "marketplace_purchased",
+        academic_year: null,
+        semester: null,
+      },
+    });
+
+    const enrollment = programEnrollment || marketplaceEnrollment;
+
+    if (enrollment) {
+      const enrollmentData = enrollment.toJSON();
+      courseData.registration = {
+        id: enrollmentData.id,
+        academic_year: enrollmentData.academic_year,
+        semester: enrollmentData.semester,
+        level: enrollmentData.level,
+        first_ca: enrollmentData.first_ca,
+        second_ca: enrollmentData.second_ca,
+        third_ca: enrollmentData.third_ca,
+        exam_score: enrollmentData.exam_score,
+        date: enrollmentData.date,
+        ref: enrollmentData.ref,
+        registration_status: enrollmentData.registration_status,
+        course_reg_id: enrollmentData.course_reg_id,
+        ...(enrollmentData.registration_status === "marketplace_purchased"
+          ? {
+              access_type: "lifetime",
+              purchased_at: enrollmentData.date,
+            }
+          : {}),
+      };
+
+      // Get paid status
+      const paymentStatus = await checkCourseFeesPayment(
+        userId,
+        courseId,
+        enrollmentData.academic_year,
+        enrollmentData.semester
+      );
+      courseData.paid = paymentStatus.paid;
+    } else {
+      courseData.registration = null;
+      courseData.paid = false;
+    }
+  }
+
   res.status(200).json({
     status: true,
     code: 200,
     message: "Course fetched successfully",
-    data: course,
+    data: courseData,
   });
 });
 
