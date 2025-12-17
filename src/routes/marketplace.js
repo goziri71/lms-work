@@ -8,6 +8,7 @@ import {
 } from "../controllers/marketplace/tutorAuth.js";
 import { purchaseMarketplaceCourse } from "../controllers/marketplace/coursePurchase.js";
 import { getMyMarketplaceCourses } from "../controllers/marketplace/myMarketplaceCourses.js";
+import { browseMarketplaceCourses } from "../controllers/marketplace/browseMarketplaceCourses.js";
 import { authorize } from "../middlewares/authorize.js";
 
 const router = express.Router();
@@ -28,11 +29,16 @@ router.post("/login/organization-user", organizationUserLogin);
 // ============================================
 // AUTHENTICATED ROUTES
 // ============================================
+// IMPORTANT: More specific routes must come first (Express matches in order)
+// Get My Marketplace Courses (Student only - lifetime access courses)
+router.get("/courses/my-courses", authorize, getMyMarketplaceCourses);
+
 // Course Purchase (Student only)
 router.post("/courses/purchase", authorize, purchaseMarketplaceCourse);
 
-// Get My Marketplace Courses (Student only - lifetime access courses)
-router.get("/courses/my-courses", authorize, getMyMarketplaceCourses);
+// Browse all marketplace courses (Student only - shows available courses to purchase)
+// This must come last because it's less specific than /courses/my-courses
+router.get("/courses", authorize, browseMarketplaceCourses);
 
 // TODO: Add tutor dashboard, course management, etc.
 
