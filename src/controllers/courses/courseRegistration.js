@@ -7,6 +7,7 @@ import { Semester } from "../../models/auth/semester.js";
 import { CourseOrder } from "../../models/payment/courseOrder.js";
 import { Funding } from "../../models/payment/funding.js";
 import { checkSchoolFeesPayment } from "../../services/paymentVerificationService.js";
+import { checkAndProgressStudentLevel } from "../../services/studentLevelProgressionService.js";
 
 /**
  * STUDENT REGISTER FOR COURSE(S)
@@ -45,6 +46,16 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
   const student = await Students.findByPk(studentId);
   if (!student) {
     throw new ErrorClass("Student not found", 404);
+  }
+
+  // Check and progress student level if eligible (before registration)
+  // This checks if student has completed both semesters of previous academic year
+  const levelProgression = await checkAndProgressStudentLevel(studentId, academic_year);
+  
+  // Reload student to get updated level if progression occurred
+  if (levelProgression.progressed) {
+    await student.reload();
+    console.log(`✅ Student ${studentId} level progressed: ${levelProgression.previousLevel} → ${levelProgression.newLevel}`);
   }
 
   // Check if student has paid school fees for this semester

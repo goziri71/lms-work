@@ -9,6 +9,7 @@ import { CourseOrder } from "../../models/payment/courseOrder.js";
 import { Funding } from "../../models/payment/funding.js";
 import { CourseSemesterPricing } from "../../models/course/courseSemesterPricing.js";
 import { checkSchoolFeesPayment } from "../../services/paymentVerificationService.js";
+import { checkAndProgressStudentLevel } from "../../services/studentLevelProgressionService.js";
 
 // Helper function to get course price for semester
 const getCoursePriceForSemester = async (courseId, academicYear, semester) => {
@@ -201,10 +202,20 @@ export const registerAllocatedCourses = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("No active semester found", 404);
   }
 
-  // Check if student has paid school fees for this semester
-  // School fees payment is required before course registration (per semester)
+  // Check and progress student level if eligible (before registration)
+  // This checks if student has completed both semesters of previous academic year
   const academicYear = currentSemester.academic_year?.toString();
   const semester = currentSemester.semester?.toString();
+  const levelProgression = await checkAndProgressStudentLevel(studentId, academicYear);
+  
+  // Reload student to get updated level if progression occurred
+  if (levelProgression.progressed) {
+    await student.reload();
+    console.log(`✅ Student ${studentId} level progressed: ${levelProgression.previousLevel} → ${levelProgression.newLevel}`);
+  }
+
+  // Check if student has paid school fees for this semester
+  // School fees payment is required before course registration (per semester)
   const schoolFeesPaid = await checkSchoolFeesPayment(studentId, academicYear, semester);
   if (!schoolFeesPaid) {
     throw new ErrorClass(

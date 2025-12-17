@@ -1,6 +1,5 @@
 import { Op } from "sequelize";
 import { Semester } from "../../../models/auth/semester.js";
-import { Students } from "../../../models/auth/student.js";
 import { ErrorClass } from "../../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../../utils/tryCatch/index.js";
 import { logAdminActivity } from "../../../middlewares/adminAuthorize.js";
@@ -195,81 +194,9 @@ export const createSemester = TryCatchFunction(async (req, res) => {
 
   const newSemester = result[0];
 
-  // Check if this is a new academic year (different from previous active semester)
-  const isNewAcademicYear = previousActiveSemester && 
-    previousActiveSemester.academic_year?.toString() !== newSemester.academic_year?.toString();
-
-  // Automatically progress student levels if it's a new academic year and semester is active
-  let levelProgressionResult = null;
-  if (status === "active" && isNewAcademicYear) {
-    try {
-      // Get all active students
-      const activeStudents = await Students.findAll({
-        where: {
-          admin_status: "active",
-          level: { [Op.ne]: null }, // Only students with a level
-        },
-        attributes: ["id", "level"],
-      });
-
-      let progressed = 0;
-      let skipped = 0;
-
-      for (const student of activeStudents) {
-        const currentLevel = parseInt(student.level, 10);
-        
-        // Skip if level is not a valid number
-        if (isNaN(currentLevel)) {
-          skipped++;
-          continue;
-        }
-
-        // Increment level by 1
-        const newLevel = (currentLevel + 1).toString();
-        
-        try {
-          await student.update({ level: newLevel });
-          progressed++;
-        } catch (error) {
-          console.error(`Error updating level for student ${student.id}:`, error);
-          skipped++;
-        }
-      }
-
-      levelProgressionResult = {
-        progressed,
-        skipped,
-        total: activeStudents.length,
-      };
-
-      console.log(
-        `✅ Automatic level progression completed: ${progressed} students progressed, ${skipped} skipped`
-      );
-
-      // Log admin activity for level progression
-      try {
-        if (req.user && req.user.id) {
-          await logAdminActivity(
-            req.user.id,
-            "automatic_level_progression",
-            "system",
-            null,
-            {
-              previous_academic_year: previousActiveSemester.academic_year,
-              new_academic_year: newSemester.academic_year,
-              students_progressed: progressed,
-              students_skipped: skipped,
-            }
-          );
-        }
-      } catch (logError) {
-        console.error("Error logging level progression activity:", logError);
-      }
-    } catch (progressionError) {
-      console.error("Error during automatic level progression:", progressionError);
-      // Don't fail semester creation if level progression fails
-    }
-  }
+  // NOTE: Level progression is now handled per-student during course registration
+  // This is more efficient and scalable than bulk operations
+  // See: src/services/studentLevelProgressionService.js
 
   try {
     if (req.user && req.user.id) {
@@ -627,81 +554,9 @@ export const activateSemester = TryCatchFunction(async (req, res) => {
     }
   );
 
-  // Check if this is a new academic year (different from previous active semester)
-  const isNewAcademicYear = previousActiveSemester && 
-    previousActiveSemester.academic_year?.toString() !== semester.academic_year?.toString();
-
-  // Automatically progress student levels if it's a new academic year
-  let levelProgressionResult = null;
-  if (isNewAcademicYear) {
-    try {
-      // Get all active students
-      const activeStudents = await Students.findAll({
-        where: {
-          admin_status: "active",
-          level: { [Op.ne]: null }, // Only students with a level
-        },
-        attributes: ["id", "level"],
-      });
-
-      let progressed = 0;
-      let skipped = 0;
-
-      for (const student of activeStudents) {
-        const currentLevel = parseInt(student.level, 10);
-        
-        // Skip if level is not a valid number
-        if (isNaN(currentLevel)) {
-          skipped++;
-          continue;
-        }
-
-        // Increment level by 1
-        const newLevel = (currentLevel + 1).toString();
-        
-        try {
-          await student.update({ level: newLevel });
-          progressed++;
-        } catch (error) {
-          console.error(`Error updating level for student ${student.id}:`, error);
-          skipped++;
-        }
-      }
-
-      levelProgressionResult = {
-        progressed,
-        skipped,
-        total: activeStudents.length,
-      };
-
-      console.log(
-        `✅ Automatic level progression completed: ${progressed} students progressed, ${skipped} skipped`
-      );
-
-      // Log admin activity for level progression
-      try {
-        if (req.user && req.user.id) {
-          await logAdminActivity(
-            req.user.id,
-            "automatic_level_progression",
-            "system",
-            null,
-            {
-              previous_academic_year: previousActiveSemester.academic_year,
-              new_academic_year: semester.academic_year,
-              students_progressed: progressed,
-              students_skipped: skipped,
-            }
-          );
-        }
-      } catch (logError) {
-        console.error("Error logging level progression activity:", logError);
-      }
-    } catch (progressionError) {
-      console.error("Error during automatic level progression:", progressionError);
-      // Don't fail semester activation if level progression fails
-    }
-  }
+  // NOTE: Level progression is now handled per-student during course registration
+  // This is more efficient and scalable than bulk operations
+  // See: src/services/studentLevelProgressionService.js
 
   semester.status = "active";
   await semester.save();
