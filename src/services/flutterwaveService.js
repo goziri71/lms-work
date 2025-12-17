@@ -62,41 +62,19 @@ export const verifyTransaction = async (transactionIdOrRef) => {
     );
   }
 
-  // Check if it's a numeric transaction ID or a transaction reference (txRef)
-  const isNumericId = /^\d+$/.test(transactionIdOrRef);
-  let verifyUrl;
-
-  if (isNumericId) {
-    // Use transaction ID verification endpoint
-    verifyUrl = `${FLUTTERWAVE_BASE_URL}/transactions/${transactionIdOrRef}/verify`;
-  } else {
-    // Use transaction reference verification endpoint
-    verifyUrl = `${FLUTTERWAVE_BASE_URL}/transactions/verify-by-reference`;
-  }
+  // Flutterwave's /transactions/{ref}/verify endpoint works for both:
+  // - Numeric transaction IDs (e.g., 1940774374)
+  // - Transaction references/txRef (e.g., MC-1765991166356-6uv55yefe)
+  // Both use the same GET endpoint
+  const verifyUrl = `${FLUTTERWAVE_BASE_URL}/transactions/${transactionIdOrRef}/verify`;
 
   try {
-    const requestConfig = {
+    const response = await axios.get(verifyUrl, {
       headers: {
         Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
         "Content-Type": "application/json",
       },
-    };
-
-    let response;
-
-    if (isNumericId) {
-      // GET request for transaction ID
-      response = await axios.get(verifyUrl, requestConfig);
-    } else {
-      // POST request for transaction reference
-      response = await axios.post(
-        verifyUrl,
-        {
-          tx_ref: transactionIdOrRef,
-        },
-        requestConfig
-      );
-    }
+    });
 
     if (response.data.status === "success" && response.data.data) {
       return {
@@ -127,8 +105,8 @@ export const verifyTransaction = async (transactionIdOrRef) => {
       const errorMessage =
         error.response?.data?.message || "Transaction not found";
 
-      // If verifying by txRef failed, provide helpful message
-      if (!isNumericId && errorMessage.includes("No transaction was found")) {
+      // Provide helpful message for transaction not found
+      if (errorMessage.includes("No transaction was found")) {
         throw new ErrorClass(
           `Transaction not found with reference: ${transactionIdOrRef}. ` +
             `This might mean: 1) The transaction hasn't been completed yet, ` +
