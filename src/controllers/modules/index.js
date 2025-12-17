@@ -122,7 +122,10 @@ export const createModule = TryCatchFunction(async (req, res) => {
 
   const hasAccess = await canAccessCourse(userType, userId, course_id);
   if (!hasAccess) {
-    throw new ErrorClass("You do not have permission to create module for this course", 403);
+    throw new ErrorClass(
+      "You do not have permission to create module for this course",
+      403
+    );
   }
 
   // Get creator ID (admin ID for admins, staff ID for staff)
@@ -140,10 +143,16 @@ export const createModule = TryCatchFunction(async (req, res) => {
   // Log admin activity if created by admin
   if (userType === "admin" || userType === "super_admin") {
     try {
-      await logAdminActivity(userId, "created_module", "module", moduleRecord.id, {
-        course_id: course_id,
-        title: title,
-      });
+      await logAdminActivity(
+        userId,
+        "created_module",
+        "module",
+        moduleRecord.id,
+        {
+          course_id: course_id,
+          title: title,
+        }
+      );
     } catch (logError) {
       console.error("Error logging admin activity:", logError);
     }
@@ -243,9 +252,16 @@ export const updateModule = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, moduleRecord.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    moduleRecord.course_id
+  );
   if (!hasAccess) {
-    throw new ErrorClass("You do not have permission to update this module", 403);
+    throw new ErrorClass(
+      "You do not have permission to update this module",
+      403
+    );
   }
 
   // Protect immutable fields
@@ -262,7 +278,10 @@ export const updateModule = TryCatchFunction(async (req, res) => {
   await moduleRecord.update(updates);
 
   // Log admin activity if admin modified staff-created module
-  if ((userType === "admin" || userType === "super_admin") && moduleRecord.created_by !== userId) {
+  if (
+    (userType === "admin" || userType === "super_admin") &&
+    moduleRecord.created_by !== userId
+  ) {
     try {
       await logAdminActivity(userId, "updated_module", "module", moduleId, {
         course_id: moduleRecord.course_id,
@@ -271,7 +290,10 @@ export const updateModule = TryCatchFunction(async (req, res) => {
           before: originalValues,
           after: {
             title: updates.title || originalValues.title,
-            description: updates.description !== undefined ? updates.description : originalValues.description,
+            description:
+              updates.description !== undefined
+                ? updates.description
+                : originalValues.description,
             status: updates.status || originalValues.status,
           },
         },
@@ -313,9 +335,16 @@ export const deleteModule = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, moduleRecord.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    moduleRecord.course_id
+  );
   if (!hasAccess) {
-    throw new ErrorClass("You do not have permission to delete this module", 403);
+    throw new ErrorClass(
+      "You do not have permission to delete this module",
+      403
+    );
   }
 
   const moduleInfo = {
@@ -326,7 +355,10 @@ export const deleteModule = TryCatchFunction(async (req, res) => {
   };
 
   // Log admin activity if admin deleted staff-created module
-  if ((userType === "admin" || userType === "super_admin") && moduleRecord.created_by !== userId) {
+  if (
+    (userType === "admin" || userType === "super_admin") &&
+    moduleRecord.created_by !== userId
+  ) {
     try {
       await logAdminActivity(userId, "deleted_module", "module", moduleId, {
         course_id: moduleRecord.course_id,
@@ -435,9 +467,16 @@ export const createUnit = TryCatchFunction(async (req, res) => {
     }
   }
 
-  const hasAccess = await canAccessCourse(userType, userId, moduleRecord.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    moduleRecord.course_id
+  );
   if (!hasAccess) {
-    throw new ErrorClass("You do not have permission to create unit for this course", 403);
+    throw new ErrorClass(
+      "You do not have permission to create unit for this course",
+      403
+    );
   }
 
   // Get creator ID (admin ID for admins, staff ID for staff)
@@ -549,9 +588,16 @@ export const getUnitsByModule = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, moduleRecord.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    moduleRecord.course_id
+  );
   if (!hasAccess) {
-    throw new ErrorClass("You do not have permission to view units for this course", 403);
+    throw new ErrorClass(
+      "You do not have permission to view units for this course",
+      403
+    );
   }
 
   const units = await Units.findAll({ where: { module_id: moduleId } });
@@ -593,7 +639,11 @@ export const updateUnit = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, moduleRecord.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    moduleRecord.course_id
+  );
   if (!hasAccess) {
     throw new ErrorClass("You do not have permission to update this unit", 403);
   }
@@ -690,7 +740,11 @@ export const deleteUnit = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, moduleRecord.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    moduleRecord.course_id
+  );
   if (!hasAccess) {
     throw new ErrorClass("You do not have permission to delete this unit", 403);
   }
@@ -705,7 +759,6 @@ export const deleteUnit = TryCatchFunction(async (req, res) => {
 
   // Cleanup associated storage (notes are module-level, not unit-level, so we don't delete them)
   await dbLibrary.transaction(async (t) => {
-
     const bucket = process.env.VIDEOS_BUCKET || "lmsvideo";
     // Remove video file if present
     if (unit.video_url) {
@@ -745,7 +798,10 @@ export const deleteUnit = TryCatchFunction(async (req, res) => {
   });
 
   // Log admin activity if admin deleted staff-created unit
-  if ((userType === "admin" || userType === "super_admin") && unit.created_by !== userId) {
+  if (
+    (userType === "admin" || userType === "super_admin") &&
+    unit.created_by !== userId
+  ) {
     try {
       await logAdminActivity(userId, "deleted_unit", "unit", unitId, {
         module_id: unit.module_id,
@@ -800,9 +856,16 @@ export const uploadUnitVideo = TryCatchFunction(async (req, res) => {
     }
   }
 
-  const hasAccess = await canAccessCourse(userType, userId, moduleRecord.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    moduleRecord.course_id
+  );
   if (!hasAccess) {
-    throw new ErrorClass("You do not have permission to upload video for this course", 403);
+    throw new ErrorClass(
+      "You do not have permission to upload video for this course",
+      403
+    );
   }
 
   const unit = await Units.findByPk(unitId);
@@ -853,9 +916,9 @@ export const upsertModuleNote = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("module_id and note_text are required", 400);
   }
 
-  if (!title || !note_text) {
-    throw new ErrorClass("title and note_text are required", 400);
-  }
+  // if (!title || !note_text) {
+  //   throw new ErrorClass("title and note_text are required", 400);
+  // }
 
   const note = await UnitNotes.create({
     module_id: moduleId,
