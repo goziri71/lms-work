@@ -68,91 +68,133 @@ export const verifyTransaction = async (transactionIdOrRef) => {
   // Both use the same GET endpoint
   const verifyUrl = `${FLUTTERWAVE_BASE_URL}/transactions/${transactionIdOrRef}/verify`;
 
-  try {
-    const response = await axios.get(verifyUrl, {
-      headers: {
-        Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
-        "Content-Type": "application/json",
-      },
-    });
+  // Retry logic: Flutterwave transactions may take a few seconds to be available
+  const maxRetries = 3;
+  const retryDelay = 2000; // 2 seconds between retries
+  let lastError = null;
 
-    if (response.data.status === "success" && response.data.data) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await axios.get(verifyUrl, {
+        headers: {
+          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 10000, // 10 second timeout
+      });
+
+      if (response.data.status === "success" && response.data.data) {
+        if (attempt > 1) {
+          console.log(
+            `✅ Transaction verified on attempt ${attempt} for: ${transactionIdOrRef}`
+          );
+        }
+        return {
+          success: true,
+          transaction: response.data.data,
+        };
+      }
+
+      // If response is not successful but not an error, return failure
       return {
-        success: true,
-        transaction: response.data.data,
+        success: false,
+        message: response.data.message || "Transaction verification failed",
       };
-    }
+    } catch (error) {
+      lastError = error;
 
-    return {
-      success: false,
-      message: response.data.message || "Transaction verification failed",
-    };
-  } catch (error) {
-    console.error("Flutterwave verification error:", {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-      message: error.message,
-      transactionIdOrRef: transactionIdOrRef,
-      hasSecretKey: !!FLUTTERWAVE_SECRET_KEY,
-      secretKeyPrefix: FLUTTERWAVE_SECRET_KEY
-        ? FLUTTERWAVE_SECRET_KEY.substring(0, 10) + "..."
-        : "NOT SET",
-    });
-
-    if (error.response?.status === 404 || error.response?.status === 400) {
-      const errorMessage =
-        error.response?.data?.message || "Transaction not found";
-
-      // Provide helpful message for transaction not found
-      if (errorMessage.includes("No transaction was found")) {
-        throw new ErrorClass(
-          `Transaction not found with reference: ${transactionIdOrRef}. ` +
-            `This might mean: 1) The transaction hasn't been completed yet, ` +
-            `2) The reference is incorrect, or 3) The transaction is from a different Flutterwave account. ` +
-            `Please verify the transaction reference and ensure the payment was completed successfully.`,
-          404
-        );
+      // If it's a 404/400 (transaction not found), retry with delay
+      if (
+        (error.response?.status === 404 || error.response?.status === 400) &&
+        attempt < maxRetries
+      ) {
+        const errorMessage = error.response?.data?.message || "";
+        if (errorMessage.includes("No transaction was found")) {
+          console.log(
+            `⏳ Transaction not found yet (attempt ${attempt}/${maxRetries}), retrying in ${retryDelay}ms...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, retryDelay));
+          continue; // Retry
+        }
       }
 
-      throw new ErrorClass(`Transaction not found: ${errorMessage}`, 404);
+      // For other errors or last attempt, break and throw
+      break;
     }
-
-    if (error.response?.status === 401) {
-      const errorMessage =
-        error.response?.data?.message || "Invalid Flutterwave credentials";
-
-      // Provide detailed error message
-      let detailedMessage = "Invalid Flutterwave secret key. ";
-
-      if (errorMessage.includes("Invalid secret key")) {
-        detailedMessage +=
-          "The secret key in your .env file is incorrect or invalid.\n\n";
-        detailedMessage += "To fix this:\n";
-        detailedMessage += "1. Go to https://dashboard.flutterwave.com\n";
-        detailedMessage += "2. Navigate to Settings → API Keys\n";
-        detailedMessage +=
-          "3. Copy your Secret Key (starts with FLWSECK_TEST- for test or FLWSECK- for live)\n";
-        detailedMessage +=
-          "4. Update FLUTTERWAVE_SECRET_KEY in your .env file (no quotes, no spaces)\n";
-        detailedMessage += "5. Restart your server\n\n";
-        detailedMessage += `Current key format: ${
-          FLUTTERWAVE_SECRET_KEY
-            ? FLUTTERWAVE_SECRET_KEY.substring(0, 20) + "..."
-            : "NOT SET"
-        }`;
-      } else {
-        detailedMessage += `Error: ${errorMessage}`;
-      }
-
-      throw new ErrorClass(detailedMessage, 401);
-    }
-
-    throw new ErrorClass(
-      `Flutterwave verification failed: ${error.message}`,
-      500
-    );
   }
+
+  // If we get here, all retries failed - log the last error and throw
+  if (!lastError) {
+    throw new ErrorClass("Transaction verification failed after retries", 500);
+  }
+
+  console.error("Flutterwave verification error (after retries):", {
+    status: lastError.response?.status,
+    statusText: lastError.response?.statusText,
+    data: lastError.response?.data,
+    message: lastError.message,
+    transactionIdOrRef: transactionIdOrRef,
+    hasSecretKey: !!FLUTTERWAVE_SECRET_KEY,
+    secretKeyPrefix: FLUTTERWAVE_SECRET_KEY
+      ? FLUTTERWAVE_SECRET_KEY.substring(0, 10) + "..."
+      : "NOT SET",
+  });
+
+  if (
+    lastError.response?.status === 404 ||
+    lastError.response?.status === 400
+  ) {
+    const errorMessage =
+      lastError.response?.data?.message || "Transaction not found";
+
+    // Provide helpful message for transaction not found
+    if (errorMessage.includes("No transaction was found")) {
+      throw new ErrorClass(
+        `Transaction not found with reference: ${transactionIdOrRef} after ${maxRetries} attempts. ` +
+          `This might mean: 1) The transaction hasn't been completed yet (wait a few seconds and try again), ` +
+          `2) The reference is incorrect, or 3) The transaction is from a different Flutterwave account. ` +
+          `Please verify the transaction reference and ensure the payment was completed successfully.`,
+        404
+      );
+    }
+
+    throw new ErrorClass(`Transaction not found: ${errorMessage}`, 404);
+  }
+
+  if (lastError.response?.status === 401) {
+    const errorMessage =
+      lastError.response?.data?.message || "Invalid Flutterwave credentials";
+
+    // Provide detailed error message
+    let detailedMessage = "Invalid Flutterwave secret key. ";
+
+    if (errorMessage.includes("Invalid secret key")) {
+      detailedMessage +=
+        "The secret key in your .env file is incorrect or invalid.\n\n";
+      detailedMessage += "To fix this:\n";
+      detailedMessage += "1. Go to https://dashboard.flutterwave.com\n";
+      detailedMessage += "2. Navigate to Settings → API Keys\n";
+      detailedMessage +=
+        "3. Copy your Secret Key (starts with FLWSECK_TEST- for test or FLWSECK- for live)\n";
+      detailedMessage +=
+        "4. Update FLUTTERWAVE_SECRET_KEY in your .env file (no quotes, no spaces)\n";
+      detailedMessage += "5. Restart your server\n\n";
+      detailedMessage += `Current key format: ${
+        FLUTTERWAVE_SECRET_KEY
+          ? FLUTTERWAVE_SECRET_KEY.substring(0, 20) + "..."
+          : "NOT SET"
+      }`;
+    } else {
+      detailedMessage += `Error: ${errorMessage}`;
+    }
+
+    throw new ErrorClass(detailedMessage, 401);
+  }
+
+  throw new ErrorClass(
+    `Flutterwave verification failed after ${maxRetries} attempts: ${lastError.message}`,
+    500
+  );
 };
 
 /**

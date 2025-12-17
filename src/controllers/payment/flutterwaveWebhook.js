@@ -5,6 +5,7 @@ import { PaymentTransaction } from "../../models/payment/paymentTransaction.js";
 import { SchoolFees } from "../../models/payment/schoolFees.js";
 import { Funding } from "../../models/payment/funding.js";
 import { Students } from "../../models/auth/student.js";
+import { Semester } from "../../models/auth/semester.js";
 import {
   verifyWebhookSignature,
   isTransactionSuccessful,
@@ -27,6 +28,7 @@ export const flutterwaveWebhook = TryCatchFunction(async (req, res) => {
   // Note: For proper signature verification, you may need to use raw body
   // For now, we'll verify if signature is provided, but allow processing if not
   // In production, always verify signature for security
+  const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY?.trim();
   if (signature && FLUTTERWAVE_SECRET_KEY) {
     // Get raw body if available (may need express.raw() middleware for webhook route)
     const rawBody = req.rawBody || JSON.stringify(req.body);
@@ -99,72 +101,81 @@ export const flutterwaveWebhook = TryCatchFunction(async (req, res) => {
       return res.status(200).json({ message: "Amount mismatch" });
     }
 
-    // Process payment if it's school fees
-    if (paymentTransaction.payment_type === "school_fees") {
+    // Process payment if it's wallet funding
+    // Flutterwave ONLY funds the wallet - all other transactions use wallet balance
+    if (paymentTransaction.payment_type === "wallet_funding") {
       const studentId = paymentTransaction.student_id;
-      const academicYear = paymentTransaction.academic_year;
       const today = new Date().toISOString().split("T")[0];
 
-      // Check if already paid (idempotency)
-      const existingPayment = await SchoolFees.findOne({
+      // Get student
+      const student = await Students.findByPk(studentId);
+      if (!student) {
+        console.error(`Student not found: ${studentId}`);
+        await paymentTransaction.update({
+          status: "failed",
+          error_message: "Student not found",
+          flutterwave_response: transactionData,
+          last_verification_at: new Date(),
+        });
+        return res.status(200).json({ message: "Student not found" });
+      }
+
+      // Get current semester for academic year
+      let currentSemester = await Semester.findOne({
         where: {
-          student_id: studentId,
-          academic_year: academicYear,
-          status: "Paid",
+          [Op.and]: [
+            Semester.sequelize.literal(`DATE(start_date) <= '${today}'`),
+            Semester.sequelize.literal(`DATE(end_date) >= '${today}'`),
+          ],
         },
+        order: [["id", "DESC"]],
       });
 
-      if (!existingPayment) {
-        // Get student
-        const student = await Students.findByPk(studentId);
-
-        if (student) {
-          // Create SchoolFees record
-          await SchoolFees.create({
-            student_id: studentId,
-            amount: paymentTransaction.amount,
-            status: "Paid",
-            academic_year: academicYear,
-            semester: null,
-            date: today,
-            teller_no: paymentTransaction.transaction_reference,
-            matric_number: student.matric_number,
-            type: "School Fees",
-            student_level: student.level,
-            currency: paymentTransaction.currency,
-          });
-
-          // Get current wallet balance
-          const totalCredits = await Funding.sum("amount", {
-            where: { student_id: studentId, type: "Credit" },
-          });
-          const totalDebits = await Funding.sum("amount", {
-            where: { student_id: studentId, type: "Debit" },
-          });
-          const currentBalance = (totalCredits || 0) - (totalDebits || 0);
-
-          // Credit wallet
-          const newBalance = currentBalance + parseFloat(paymentTransaction.amount);
-
-          await Funding.create({
-            student_id: studentId,
-            amount: paymentTransaction.amount,
-            type: "Credit",
-            service_name: "School Fees Payment",
-            ref: paymentTransaction.transaction_reference,
-            date: today,
-            semester: null,
-            academic_year: academicYear,
-            currency: paymentTransaction.currency,
-            balance: newBalance.toString(),
-          });
-
-          // Update student wallet_balance
-          await student.update({
-            wallet_balance: newBalance,
-          });
-        }
+      if (!currentSemester) {
+        currentSemester = await Semester.findOne({
+          where: Semester.sequelize.where(
+            Semester.sequelize.fn("UPPER", Semester.sequelize.col("status")),
+            "ACTIVE"
+          ),
+          order: [["id", "DESC"]],
+        });
       }
+
+      const academicYear = currentSemester?.academic_year?.toString() || null;
+
+      // Get current wallet balance
+      const totalCredits = await Funding.sum("amount", {
+        where: { student_id: studentId, type: "Credit" },
+      });
+      const totalDebits = await Funding.sum("amount", {
+        where: { student_id: studentId, type: "Debit" },
+      });
+      const currentBalance = (totalCredits || 0) - (totalDebits || 0);
+
+      // Credit wallet
+      const newBalance = currentBalance + parseFloat(paymentTransaction.amount);
+
+      await Funding.create({
+        student_id: studentId,
+        amount: paymentTransaction.amount,
+        type: "Credit",
+        service_name: "Wallet Funding",
+        ref: paymentTransaction.transaction_reference,
+        date: today,
+        semester: currentSemester?.semester || null,
+        academic_year: academicYear,
+        currency: paymentTransaction.currency,
+        balance: newBalance.toString(),
+      });
+
+      // Update student wallet_balance
+      await student.update({
+        wallet_balance: newBalance,
+      });
+
+      console.log(
+        `✅ Wallet funded: Student ${studentId} - ${paymentTransaction.amount} ${paymentTransaction.currency} (New balance: ${newBalance})`
+      );
 
       // Update payment transaction
       await paymentTransaction.update({

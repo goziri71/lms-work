@@ -60,6 +60,11 @@ export const PaymentTransaction = db.define(
       allowNull: true,
       comment: "Academic year for school fees",
     },
+    course_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: "Course ID for marketplace course purchases",
+    },
     verification_attempts: {
       type: DataTypes.INTEGER,
       allowNull: false,

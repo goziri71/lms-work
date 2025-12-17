@@ -1,8 +1,8 @@
 import { Courses } from "../../models/course/courses.js";
 import { Students } from "../../models/auth/student.js";
 import { CourseReg } from "../../models/course_reg.js";
+import { Funding } from "../../models/payment/funding.js";
 import { processMarketplacePurchase } from "../../services/revenueSharingService.js";
-import { verifyTransaction, isTransactionSuccessful, getTransactionAmount } from "../../services/flutterwaveService.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 
@@ -58,62 +58,68 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("You already own this course. Marketplace courses provide lifetime access.", 400);
   }
 
-  // Verify payment with Flutterwave before processing
-  if (!payment_reference) {
-    throw new ErrorClass("Payment reference is required", 400);
-  }
+  // All transactions use wallet balance (Flutterwave only funds wallet)
+  // Check wallet balance
+  const totalCredits = await Funding.sum("amount", {
+    where: { student_id: studentId, type: "Credit" },
+  });
+  const totalDebits = await Funding.sum("amount", {
+    where: { student_id: studentId, type: "Debit" },
+  });
+  const walletBalance = (totalCredits || 0) - (totalDebits || 0);
 
-  let verificationResult;
-  try {
-    verificationResult = await verifyTransaction(payment_reference);
-  } catch (error) {
+  // Check if wallet has sufficient balance
+  if (walletBalance < coursePrice) {
     throw new ErrorClass(
-      `Payment verification failed: ${error.message}`,
+      `Insufficient wallet balance. Required: ${coursePrice} ${course.currency || "NGN"}, Available: ${walletBalance} ${course.currency || "NGN"}. Please fund your wallet first.`,
       400
     );
   }
 
-  if (!verificationResult.success) {
-    throw new ErrorClass(
-      `Payment verification failed: ${verificationResult.message || "Transaction not found"}`,
-      400
-    );
-  }
+  // Generate transaction reference for wallet debit
+  const txRef = `MARKETPLACE-${course_id}-${Date.now()}`;
+  const today = new Date().toISOString().split("T")[0];
 
-  const flutterwaveTransaction = verificationResult.transaction;
+  // Debit wallet
+  const newBalance = walletBalance - coursePrice;
 
-  // Verify payment was successful
-  if (!isTransactionSuccessful(flutterwaveTransaction)) {
-    throw new ErrorClass("Payment was not successful. Please try again.", 400);
-  }
+  // Create Funding transaction (Debit)
+  await Funding.create({
+    student_id: studentId,
+    amount: coursePrice,
+    type: "Debit",
+    service_name: "Marketplace Course Purchase",
+    ref: txRef,
+    date: today,
+    semester: null, // Marketplace courses are not tied to semester
+    academic_year: null, // Marketplace courses are not tied to academic year
+    currency: course.currency || "NGN",
+    balance: newBalance.toString(),
+  });
 
-  // Verify amount matches course price
-  const transactionAmount = getTransactionAmount(flutterwaveTransaction);
-  if (Math.abs(transactionAmount - coursePrice) > 0.01) {
-    throw new ErrorClass(
-      `Payment amount mismatch. Expected: ${coursePrice} ${course.currency || "NGN"}, Received: ${transactionAmount} ${flutterwaveTransaction.currency || "NGN"}`,
-      400
-    );
-  }
+  // Update student wallet_balance
+  await student.update({
+    wallet_balance: newBalance,
+  });
 
-  // Process purchase and distribute revenue
+  // Process marketplace purchase and distribute revenue
   const result = await processMarketplacePurchase({
     course_id,
     student_id: studentId,
-    payment_reference: payment_reference || `TXN-${Date.now()}`,
-    payment_method: payment_method || "wallet",
+    payment_reference: txRef,
+    payment_method: "wallet", // Always wallet for marketplace purchases
   });
 
   // Enroll student in course with lifetime access (not tied to semester)
   const purchaseDate = new Date();
-  const purchaseDateString = purchaseDate.toISOString().split("T")[0]; // Format: YYYY-MM-DD
+  const purchaseDateString = purchaseDate.toISOString().split("T")[0];
 
   await CourseReg.create({
     student_id: studentId,
     course_id: course_id,
     academic_year: null, // Lifetime access - not tied to academic year
     semester: null, // Lifetime access - not tied to semester
-    date: purchaseDateString, // Purchase date for reporting
+    date: purchaseDateString,
     registration_status: "marketplace_purchased",
     course_reg_id: null, // No CourseOrder (marketplace uses MarketplaceTransaction)
     program_id: null, // Not part of program allocation
@@ -147,6 +153,12 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
         course_id: course_id,
         access_type: "lifetime", // Lifetime access - not tied to semester
         purchased_at: purchaseDateString,
+      },
+      wallet: {
+        previous_balance: walletBalance,
+        new_balance: newBalance,
+        debited: coursePrice,
+        currency: course.currency || "NGN",
       },
     },
   });
