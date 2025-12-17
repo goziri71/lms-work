@@ -7,49 +7,18 @@ import { Op } from "sequelize";
 import { Sequelize } from "sequelize";
 
 /**
- * Get all programs that have published marketplace courses
+ * Get all active programs
  * GET /api/marketplace/programs
  * 
- * Returns a list of all programs that students can filter by
- * when browsing marketplace courses.
+ * Returns a list of all active programs that students can filter by
+ * when browsing marketplace courses. Includes course count for marketplace courses.
  */
 export const getAllPrograms = TryCatchFunction(async (req, res) => {
   // This endpoint is public/student-accessible (no strict auth required)
 
-  // Get all unique program_id values from published marketplace courses
-  const publishedCourses = await Courses.findAll({
-    where: {
-      is_marketplace: true,
-      marketplace_status: "published",
-      program_id: { [Op.ne]: null }, // Only courses with a program
-    },
-    attributes: [
-      "program_id",
-      [Sequelize.fn("COUNT", Sequelize.col("id")), "course_count"],
-    ],
-    group: ["program_id"],
-    raw: true,
-  });
-
-  const programIds = publishedCourses.map((c) => c.program_id);
-
-  // If no programs found, return empty array
-  if (programIds.length === 0) {
-    return res.status(200).json({
-      status: true,
-      code: 200,
-      message: "Programs retrieved successfully",
-      data: [],
-      meta: {
-        total: 0,
-      },
-    });
-  }
-
-  // Fetch programs (only active ones)
+  // Get all active programs
   const programs = await Program.findAll({
     where: {
-      id: { [Op.in]: programIds },
       status: "Y", // Only active programs (Y = Active, N = Inactive)
     },
     include: [
@@ -64,6 +33,21 @@ export const getAllPrograms = TryCatchFunction(async (req, res) => {
     order: [["title", "ASC"]],
   });
 
+  // Get course counts for marketplace courses per program (for reference)
+  const publishedCourses = await Courses.findAll({
+    where: {
+      is_marketplace: true,
+      marketplace_status: "published",
+      program_id: { [Op.ne]: null },
+    },
+    attributes: [
+      "program_id",
+      [Sequelize.fn("COUNT", Sequelize.col("id")), "course_count"],
+    ],
+    group: ["program_id"],
+    raw: true,
+  });
+
   // Build response with course counts
   const programsList = programs.map((program) => {
     const courseData = publishedCourses.find(
@@ -74,7 +58,7 @@ export const getAllPrograms = TryCatchFunction(async (req, res) => {
       title: program.title,
       description: program.description,
       faculty_id: program.faculty_id,
-      course_count: courseData ? parseInt(courseData.course_count) : 0,
+      course_count: courseData ? parseInt(courseData.course_count) : 0, // Marketplace course count
       faculty: program.faculty
         ? {
             id: program.faculty.id,
