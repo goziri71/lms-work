@@ -25,6 +25,12 @@ export async function checkSchoolFeesPayment(studentId, academicYear) {
 /**
  * Check if student has paid course fees for a specific course
  * Handles both regular courses (CourseOrder payment) and marketplace courses (enrollment = payment)
+ * 
+ * Business Rules:
+ * 1. WPU courses are NOT free by default - students must pay for course registration
+ * 2. Marketplace courses: enrollment = payment (unless price = 0 for promo/marketing)
+ * 3. Regular WPU courses: require course registration payment (registration_status = "registered" AND course_reg_id IS NOT NULL)
+ * 
  * @param {number} studentId - Student ID
  * @param {number} courseId - Course ID
  * @param {string} academicYear - Academic year
@@ -62,23 +68,22 @@ export async function checkCourseFeesPayment(
     course.is_marketplace === true &&
     course.marketplace_status === "published";
 
-  // Check if it's a free WPU course (not on marketplace)
-  const isFreeWPU =
-    (course.owner_type === "wpu" || course.owner_type === "wsp") &&
-    (!course.is_marketplace || course.marketplace_status !== "published");
-
-  // For marketplace courses (including WPU marketplace): enrollment = payment (payment done during purchase)
+  // For marketplace courses: enrollment = payment (payment done during purchase)
   if (isMarketplace) {
+    const coursePrice = parseFloat(course.price) || 0;
+    
+    // If price is 0, it's a free promo/marketing course
+    if (coursePrice === 0) {
+      return { paid: true, reason: "Marketplace course - free promo (price = 0)" };
+    }
+    
+    // Otherwise, enrollment means payment was completed during purchase
     return { paid: true, reason: "Marketplace course - payment done during purchase" };
   }
 
-  // For free WPU courses: no payment required
-  if (isFreeWPU) {
-    return { paid: true, reason: "Free WPU course - no payment required" };
-  }
-
-  // For regular allocated courses: check if registration_status is "registered" and course_reg_id exists
-  // This indicates payment via CourseOrder
+  // For regular WPU courses (not on marketplace): check course registration payment
+  // Students must pay for course registration before access
+  // Payment is indicated by: registration_status = "registered" AND course_reg_id IS NOT NULL
   if (
     enrollment.registration_status === "registered" &&
     enrollment.course_reg_id !== null
@@ -86,6 +91,7 @@ export async function checkCourseFeesPayment(
     return { paid: true, reason: "Course registration payment completed" };
   }
 
+  // Not paid - student hasn't completed course registration payment
   return {
     paid: false,
     reason: "Course registration payment not completed",
