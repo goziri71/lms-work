@@ -8,6 +8,7 @@ import { Semester } from "../../models/auth/semester.js";
 import { CourseOrder } from "../../models/payment/courseOrder.js";
 import { Funding } from "../../models/payment/funding.js";
 import { CourseSemesterPricing } from "../../models/course/courseSemesterPricing.js";
+import { checkSchoolFeesPayment } from "../../services/paymentVerificationService.js";
 
 // Helper function to get course price for semester
 const getCoursePriceForSemester = async (courseId, academicYear, semester) => {
@@ -198,6 +199,17 @@ export const registerAllocatedCourses = TryCatchFunction(async (req, res) => {
 
   if (!currentSemester) {
     throw new ErrorClass("No active semester found", 404);
+  }
+
+  // Check if student has paid school fees for this academic year
+  // School fees payment is required before course registration
+  const academicYear = currentSemester.academic_year?.toString();
+  const schoolFeesPaid = await checkSchoolFeesPayment(studentId, academicYear);
+  if (!schoolFeesPaid) {
+    throw new ErrorClass(
+      "You cannot register for courses. Please pay your school fees for this academic year first.",
+      400
+    );
   }
 
   // Check registration deadline

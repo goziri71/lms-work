@@ -6,6 +6,7 @@ import { CourseReg } from "../../models/course_reg.js";
 import { Semester } from "../../models/auth/semester.js";
 import { CourseOrder } from "../../models/payment/courseOrder.js";
 import { Funding } from "../../models/payment/funding.js";
+import { checkSchoolFeesPayment } from "../../services/paymentVerificationService.js";
 
 /**
  * STUDENT REGISTER FOR COURSE(S)
@@ -44,6 +45,16 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
   const student = await Students.findByPk(studentId);
   if (!student) {
     throw new ErrorClass("Student not found", 404);
+  }
+
+  // Check if student has paid school fees for this academic year
+  // School fees payment is required before course registration
+  const schoolFeesPaid = await checkSchoolFeesPayment(studentId, academic_year);
+  if (!schoolFeesPaid) {
+    throw new ErrorClass(
+      "You cannot register for courses. Please pay your school fees for this academic year first.",
+      400
+    );
   }
 
   // Get all courses to register
