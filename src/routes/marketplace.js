@@ -9,6 +9,7 @@ import {
 import { purchaseMarketplaceCourse } from "../controllers/marketplace/coursePurchase.js";
 import { getMyMarketplaceCourses } from "../controllers/marketplace/myMarketplaceCourses.js";
 import { browseMarketplaceCourses } from "../controllers/marketplace/browseMarketplaceCourses.js";
+import { getAllTutors } from "../controllers/marketplace/getAllTutors.js";
 import { authorize } from "../middlewares/authorize.js";
 
 const router = express.Router();
@@ -25,6 +26,10 @@ router.post("/register/organization", registerOrganization);
 router.post("/login/sole-tutor", soleTutorLogin);
 router.post("/login/organization", organizationLogin);
 router.post("/login/organization-user", organizationUserLogin);
+
+// Get all tutors/organizations (for filtering marketplace courses)
+// Public endpoint - accessible to all (students can use for filtering)
+router.get("/tutors", getAllTutors);
 
 // ============================================
 // AUTHENTICATED ROUTES
