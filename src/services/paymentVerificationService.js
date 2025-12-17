@@ -49,7 +49,39 @@ export async function checkCourseFeesPayment(
     return { paid: false, reason: "Course not found" };
   }
 
-  // Get enrollment
+  // Check if it's a marketplace course (any owner type - including WPU marketplace)
+  const isMarketplace =
+    course.is_marketplace === true &&
+    course.marketplace_status === "published";
+
+  // For marketplace courses: check for lifetime access enrollment (academic_year and semester are NULL)
+  if (isMarketplace) {
+    const marketplaceEnrollment = await CourseReg.findOne({
+      where: {
+        student_id: studentId,
+        course_id: courseId,
+        registration_status: "marketplace_purchased",
+        academic_year: null, // Lifetime access - not tied to semester
+        semester: null, // Lifetime access - not tied to semester
+      },
+    });
+
+    if (!marketplaceEnrollment) {
+      return { paid: false, reason: "Not enrolled in this marketplace course" };
+    }
+
+    const coursePrice = parseFloat(course.price) || 0;
+    
+    // If price is 0, it's a free promo/marketing course
+    if (coursePrice === 0) {
+      return { paid: true, reason: "Marketplace course - free promo (price = 0)" };
+    }
+    
+    // Otherwise, enrollment means payment was completed during purchase
+    return { paid: true, reason: "Marketplace course - payment done during purchase" };
+  }
+
+  // For regular program courses: check enrollment with academic_year and semester
   const enrollment = await CourseReg.findOne({
     where: {
       student_id: studentId,
@@ -61,24 +93,6 @@ export async function checkCourseFeesPayment(
 
   if (!enrollment) {
     return { paid: false, reason: "Not enrolled in this course" };
-  }
-
-  // Check if it's a marketplace course (any owner type - including WPU marketplace)
-  const isMarketplace =
-    course.is_marketplace === true &&
-    course.marketplace_status === "published";
-
-  // For marketplace courses: enrollment = payment (payment done during purchase)
-  if (isMarketplace) {
-    const coursePrice = parseFloat(course.price) || 0;
-    
-    // If price is 0, it's a free promo/marketing course
-    if (coursePrice === 0) {
-      return { paid: true, reason: "Marketplace course - free promo (price = 0)" };
-    }
-    
-    // Otherwise, enrollment means payment was completed during purchase
-    return { paid: true, reason: "Marketplace course - payment done during purchase" };
   }
 
   // For regular WPU courses (not on marketplace): check course registration payment

@@ -66,11 +66,11 @@ export const CourseReg = db.define(
       allowNull: false,
     },
     registration_status: {
-      type: DataTypes.ENUM("allocated", "registered", "cancelled"),
+      type: DataTypes.ENUM("allocated", "registered", "marketplace_purchased", "cancelled"),
       allowNull: true,
       defaultValue: "allocated",
       comment:
-        "allocated = Admin allocated, registered = Student registered & paid, cancelled = Cancelled",
+        "allocated = Admin allocated, registered = Student registered & paid, marketplace_purchased = Purchased from marketplace (lifetime access), cancelled = Cancelled",
       // Note: If ENUM doesn't exist in DB, Sequelize will use VARCHAR
     },
     allocated_price: {

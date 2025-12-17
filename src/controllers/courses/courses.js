@@ -65,13 +65,21 @@ export const getStudentCourses = TryCatchFunction(async (req, res) => {
         "registration_status",
         "course_reg_id",
       ],
-      where:
-        academicYear || semester
+      where: {
+        // Exclude marketplace purchases (lifetime access, not semester-based)
+        registration_status: { [Op.ne]: "marketplace_purchased" },
+        // Filter by academic year and semester if provided
+        ...(academicYear || semester
           ? {
               ...(academicYear ? { academic_year: academicYear } : {}),
               ...(semester ? { semester } : {}),
             }
-          : undefined,
+          : {
+              // If no filter, only show courses with academic_year and semester (program courses)
+              academic_year: { [Op.ne]: null },
+              semester: { [Op.ne]: null },
+            }),
+      },
     },
   };
 

@@ -7,6 +7,7 @@ import {
   organizationUserLogin,
 } from "../controllers/marketplace/tutorAuth.js";
 import { purchaseMarketplaceCourse } from "../controllers/marketplace/coursePurchase.js";
+import { getMyMarketplaceCourses } from "../controllers/marketplace/myMarketplaceCourses.js";
 import { authorize } from "../middlewares/authorize.js";
 
 const router = express.Router();
@@ -29,6 +30,9 @@ router.post("/login/organization-user", organizationUserLogin);
 // ============================================
 // Course Purchase (Student only)
 router.post("/courses/purchase", authorize, purchaseMarketplaceCourse);
+
+// Get My Marketplace Courses (Student only - lifetime access courses)
+router.get("/courses/my-courses", authorize, getMyMarketplaceCourses);
 
 // TODO: Add tutor dashboard, course management, etc.
 

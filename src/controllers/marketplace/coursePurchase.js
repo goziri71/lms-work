@@ -44,16 +44,17 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Student not found", 404);
   }
 
-  // Check if already enrolled
-  const existingEnrollment = await CourseReg.findOne({
+  // Check if already purchased from marketplace (lifetime access - no duplicate purchases)
+  const existingMarketplacePurchase = await CourseReg.findOne({
     where: {
       student_id: studentId,
       course_id: course_id,
+      registration_status: "marketplace_purchased",
     },
   });
 
-  if (existingEnrollment) {
-    throw new ErrorClass("You are already enrolled in this course", 400);
+  if (existingMarketplacePurchase) {
+    throw new ErrorClass("You already own this course. Marketplace courses provide lifetime access.", 400);
   }
 
   // TODO: Integrate with payment gateway (Stripe, Paystack, etc.)
@@ -68,17 +69,25 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
     payment_method: payment_method || "wallet",
   });
 
-  // Enroll student in course
-  const currentDate = new Date();
-  const academicYear = `${currentDate.getFullYear()}/${currentDate.getFullYear() + 1}`;
-  const semester = currentDate.getMonth() < 6 ? "1ST" : "2ND";
+  // Enroll student in course with lifetime access (not tied to semester)
+  const purchaseDate = new Date();
+  const purchaseDateString = purchaseDate.toISOString().split("T")[0]; // Format: YYYY-MM-DD
 
   await CourseReg.create({
     student_id: studentId,
     course_id: course_id,
-    academic_year: academicYear,
-    semester: semester,
-    date: currentDate,
+    academic_year: null, // Lifetime access - not tied to academic year
+    semester: null, // Lifetime access - not tied to semester
+    date: purchaseDateString, // Purchase date for reporting
+    registration_status: "marketplace_purchased",
+    course_reg_id: null, // No CourseOrder (marketplace uses MarketplaceTransaction)
+    program_id: null, // Not part of program allocation
+    facaulty_id: null,
+    level: null,
+    first_ca: 0,
+    second_ca: 0,
+    third_ca: 0,
+    exam_score: 0,
   });
 
   // Build response based on course type
@@ -101,8 +110,8 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
       },
       enrollment: {
         course_id: course_id,
-        academic_year: academicYear,
-        semester: semester,
+        access_type: "lifetime", // Lifetime access - not tied to semester
+        purchased_at: purchaseDateString,
       },
     },
   });
