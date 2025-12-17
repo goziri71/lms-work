@@ -94,7 +94,6 @@ export const verifyTransaction = async (transactionIdOrRef) => {
       data: error.response?.data,
       message: error.message,
       transactionIdOrRef: transactionIdOrRef,
-      isNumericId: isNumericId,
       hasSecretKey: !!FLUTTERWAVE_SECRET_KEY,
       secretKeyPrefix: FLUTTERWAVE_SECRET_KEY
         ? FLUTTERWAVE_SECRET_KEY.substring(0, 10) + "..."
