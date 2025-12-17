@@ -42,10 +42,11 @@ if (!FLUTTERWAVE_SECRET_KEY) {
 
 /**
  * Verify transaction with Flutterwave API
- * @param {string} transactionId - Flutterwave transaction ID or reference
+ * Can verify by transaction ID (numeric) or transaction reference (txRef)
+ * @param {string} transactionIdOrRef - Flutterwave transaction ID (numeric) or transaction reference (txRef)
  * @returns {Promise<Object>} Transaction details from Flutterwave
  */
-export const verifyTransaction = async (transactionId) => {
+export const verifyTransaction = async (transactionIdOrRef) => {
   if (!FLUTTERWAVE_SECRET_KEY) {
     throw new ErrorClass(
       "Flutterwave secret key not configured. Please set FLUTTERWAVE_SECRET_KEY in your .env file",
@@ -61,16 +62,41 @@ export const verifyTransaction = async (transactionId) => {
     );
   }
 
+  // Check if it's a numeric transaction ID or a transaction reference (txRef)
+  const isNumericId = /^\d+$/.test(transactionIdOrRef);
+  let verifyUrl;
+
+  if (isNumericId) {
+    // Use transaction ID verification endpoint
+    verifyUrl = `${FLUTTERWAVE_BASE_URL}/transactions/${transactionIdOrRef}/verify`;
+  } else {
+    // Use transaction reference verification endpoint
+    verifyUrl = `${FLUTTERWAVE_BASE_URL}/transactions/verify-by-reference`;
+  }
+
   try {
-    const response = await axios.get(
-      `${FLUTTERWAVE_BASE_URL}/transactions/${transactionId}/verify`,
-      {
-        headers: {
-          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
-          "Content-Type": "application/json",
+    const requestConfig = {
+      headers: {
+        Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+        "Content-Type": "application/json",
+      },
+    };
+
+    let response;
+
+    if (isNumericId) {
+      // GET request for transaction ID
+      response = await axios.get(verifyUrl, requestConfig);
+    } else {
+      // POST request for transaction reference
+      response = await axios.post(
+        verifyUrl,
+        {
+          tx_ref: transactionIdOrRef,
         },
-      }
-    );
+        requestConfig
+      );
+    }
 
     if (response.data.status === "success" && response.data.data) {
       return {
@@ -96,8 +122,22 @@ export const verifyTransaction = async (transactionId) => {
         : "NOT SET",
     });
 
-    if (error.response?.status === 404) {
-      throw new ErrorClass("Transaction not found", 404);
+    if (error.response?.status === 404 || error.response?.status === 400) {
+      const errorMessage =
+        error.response?.data?.message || "Transaction not found";
+
+      // If verifying by txRef failed, provide helpful message
+      if (!isNumericId && errorMessage.includes("No transaction was found")) {
+        throw new ErrorClass(
+          `Transaction not found with reference: ${transactionIdOrRef}. ` +
+            `This might mean: 1) The transaction hasn't been completed yet, ` +
+            `2) The reference is incorrect, or 3) The transaction is from a different Flutterwave account. ` +
+            `Please verify the transaction reference and ensure the payment was completed successfully.`,
+          404
+        );
+      }
+
+      throw new ErrorClass(`Transaction not found: ${errorMessage}`, 404);
     }
 
     if (error.response?.status === 401) {
