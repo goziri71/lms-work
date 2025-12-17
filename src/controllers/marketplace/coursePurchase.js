@@ -2,6 +2,7 @@ import { Courses } from "../../models/course/courses.js";
 import { Students } from "../../models/auth/student.js";
 import { CourseReg } from "../../models/course_reg.js";
 import { processMarketplacePurchase } from "../../services/revenueSharingService.js";
+import { verifyTransaction, isTransactionSuccessful, getTransactionAmount } from "../../services/flutterwaveService.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 
@@ -57,9 +58,43 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("You already own this course. Marketplace courses provide lifetime access.", 400);
   }
 
-  // TODO: Integrate with payment gateway (Stripe, Paystack, etc.)
-  // For now, we'll assume payment is successful
-  // In production, verify payment_reference with payment gateway first
+  // Verify payment with Flutterwave before processing
+  if (!payment_reference) {
+    throw new ErrorClass("Payment reference is required", 400);
+  }
+
+  let verificationResult;
+  try {
+    verificationResult = await verifyTransaction(payment_reference);
+  } catch (error) {
+    throw new ErrorClass(
+      `Payment verification failed: ${error.message}`,
+      400
+    );
+  }
+
+  if (!verificationResult.success) {
+    throw new ErrorClass(
+      `Payment verification failed: ${verificationResult.message || "Transaction not found"}`,
+      400
+    );
+  }
+
+  const flutterwaveTransaction = verificationResult.transaction;
+
+  // Verify payment was successful
+  if (!isTransactionSuccessful(flutterwaveTransaction)) {
+    throw new ErrorClass("Payment was not successful. Please try again.", 400);
+  }
+
+  // Verify amount matches course price
+  const transactionAmount = getTransactionAmount(flutterwaveTransaction);
+  if (Math.abs(transactionAmount - coursePrice) > 0.01) {
+    throw new ErrorClass(
+      `Payment amount mismatch. Expected: ${coursePrice} ${course.currency || "NGN"}, Received: ${transactionAmount} ${flutterwaveTransaction.currency || "NGN"}`,
+      400
+    );
+  }
 
   // Process purchase and distribute revenue
   const result = await processMarketplacePurchase({
