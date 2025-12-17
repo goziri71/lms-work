@@ -12,12 +12,19 @@ import { Sequelize } from "sequelize";
  * 
  * Returns a list of all active programs that students can filter by
  * when browsing marketplace courses. Includes course count for marketplace courses.
+ * 
+ * Query Parameters:
+ * - page (optional): Page number (default: 1)
+ * - limit (optional): Items per page (default: 20)
  */
 export const getAllPrograms = TryCatchFunction(async (req, res) => {
   // This endpoint is public/student-accessible (no strict auth required)
 
-  // Get all active programs
-  const programs = await Program.findAll({
+  const { page = 1, limit = 20 } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+
+  // Get all active programs with pagination
+  const { count, rows: programs } = await Program.findAndCountAll({
     where: {
       status: "Y", // Only active programs (Y = Active, N = Inactive)
     },
@@ -31,6 +38,8 @@ export const getAllPrograms = TryCatchFunction(async (req, res) => {
     ],
     attributes: ["id", "title", "description", "faculty_id", "status"],
     order: [["title", "ASC"]],
+    limit: parseInt(limit),
+    offset: offset,
   });
 
   // Get course counts for marketplace courses per program (for reference)
@@ -74,7 +83,12 @@ export const getAllPrograms = TryCatchFunction(async (req, res) => {
     message: "Programs retrieved successfully",
     data: programsList,
     meta: {
-      total: programsList.length,
+      total: count,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(count / parseInt(limit)),
+      hasNextPage: parseInt(page) < Math.ceil(count / parseInt(limit)),
+      hasPrevPage: parseInt(page) > 1,
     },
   });
 });

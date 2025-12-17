@@ -43,6 +43,18 @@ export async function processMarketplacePurchase(purchaseData) {
   const { course_id, student_id, payment_reference, payment_method } =
     purchaseData;
 
+  // Validate and truncate payment_reference if too long (defensive measure)
+  // Database column is VARCHAR(255), but truncate to 250 to be safe
+  const safePaymentReference = payment_reference 
+    ? (payment_reference.length > 250 ? payment_reference.substring(0, 250) : payment_reference)
+    : null;
+  
+  // Validate and truncate payment_method if too long (defensive measure)
+  // Database column is VARCHAR(50), but truncate to 45 to be safe
+  const safePaymentMethod = payment_method 
+    ? (payment_method.length > 45 ? payment_method.substring(0, 45) : payment_method)
+    : "unknown";
+
   // Get course with owner information
   const course = await Courses.findByPk(course_id);
   if (!course) {
@@ -74,8 +86,8 @@ export async function processMarketplacePurchase(purchaseData) {
       wsp_commission: coursePrice, // 100% to WPU
       tutor_earnings: 0, // No tutor earnings
       payment_status: "completed",
-      payment_method: payment_method || "unknown",
-      payment_reference: payment_reference || null,
+      payment_method: safePaymentMethod,
+      payment_reference: safePaymentReference,
     });
 
     // Create WPU commission record (100% of course price)
@@ -130,8 +142,8 @@ export async function processMarketplacePurchase(purchaseData) {
     wsp_commission: wspCommission,
     tutor_earnings: tutorEarnings,
     payment_status: "completed",
-    payment_method: payment_method || "unknown",
-    payment_reference: payment_reference || null,
+    payment_method: safePaymentMethod,
+    payment_reference: safePaymentReference,
   });
 
   // Create WPU commission record

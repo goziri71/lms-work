@@ -87,11 +87,12 @@ export const getMySchoolFees = TryCatchFunction(async (req, res) => {
     });
   }
 
-  // Check if student has already paid for this academic year
+  // Check if student has already paid for this semester
   const existingPayment = await SchoolFees.findOne({
     where: {
       student_id: studentId,
       academic_year: academicYear,
+      semester: semester,
       status: "Paid",
     },
     order: [["id", "DESC"]],
@@ -115,6 +116,7 @@ export const getMySchoolFees = TryCatchFunction(async (req, res) => {
     message: "School fees information retrieved successfully",
     data: {
       academic_year: academicYear,
+      semester: semester,
       school_fees: {
         amount: amount,
         currency: currency,
@@ -129,6 +131,7 @@ export const getMySchoolFees = TryCatchFunction(async (req, res) => {
             status: existingPayment.status,
             date: existingPayment.date,
             teller_no: existingPayment.teller_no,
+            semester: existingPayment.semester,
           }
         : null,
       wallet: {
@@ -370,19 +373,21 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
   }
 
   const academicYear = currentSemester.academic_year?.toString();
+  const semester = currentSemester.semester?.toString();
 
-  // Check if already paid for this academic year
+  // Check if already paid for this semester
   const existingPayment = await SchoolFees.findOne({
     where: {
       student_id: studentId,
       academic_year: academicYear,
+      semester: semester,
       status: "Paid",
     },
   });
 
   if (existingPayment) {
     throw new ErrorClass(
-      "School fees for this academic year have already been paid",
+      `School fees for ${academicYear} ${semester} have already been paid`,
       400
     );
   }
@@ -441,13 +446,13 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
     wallet_balance: newBalance,
   });
 
-  // Create SchoolFees record
+  // Create SchoolFees record (per semester)
   const schoolFee = await SchoolFees.create({
     student_id: studentId,
     amount: amount,
     status: "Paid",
     academic_year: academicYear,
-    semester: null,
+    semester: semester, // Save semester for per-semester payment tracking
     date: today,
     teller_no: txRef,
     matric_number: student.matric_number,
@@ -465,6 +470,7 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
         amount: amount,
         currency: currency,
         academic_year: academicYear,
+        semester: semester,
         payment_reference: txRef,
         date: today,
       },

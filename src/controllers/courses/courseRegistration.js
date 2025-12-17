@@ -47,12 +47,12 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Student not found", 404);
   }
 
-  // Check if student has paid school fees for this academic year
-  // School fees payment is required before course registration
-  const schoolFeesPaid = await checkSchoolFeesPayment(studentId, academic_year);
+  // Check if student has paid school fees for this semester
+  // School fees payment is required before course registration (per semester)
+  const schoolFeesPaid = await checkSchoolFeesPayment(studentId, academic_year, semester);
   if (!schoolFeesPaid) {
     throw new ErrorClass(
-      "You cannot register for courses. Please pay your school fees for this academic year first.",
+      `You cannot register for courses. Please pay your school fees for ${academic_year} ${semester} first.`,
       400
     );
   }

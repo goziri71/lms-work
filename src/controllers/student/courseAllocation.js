@@ -201,13 +201,14 @@ export const registerAllocatedCourses = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("No active semester found", 404);
   }
 
-  // Check if student has paid school fees for this academic year
-  // School fees payment is required before course registration
+  // Check if student has paid school fees for this semester
+  // School fees payment is required before course registration (per semester)
   const academicYear = currentSemester.academic_year?.toString();
-  const schoolFeesPaid = await checkSchoolFeesPayment(studentId, academicYear);
+  const semester = currentSemester.semester?.toString();
+  const schoolFeesPaid = await checkSchoolFeesPayment(studentId, academicYear, semester);
   if (!schoolFeesPaid) {
     throw new ErrorClass(
-      "You cannot register for courses. Please pay your school fees for this academic year first.",
+      `You cannot register for courses. Please pay your school fees for ${academicYear} ${semester} first.`,
       400
     );
   }

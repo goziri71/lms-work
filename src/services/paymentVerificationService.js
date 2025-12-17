@@ -5,18 +5,32 @@ import { Courses } from "../models/course/courses.js";
 import { Semester } from "../models/auth/semester.js";
 
 /**
- * Check if student has paid school fees for the given academic year
+ * Check if student has paid school fees for the given academic year and semester
+ * School fees must be paid every semester
  * @param {number} studentId - Student ID
  * @param {string} academicYear - Academic year (e.g., "2024/2025")
- * @returns {Promise<boolean>} - True if school fees are paid
+ * @param {string} semester - Semester (e.g., "1ST", "2ND")
+ * @returns {Promise<boolean>} - True if school fees are paid for this semester
  */
-export async function checkSchoolFeesPayment(studentId, academicYear) {
+export async function checkSchoolFeesPayment(
+  studentId,
+  academicYear,
+  semester = null
+) {
+  const where = {
+    student_id: studentId,
+    academic_year: academicYear,
+    status: "Paid",
+  };
+
+  // If semester is provided, check for that specific semester
+  // If semester is null, check if any payment exists for the academic year (backward compatibility)
+  if (semester) {
+    where.semester = semester;
+  }
+
   const payment = await SchoolFees.findOne({
-    where: {
-      student_id: studentId,
-      academic_year: academicYear,
-      status: "Paid",
-    },
+    where,
   });
 
   return !!payment;
@@ -25,12 +39,12 @@ export async function checkSchoolFeesPayment(studentId, academicYear) {
 /**
  * Check if student has paid course fees for a specific course
  * Handles both regular courses (CourseOrder payment) and marketplace courses (enrollment = payment)
- * 
+ *
  * Business Rules:
  * 1. WPU courses are NOT free by default - students must pay for course registration
  * 2. Marketplace courses: enrollment = payment (unless price = 0 for promo/marketing)
  * 3. Regular WPU courses: require course registration payment (registration_status = "registered" AND course_reg_id IS NOT NULL)
- * 
+ *
  * @param {number} studentId - Student ID
  * @param {number} courseId - Course ID
  * @param {string} academicYear - Academic year
@@ -51,8 +65,7 @@ export async function checkCourseFeesPayment(
 
   // Check if it's a marketplace course (any owner type - including WPU marketplace)
   const isMarketplace =
-    course.is_marketplace === true &&
-    course.marketplace_status === "published";
+    course.is_marketplace === true && course.marketplace_status === "published";
 
   // For marketplace courses: check for lifetime access enrollment (academic_year and semester are NULL)
   if (isMarketplace) {
@@ -71,14 +84,20 @@ export async function checkCourseFeesPayment(
     }
 
     const coursePrice = parseFloat(course.price) || 0;
-    
+
     // If price is 0, it's a free promo/marketing course
     if (coursePrice === 0) {
-      return { paid: true, reason: "Marketplace course - free promo (price = 0)" };
+      return {
+        paid: true,
+        reason: "Marketplace course - free promo (price = 0)",
+      };
     }
-    
+
     // Otherwise, enrollment means payment was completed during purchase
-    return { paid: true, reason: "Marketplace course - payment done during purchase" };
+    return {
+      paid: true,
+      reason: "Marketplace course - payment done during purchase",
+    };
   }
 
   // For regular program courses: check enrollment with academic_year and semester
@@ -166,11 +185,15 @@ export async function verifyExamPaymentRequirements(
     return { allowed: true, errors: [] };
   }
 
-  // Check school fees payment
-  const schoolFeesPaid = await checkSchoolFeesPayment(studentId, academicYear);
+  // Check school fees payment (must be paid for this specific semester)
+  const schoolFeesPaid = await checkSchoolFeesPayment(
+    studentId,
+    academicYear,
+    semester
+  );
   if (!schoolFeesPaid) {
     errors.push(
-      "You cannot take this exam. Please pay your school fees for the current academic year first."
+      `You cannot take this exam. Please pay your school fees for ${academicYear} ${semester} first.`
     );
   }
 
@@ -196,4 +219,3 @@ export async function verifyExamPaymentRequirements(
     errors,
   };
 }
-

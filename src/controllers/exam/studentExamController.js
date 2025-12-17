@@ -11,6 +11,7 @@ import {
   QuestionTheory,
 } from "../../models/exams/index.js";
 import { CourseReg } from "../../models/course_reg.js";
+import { Semester } from "../../models/auth/semester.js";
 import {
   startExamAttempt,
   getAttemptQuestions,
@@ -90,10 +91,20 @@ export const getStudentExams = TryCatchFunction(async (req, res) => {
   });
 
   // Filter out exams for courses where payment is not completed
-  // Get current academic year if not provided
+  // Get current academic year and semester if not provided
   const currentAcademicYear = academic_year || (await getCurrentAcademicYear());
-  const schoolFeesPaid = currentAcademicYear
-    ? await checkSchoolFeesPayment(studentId, currentAcademicYear)
+  const currentSemester = semester || (await Semester.findOne({
+    where: {
+      [Op.and]: [
+        Semester.sequelize.literal(`DATE(start_date) <= '${new Date().toISOString().split("T")[0]}'`),
+        Semester.sequelize.literal(`DATE(end_date) >= '${new Date().toISOString().split("T")[0]}'`),
+      ],
+    },
+    order: [["id", "DESC"]],
+  }))?.semester?.toString() || null;
+  
+  const schoolFeesPaid = currentAcademicYear && currentSemester
+    ? await checkSchoolFeesPayment(studentId, currentAcademicYear, currentSemester)
     : false;
 
   const filteredExams = [];
