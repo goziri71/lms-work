@@ -11,7 +11,7 @@ import { TryCatchFunction } from "../../utils/tryCatch/index.js";
  * This handles payment processing and revenue distribution
  */
 export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
-  const { course_id, payment_reference, payment_method } = req.body;
+  const { course_id } = req.body;
   const studentId = req.user?.id;
 
   if (req.user?.userType !== "student") {
