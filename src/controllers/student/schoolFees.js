@@ -402,7 +402,9 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
   }
 
   const amount = feesCalculation.amount;
-  const currency = feesCalculation.currency;
+  // Ensure currency is always set and valid (required field, no null allowed)
+  // School fees payment is 100% wallet-based, no Flutterwave integration
+  const currency = (feesCalculation.currency || student.currency || "NGN").toString().toUpperCase().substring(0, 5);
 
   // Get current wallet balance (with automatic migration of old balances)
   const { balance: currentBalance } = await getWalletBalance(studentId, true);
@@ -452,23 +454,29 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
     );
 
     // Create SchoolFees record (per semester)
-    // Ensure field lengths match model constraints
-    const schoolFee = await SchoolFees.create(
-      {
-        student_id: studentId,
-        amount: amount,
-        status: "Paid",
-        academic_year: academicYear?.toString().substring(0, 20) || null,
-        semester: semester?.toString().substring(0, 20) || null,
-        date: today?.substring(0, 20) || null,
-        teller_no: txRef, // Already VARCHAR(255) after migration
-        matric_number: student.matric_number?.toString().substring(0, 40) || null,
-        type: "School Fees", // VARCHAR(50) - "School Fees" is 12 chars, safe
-        student_level: student.level?.toString().substring(0, 11) || null, // VARCHAR(11)
-        currency: currency?.toString().substring(0, 5).toUpperCase() || "NGN", // Required, VARCHAR(5)
-      },
-      { transaction }
-    );
+    // Ensure field lengths match model constraints and currency is always set
+    const schoolFeeData = {
+      student_id: studentId,
+      amount: Math.round(amount), // Ensure integer
+      status: "Paid",
+      academic_year: academicYear ? academicYear.toString().substring(0, 20) : null,
+      semester: semester ? semester.toString().substring(0, 20) : null,
+      date: today ? today.substring(0, 20) : null,
+      teller_no: txRef, // Already VARCHAR(255) after migration
+      matric_number: student.matric_number ? student.matric_number.toString().substring(0, 40) : null,
+      type: "School Fees", // VARCHAR(50) - "School Fees" is 12 chars, safe
+      student_level: student.level ? student.level.toString().substring(0, 11) : null, // VARCHAR(11)
+        currency: currency, // Already validated above, VARCHAR(5), always set
+    };
+
+    // Log the data being created for debugging
+    console.log("Creating SchoolFees record with data:", {
+      ...schoolFeeData,
+      currency_length: schoolFeeData.currency.length,
+      currency_value: schoolFeeData.currency,
+    });
+
+    const schoolFee = await SchoolFees.create(schoolFeeData, { transaction });
 
     // If we get here, all operations succeeded - commit the transaction
     await transaction.commit();
