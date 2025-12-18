@@ -452,19 +452,20 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
     );
 
     // Create SchoolFees record (per semester)
+    // Ensure field lengths match model constraints
     const schoolFee = await SchoolFees.create(
       {
         student_id: studentId,
         amount: amount,
         status: "Paid",
-        academic_year: academicYear,
-        semester: semester, // Save semester for per-semester payment tracking
-        date: today,
-        teller_no: txRef,
-        matric_number: student.matric_number,
-        type: "School Fees",
-        student_level: student.level,
-        currency: currency,
+        academic_year: academicYear?.toString().substring(0, 20) || null,
+        semester: semester?.toString().substring(0, 20) || null,
+        date: today?.substring(0, 20) || null,
+        teller_no: txRef, // Already VARCHAR(255) after migration
+        matric_number: student.matric_number?.toString().substring(0, 40) || null,
+        type: "School Fees", // VARCHAR(50) - "School Fees" is 12 chars, safe
+        student_level: student.level?.toString().substring(0, 11) || null, // VARCHAR(11)
+        currency: currency?.toString().substring(0, 5).toUpperCase() || "NGN", // Required, VARCHAR(5)
       },
       { transaction }
     );
@@ -496,7 +497,33 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
   } catch (error) {
     // If any error occurs, rollback the entire transaction
     await transaction.rollback();
-    console.error("❌ Error processing school fees payment, transaction rolled back:", error);
+    
+    // Enhanced error logging for validation errors
+    console.error("❌ Error processing school fees payment, transaction rolled back:", {
+      message: error.message,
+      name: error.name,
+      errors: error.errors,
+      original: error.original,
+      stack: error.stack,
+      studentId,
+      amount,
+      currency,
+      academicYear,
+      semester,
+      txRef,
+    });
+    
+    // If it's a Sequelize validation error, provide more details
+    if (error.name === "SequelizeValidationError" || error.name === "SequelizeDatabaseError") {
+      if (error.errors && error.errors.length > 0) {
+        const validationErrors = error.errors.map(e => `${e.path || e.column || 'unknown'}: ${e.message}`).join(", ");
+        throw new ErrorClass(`Validation error: ${validationErrors}`, 400);
+      }
+      // Database constraint errors
+      if (error.original) {
+        throw new ErrorClass(`Database error: ${error.original.message || error.message}`, 400);
+      }
+    }
     
     // Re-throw the error so it's handled by TryCatchFunction
     throw error;
