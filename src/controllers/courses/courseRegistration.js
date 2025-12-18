@@ -8,6 +8,7 @@ import { CourseOrder } from "../../models/payment/courseOrder.js";
 import { Funding } from "../../models/payment/funding.js";
 import { checkSchoolFeesPayment } from "../../services/paymentVerificationService.js";
 import { checkAndProgressStudentLevel } from "../../services/studentLevelProgressionService.js";
+import { getWalletBalance } from "../../services/walletBalanceService.js";
 
 /**
  * STUDENT REGISTER FOR COURSE(S)
@@ -184,13 +185,8 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
 
   // Check wallet balance if total amount > 0
   if (totalAmount > 0) {
-    const totalCredits = await Funding.sum("amount", {
-      where: { student_id: studentId, type: "Credit" },
-    });
-    const totalDebits = await Funding.sum("amount", {
-      where: { student_id: studentId, type: "Debit" },
-    });
-    const walletBalance = (totalCredits || 0) - (totalDebits || 0);
+    // Get wallet balance (with automatic migration of old balances)
+    const { balance: walletBalance } = await getWalletBalance(studentId, true);
 
     if (walletBalance < totalAmount) {
       throw new ErrorClass(

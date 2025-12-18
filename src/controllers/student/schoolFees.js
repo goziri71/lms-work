@@ -15,6 +15,7 @@ import {
   getTransactionCurrency,
   getTransactionReference,
 } from "../../services/flutterwaveService.js";
+import { getWalletBalance } from "../../services/walletBalanceService.js";
 
 /**
  * Get student's school fees information for current academic year
@@ -405,14 +406,8 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
   const amount = parseFloat(feesConfig.amount);
   const currency = feesConfig.currency;
 
-  // Get current wallet balance
-  const totalCredits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Credit" },
-  });
-  const totalDebits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Debit" },
-  });
-  const currentBalance = (totalCredits || 0) - (totalDebits || 0);
+  // Get current wallet balance (with automatic migration of old balances)
+  const { balance: currentBalance } = await getWalletBalance(studentId, true);
 
   // Check if wallet has sufficient balance
   if (currentBalance < amount) {

@@ -12,6 +12,7 @@ import {
   getTransactionAmount,
   getTransactionReference,
 } from "../../services/flutterwaveService.js";
+import { getWalletBalance } from "../../services/walletBalanceService.js";
 
 /**
  * Flutterwave webhook endpoint
@@ -143,14 +144,8 @@ export const flutterwaveWebhook = TryCatchFunction(async (req, res) => {
 
       const academicYear = currentSemester?.academic_year?.toString() || null;
 
-      // Get current wallet balance
-      const totalCredits = await Funding.sum("amount", {
-        where: { student_id: studentId, type: "Credit" },
-      });
-      const totalDebits = await Funding.sum("amount", {
-        where: { student_id: studentId, type: "Debit" },
-      });
-      const currentBalance = (totalCredits || 0) - (totalDebits || 0);
+      // Get current wallet balance (with automatic migration of old balances)
+      const { balance: currentBalance } = await getWalletBalance(studentId, true);
 
       // Credit wallet
       const newBalance = currentBalance + parseFloat(paymentTransaction.amount);

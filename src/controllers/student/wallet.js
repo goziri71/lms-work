@@ -12,6 +12,7 @@ import {
   getTransactionCurrency,
   getTransactionReference,
 } from "../../services/flutterwaveService.js";
+import { getWalletBalance as getWalletBalanceService } from "../../services/walletBalanceService.js";
 
 /**
  * Get student's wallet balance
@@ -31,14 +32,8 @@ export const getWalletBalance = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Student not found", 404);
   }
 
-  // Calculate wallet balance
-  const totalCredits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Credit" },
-  });
-  const totalDebits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Debit" },
-  });
-  const walletBalance = (totalCredits || 0) - (totalDebits || 0);
+  // Get wallet balance (with automatic migration of old balances)
+  const { balance: walletBalance, migrated } = await getWalletBalanceService(studentId, true);
 
   res.status(200).json({
     success: true,
@@ -46,6 +41,7 @@ export const getWalletBalance = TryCatchFunction(async (req, res) => {
     data: {
       wallet_balance: walletBalance,
       currency: student.currency || "NGN",
+      migrated: migrated, // Indicates if old balance was migrated
     },
   });
 });
@@ -151,13 +147,7 @@ export const fundWallet = TryCatchFunction(async (req, res) => {
 
   if (existingTransaction) {
     // Return existing transaction info
-    const totalCredits = await Funding.sum("amount", {
-      where: { student_id: studentId, type: "Credit" },
-    });
-    const totalDebits = await Funding.sum("amount", {
-      where: { student_id: studentId, type: "Debit" },
-    });
-    const currentBalance = (totalCredits || 0) - (totalDebits || 0);
+    const { balance: currentBalance } = await getWalletBalanceService(studentId, true);
 
     return res.status(200).json({
       success: true,
@@ -190,14 +180,8 @@ export const fundWallet = TryCatchFunction(async (req, res) => {
     flutterwave_response: flutterwaveTransaction,
   });
 
-  // Get current wallet balance
-  const totalCredits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Credit" },
-  });
-  const totalDebits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Debit" },
-  });
-  const currentBalance = (totalCredits || 0) - (totalDebits || 0);
+  // Get current wallet balance (with automatic migration of old balances)
+  const { balance: currentBalance } = await getWalletBalanceService(studentId, true);
 
   // Credit wallet
   const newBalance = currentBalance + transactionAmount;

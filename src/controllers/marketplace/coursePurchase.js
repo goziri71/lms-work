@@ -5,6 +5,7 @@ import { Funding } from "../../models/payment/funding.js";
 import { processMarketplacePurchase } from "../../services/revenueSharingService.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
+import { getWalletBalance } from "../../services/walletBalanceService.js";
 
 /**
  * Purchase marketplace course
@@ -59,14 +60,8 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
   }
 
   // All transactions use wallet balance (Flutterwave only funds wallet)
-  // Check wallet balance
-  const totalCredits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Credit" },
-  });
-  const totalDebits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Debit" },
-  });
-  const walletBalance = (totalCredits || 0) - (totalDebits || 0);
+  // Check wallet balance (with automatic migration of old balances)
+  const { balance: walletBalance } = await getWalletBalance(studentId, true);
 
   // Check if wallet has sufficient balance
   if (walletBalance < coursePrice) {

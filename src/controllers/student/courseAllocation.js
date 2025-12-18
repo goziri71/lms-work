@@ -10,6 +10,7 @@ import { Funding } from "../../models/payment/funding.js";
 import { CourseSemesterPricing } from "../../models/course/courseSemesterPricing.js";
 import { checkSchoolFeesPayment } from "../../services/paymentVerificationService.js";
 import { checkAndProgressStudentLevel } from "../../services/studentLevelProgressionService.js";
+import { getWalletBalance } from "../../services/walletBalanceService.js";
 
 // Helper function to get course price for semester
 const getCoursePriceForSemester = async (courseId, academicYear, semester) => {
@@ -284,14 +285,8 @@ export const registerAllocatedCourses = TryCatchFunction(async (req, res) => {
     });
   }
 
-  // Check wallet balance
-  const totalCredits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Credit" },
-  });
-  const totalDebits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Debit" },
-  });
-  const walletBalance = (totalCredits || 0) - (totalDebits || 0);
+  // Check wallet balance (with automatic migration of old balances)
+  const { balance: walletBalance } = await getWalletBalance(studentId, true);
 
   if (walletBalance < totalAmount) {
     throw new ErrorClass(
