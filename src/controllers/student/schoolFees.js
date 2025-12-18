@@ -17,6 +17,7 @@ import {
 } from "../../services/flutterwaveService.js";
 import { getWalletBalance } from "../../services/walletBalanceService.js";
 import { calculateSchoolFeesForStudent } from "../../services/schoolFeesCalculationService.js";
+import { db } from "../../database/database.js";
 
 /**
  * Get student's school fees information for current academic year
@@ -417,61 +418,87 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
   // Generate transaction reference
   const txRef = `WALLET-SCHOOL-FEES-${Date.now()}`;
 
-  // Debit wallet
-  const newBalance = currentBalance - amount;
+  // Use database transaction to ensure atomicity
+  // If any step fails, everything will be rolled back
+  const transaction = await db.transaction();
 
-  const funding = await Funding.create({
-    student_id: studentId,
-    amount: amount,
-    type: "Debit",
-    service_name: "School Fees Payment",
-    ref: txRef,
-    date: today,
-    semester: currentSemester.semester || null,
-    academic_year: academicYear,
-    currency: currency,
-    balance: newBalance.toString(),
-  });
+  try {
+    // Debit wallet
+    const newBalance = currentBalance - amount;
 
-  // Update student wallet_balance
-  await student.update({
-    wallet_balance: newBalance,
-  });
-
-  // Create SchoolFees record (per semester)
-  const schoolFee = await SchoolFees.create({
-    student_id: studentId,
-    amount: amount,
-    status: "Paid",
-    academic_year: academicYear,
-    semester: semester, // Save semester for per-semester payment tracking
-    date: today,
-    teller_no: txRef,
-    matric_number: student.matric_number,
-    type: "School Fees",
-    student_level: student.level,
-    currency: currency,
-  });
-
-  res.status(200).json({
-    success: true,
-    message: "School fees paid successfully from wallet",
-    data: {
-      payment: {
-        id: schoolFee.id,
+    // Create Funding record (Debit)
+    const funding = await Funding.create(
+      {
+        student_id: studentId,
         amount: amount,
-        currency: currency,
-        academic_year: academicYear,
-        semester: semester,
-        payment_reference: txRef,
+        type: "Debit",
+        service_name: "School Fees Payment",
+        ref: txRef,
         date: today,
+        semester: currentSemester.semester || null,
+        academic_year: academicYear,
+        currency: currency,
+        balance: newBalance.toString(),
       },
-      wallet: {
-        previous_balance: currentBalance,
-        new_balance: newBalance,
-        debited: amount,
+      { transaction }
+    );
+
+    // Update student wallet_balance
+    await student.update(
+      {
+        wallet_balance: newBalance,
+      },
+      { transaction }
+    );
+
+    // Create SchoolFees record (per semester)
+    const schoolFee = await SchoolFees.create(
+      {
+        student_id: studentId,
+        amount: amount,
+        status: "Paid",
+        academic_year: academicYear,
+        semester: semester, // Save semester for per-semester payment tracking
+        date: today,
+        teller_no: txRef,
+        matric_number: student.matric_number,
+        type: "School Fees",
+        student_level: student.level,
         currency: currency,
       },
-    },
-  });
+      { transaction }
+    );
+
+    // If we get here, all operations succeeded - commit the transaction
+    await transaction.commit();
+
+    res.status(200).json({
+      success: true,
+      message: "School fees paid successfully from wallet",
+      data: {
+        payment: {
+          id: schoolFee.id,
+          amount: amount,
+          currency: currency,
+          academic_year: academicYear,
+          semester: semester,
+          payment_reference: txRef,
+          date: today,
+        },
+        wallet: {
+          previous_balance: currentBalance,
+          new_balance: newBalance,
+          debited: amount,
+          currency: currency,
+        },
+      },
+    });
+  } catch (error) {
+    // If any error occurs, rollback the entire transaction
+    await transaction.rollback();
+    console.error("❌ Error processing school fees payment, transaction rolled back:", error);
+    
+    // Re-throw the error so it's handled by TryCatchFunction
+    throw error;
+  }
 });

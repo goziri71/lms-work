@@ -38,7 +38,7 @@ export const SchoolFees = db.define(
       allowNull: true,
     },
     teller_no: {
-      type: DataTypes.STRING(20),
+      type: DataTypes.STRING(255),
       allowNull: true,
     },
     matric_number: {
