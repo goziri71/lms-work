@@ -300,6 +300,7 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
   });
 
   // Check current semester school fees status
+  // Only check for "Paid" status to accurately show if student has paid
   let currentSemesterSchoolFees = null;
   if (currentSemester) {
     currentSemesterSchoolFees = await SchoolFees.findOne({
@@ -307,6 +308,7 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
         student_id: id,
         academic_year: currentSemester.academic_year?.toString() || null,
         semester: currentSemester.semester?.toString() || null,
+        status: "Paid", // Only check for paid records
       },
       order: [["id", "DESC"]],
     });
