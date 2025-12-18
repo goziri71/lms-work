@@ -15,6 +15,7 @@ import {
 } from "../controllers/student/courseAllocation.js";
 import {
   getMySchoolFees,
+  getMySchoolFeesHistory,
   verifySchoolFeesPayment,
   paySchoolFeesFromWallet,
 } from "../controllers/student/schoolFees.js";
@@ -61,6 +62,7 @@ router.post("/register-allocated", authorize, registerAllocatedCourses);
 
 // School fees endpoints (student)
 router.get("/school-fees", authorize, getMySchoolFees);
+router.get("/school-fees/history", authorize, getMySchoolFeesHistory);
 router.post("/school-fees/verify", authorize, verifySchoolFeesPayment);
 router.post("/school-fees/pay-from-wallet", authorize, paySchoolFeesFromWallet);
 

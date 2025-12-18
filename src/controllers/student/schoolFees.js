@@ -137,6 +137,74 @@ export const getMySchoolFees = TryCatchFunction(async (req, res) => {
 });
 
 /**
+ * Get student's school fees payment history
+ * GET /api/courses/school-fees/history
+ */
+export const getMySchoolFeesHistory = TryCatchFunction(async (req, res) => {
+  const studentId = Number(req.user?.id);
+  const userType = req.user?.userType;
+
+  if (userType !== "student") {
+    throw new ErrorClass("Only students can access this endpoint", 403);
+  }
+
+  // Get query parameters for filtering
+  const { page = 1, limit = 20, status, semester, academic_year } = req.query;
+
+  // Build where clause
+  const where = {
+    student_id: studentId,
+  };
+
+  if (status) {
+    where.status = status; // Filter by status (Paid, Pending, etc.)
+  }
+
+  if (semester) {
+    where.semester = semester.toString().toUpperCase();
+  }
+
+  if (academic_year) {
+    where.academic_year = academic_year.toString();
+  }
+
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+
+  // Get school fees history with pagination
+  const { count, rows: schoolFeesHistory } = await SchoolFees.findAndCountAll({
+    where,
+    limit: parseInt(limit),
+    offset,
+    order: [["date", "DESC"], ["id", "DESC"]], // Most recent first
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "School fees payment history retrieved successfully",
+    data: {
+      history: schoolFeesHistory.map((fee) => ({
+        id: fee.id,
+        amount: fee.amount,
+        currency: fee.currency || "NGN",
+        status: fee.status,
+        academic_year: fee.academic_year,
+        semester: fee.semester,
+        date: fee.date,
+        teller_no: fee.teller_no,
+        type: fee.type,
+        student_level: fee.student_level,
+      })),
+      pagination: {
+        total: count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(count / parseInt(limit)),
+      },
+    },
+  });
+});
+
+/**
  * Verify Flutterwave payment and fund wallet only
  * NOTE: This endpoint is kept for backward compatibility but now only funds wallet
  * For paying school fees, use paySchoolFeesFromWallet after funding
