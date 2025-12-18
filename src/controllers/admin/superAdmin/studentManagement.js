@@ -294,9 +294,26 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
   const walletBalance = (totalCredits || 0) - (totalDebits || 0);
 
   // Get school fees history
+  // Ensure id is a number for proper matching
+  const studentIdNum = parseInt(id, 10);
   const schoolFeesHistory = await SchoolFees.findAll({
-    where: { student_id: id },
-    order: [["date", "DESC"]],
+    where: { student_id: studentIdNum },
+    order: [["date", "DESC"], ["id", "DESC"]],
+    raw: false, // Keep as Sequelize instances for proper serialization
+  });
+
+  // Log for debugging
+  console.log(`📊 School fees history query for student ${studentIdNum}:`, {
+    studentId: studentIdNum,
+    foundRecords: schoolFeesHistory.length,
+    records: schoolFeesHistory.map(f => ({
+      id: f.id,
+      student_id: f.student_id,
+      status: f.status,
+      academic_year: f.academic_year,
+      semester: f.semester,
+      amount: f.amount,
+    })),
   });
 
   // Check current semester school fees status
@@ -579,7 +596,22 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
       },
       payments: {
         schoolFees: {
-          history: schoolFeesHistory,
+          history: schoolFeesHistory.map((fee) => ({
+            id: fee.id,
+            student_id: fee.student_id,
+            amount: fee.amount,
+            currency: fee.currency || "NGN",
+            status: fee.status,
+            academic_year: fee.academic_year,
+            semester: fee.semester,
+            date: fee.date,
+            teller_no: fee.teller_no,
+            matric_number: fee.matric_number,
+            type: fee.type,
+            student_level: fee.student_level,
+            balance: fee.balance,
+            total_amount: fee.total_amount,
+          })),
           currentSemester: currentSemesterSchoolFees
             ? {
                 id: currentSemesterSchoolFees.id,
