@@ -47,13 +47,6 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Only students can access this endpoint", 403);
   }
 
-  // Get student to retrieve currency
-  const student = await Students.findByPk(studentId);
-  if (!student) {
-    throw new ErrorClass("Student not found", 404);
-  }
-  const currency = student.currency || "NGN";
-
   // Get current semester
   const currentDate = new Date();
   const today = currentDate.toISOString().split("T")[0];
@@ -111,6 +104,7 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
           "course_unit",
           "program_id",
           "faculty_id",
+          "currency",
         ],
       },
     ],
@@ -134,7 +128,7 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
         course_unit: allocation.course?.course_unit,
       },
       price: price,
-      currency: currency,
+      currency: allocation.course?.currency || "NGN",
       allocated_at: allocation.allocated_at,
     };
   });
