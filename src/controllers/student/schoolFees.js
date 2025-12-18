@@ -555,6 +555,14 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
       const errorDetail = dbError.detail || "";
       const errorConstraint = dbError.constraint || "";
       
+      // Handle primary key sequence issues
+      if (errorConstraint === "school_fees_pkey" && errorMessage.includes("duplicate key")) {
+        throw new ErrorClass(
+          "Database sequence error. Please contact admin to fix the sequence. Error: " + errorDetail,
+          500
+        );
+      }
+      
       // Provide detailed error message
       let detailedMessage = `Database error: ${errorMessage}`;
       if (errorDetail) {
