@@ -114,6 +114,14 @@ import {
   getSchoolFeesConfigurations,
 } from "../controllers/admin/superAdmin/schoolFeesManagement.js";
 import {
+  getAllPaymentSetup,
+  getPaymentSetupById,
+  createPaymentSetup,
+  updatePaymentSetup,
+  deletePaymentSetup,
+  getPaymentSetupStats,
+} from "../controllers/admin/superAdmin/paymentSetupManagement.js";
+import {
   manuallyVerifyPayment,
   getPaymentTransaction,
 } from "../controllers/admin/superAdmin/paymentVerification.js";
@@ -353,6 +361,14 @@ router.get(
   requireSuperAdmin,
   getSchoolFeesConfigurations
 );
+
+// Payment Setup Management (Super Admin Only)
+router.get("/payment-setup", requireSuperAdmin, getAllPaymentSetup);
+router.get("/payment-setup/stats", requireSuperAdmin, getPaymentSetupStats);
+router.get("/payment-setup/:id", requireSuperAdmin, getPaymentSetupById);
+router.post("/payment-setup", requireSuperAdmin, createPaymentSetup);
+router.put("/payment-setup/:id", requireSuperAdmin, updatePaymentSetup);
+router.delete("/payment-setup/:id", requireSuperAdmin, deletePaymentSetup);
 
 // Payment Verification (Super Admin Only)
 router.post(

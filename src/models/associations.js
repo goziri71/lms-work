@@ -324,6 +324,27 @@ export const setupAssociations = () => {
     as: "student",
   });
 
+  // School Fees Configuration associations
+  // Program -> SchoolFeesConfiguration (One-to-Many)
+  Program.hasMany(SchoolFeesConfiguration, {
+    foreignKey: "program_id",
+    as: "schoolFeesConfigurations",
+  });
+  SchoolFeesConfiguration.belongsTo(Program, {
+    foreignKey: "program_id",
+    as: "program",
+  });
+
+  // Faculty -> SchoolFeesConfiguration (One-to-Many)
+  Faculty.hasMany(SchoolFeesConfiguration, {
+    foreignKey: "faculty_id",
+    as: "schoolFeesConfigurations",
+  });
+  SchoolFeesConfiguration.belongsTo(Faculty, {
+    foreignKey: "faculty_id",
+    as: "faculty",
+  });
+
   // Students -> SchoolAttended (One-to-Many)
   Students.hasMany(SchoolAttended, {
     foreignKey: "student_id",

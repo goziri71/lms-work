@@ -16,6 +16,7 @@ import {
   getTransactionReference,
 } from "../../services/flutterwaveService.js";
 import { getWalletBalance } from "../../services/walletBalanceService.js";
+import { calculateSchoolFeesForStudent } from "../../services/schoolFeesCalculationService.js";
 
 /**
  * Get student's school fees information for current academic year
@@ -72,21 +73,15 @@ export const getMySchoolFees = TryCatchFunction(async (req, res) => {
   }
 
   const academicYear = currentSemester.academic_year?.toString();
+  const semester = currentSemester.semester?.toString();
 
-  // Get school fees configuration for this student
-  const feesConfig = await getSchoolFeesForStudent(student, academicYear);
-
-  if (!feesConfig) {
-    return res.status(200).json({
-      success: true,
-      message: "No school fees configuration found for current academic year",
-      data: {
-        academic_year: academicYear,
-        school_fees: null,
-        payment_status: "not_configured",
-      },
-    });
-  }
+  // Calculate school fees using Payment Setup (standard) + Configuration (override)
+  const feesCalculation = await calculateSchoolFeesForStudent(
+    student,
+    academicYear,
+    semester,
+    student.currency
+  );
 
   // Check if student has already paid for this semester
   const existingPayment = await SchoolFees.findOne({
@@ -99,17 +94,11 @@ export const getMySchoolFees = TryCatchFunction(async (req, res) => {
     order: [["id", "DESC"]],
   });
 
-  const amount = parseFloat(feesConfig.amount);
-  const currency = feesConfig.currency;
+  const amount = feesCalculation.amount;
+  const currency = feesCalculation.currency;
 
-  // Get wallet balance
-  const totalCredits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Credit" },
-  });
-  const totalDebits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Debit" },
-  });
-  const walletBalance = (totalCredits || 0) - (totalDebits || 0);
+  // Get wallet balance (with automatic migration of old balances)
+  const { balance: walletBalance } = await getWalletBalance(studentId, true);
   const canPayFromWallet = walletBalance >= amount;
 
   res.status(200).json({
@@ -121,8 +110,10 @@ export const getMySchoolFees = TryCatchFunction(async (req, res) => {
       school_fees: {
         amount: amount,
         currency: currency,
-        level: feesConfig.level,
-        description: feesConfig.description,
+        source: feesCalculation.source, // 'payment_setup' or 'configuration'
+        items: feesCalculation.items, // Itemized breakdown from Payment Setup
+        payment_setup_total: feesCalculation.payment_setup_total, // Total from Payment Setup
+        configuration: feesCalculation.configuration, // Configuration details if override was used
       },
       payment_status: existingPayment ? "paid" : "pending",
       payment: existingPayment
@@ -393,18 +384,24 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
     );
   }
 
-  // Get school fees configuration
-  const feesConfig = await getSchoolFeesForStudent(student, academicYear);
+  // Calculate school fees using Payment Setup (standard) + Configuration (override)
+  const feesCalculation = await calculateSchoolFeesForStudent(
+    student,
+    academicYear,
+    semester,
+    student.currency
+  );
 
-  if (!feesConfig) {
+  // If no Payment Setup items exist and no Configuration, throw error
+  if (feesCalculation.amount === 0 && feesCalculation.items.length === 0) {
     throw new ErrorClass(
-      "School fees not configured for your level/program in this academic year",
+      "School fees not configured for this semester. Please contact admin.",
       404
     );
   }
 
-  const amount = parseFloat(feesConfig.amount);
-  const currency = feesConfig.currency;
+  const amount = feesCalculation.amount;
+  const currency = feesCalculation.currency;
 
   // Get current wallet balance (with automatic migration of old balances)
   const { balance: currentBalance } = await getWalletBalance(studentId, true);

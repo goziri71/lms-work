@@ -19,7 +19,8 @@ export const PaymentSetup = db.define(
     },
     description: {
       type: DataTypes.STRING(300),
-      allowNull: false,
+      allowNull: true, // Allow empty strings as per SQL dump
+      defaultValue: "",
     },
     semester: {
       type: DataTypes.STRING(15),
