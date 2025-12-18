@@ -143,22 +143,10 @@ export const getSchoolFeesConfigurations = TryCatchFunction(async (req, res) => 
   if (faculty_id) where.faculty_id = parseInt(faculty_id);
   if (is_active !== undefined) where.is_active = is_active === "true";
 
+  // Fetch configurations without associations to avoid association errors
   const configurations = await SchoolFeesConfiguration.findAll({
     where,
-    include: [
-      {
-        model: Program,
-        as: "program",
-        attributes: ["id", "name", "code"],
-        required: false,
-      },
-      {
-        model: Faculty,
-        as: "faculty",
-        attributes: ["id", "name", "code"],
-        required: false,
-      },
-    ],
+    attributes: ["id", "academic_year", "level", "program_id", "faculty_id", "amount", "currency", "is_active", "description", "created_at", "updated_at"],
     order: [
       ["academic_year", "DESC"],
       ["level", "ASC"],
@@ -166,35 +154,58 @@ export const getSchoolFeesConfigurations = TryCatchFunction(async (req, res) => 
     ],
   });
 
+  // Fetch program and faculty details separately if IDs exist
+  const programIds = [...new Set(configurations.map(c => c.program_id).filter(Boolean))];
+  const facultyIds = [...new Set(configurations.map(c => c.faculty_id).filter(Boolean))];
+
+  const programs = programIds.length > 0 ? await Program.findAll({
+    where: { id: { [Op.in]: programIds } },
+    attributes: ["id", "name", "code"],
+  }) : [];
+
+  const faculties = facultyIds.length > 0 ? await Faculty.findAll({
+    where: { id: { [Op.in]: facultyIds } },
+    attributes: ["id", "name", "code"],
+  }) : [];
+
+  // Create lookup maps
+  const programMap = new Map(programs.map(p => [p.id, p]));
+  const facultyMap = new Map(faculties.map(f => [f.id, f]));
+
   res.status(200).json({
     success: true,
     message: "School fees configurations retrieved successfully",
     data: {
-      configurations: configurations.map((config) => ({
-        id: config.id,
-        academic_year: config.academic_year,
-        level: config.level,
-        program: config.program
-          ? {
-              id: config.program.id,
-              name: config.program.name,
-              code: config.program.code,
-            }
-          : null,
-        faculty: config.faculty
-          ? {
-              id: config.faculty.id,
-              name: config.faculty.name,
-              code: config.faculty.code,
-            }
-          : null,
-        amount: parseFloat(config.amount),
-        currency: config.currency,
-        is_active: config.is_active,
-        description: config.description,
-        created_at: config.created_at,
-        updated_at: config.updated_at,
-      })),
+      configurations: configurations.map((config) => {
+        const program = config.program_id ? programMap.get(config.program_id) : null;
+        const faculty = config.faculty_id ? facultyMap.get(config.faculty_id) : null;
+
+        return {
+          id: config.id,
+          academic_year: config.academic_year,
+          level: config.level,
+          program: program
+            ? {
+                id: program.id,
+                name: program.name,
+                code: program.code,
+              }
+            : null,
+          faculty: faculty
+            ? {
+                id: faculty.id,
+                name: faculty.name,
+                code: faculty.code,
+              }
+            : null,
+          amount: parseFloat(config.amount),
+          currency: config.currency,
+          is_active: config.is_active,
+          description: config.description,
+          created_at: config.created_at,
+          updated_at: config.updated_at,
+        };
+      }),
       count: configurations.length,
     },
   });
