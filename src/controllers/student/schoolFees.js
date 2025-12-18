@@ -466,17 +466,32 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
       matric_number: student.matric_number ? student.matric_number.toString().substring(0, 40) : null,
       type: "School Fees", // VARCHAR(50) - "School Fees" is 12 chars, safe
       student_level: student.level ? student.level.toString().substring(0, 11) : null, // VARCHAR(11)
-        currency: currency, // Already validated above, VARCHAR(5), always set
+      currency: currency, // Already validated above, VARCHAR(5), always set
     };
 
     // Log the data being created for debugging
-    console.log("Creating SchoolFees record with data:", {
-      ...schoolFeeData,
-      currency_length: schoolFeeData.currency.length,
-      currency_value: schoolFeeData.currency,
-    });
+    console.log("Creating SchoolFees record with data:", JSON.stringify(schoolFeeData, null, 2));
 
-    const schoolFee = await SchoolFees.create(schoolFeeData, { transaction });
+    let schoolFee;
+    try {
+      schoolFee = await SchoolFees.create(schoolFeeData, { transaction });
+    } catch (createError) {
+      // Log detailed error before re-throwing
+      console.error("❌ SchoolFees.create failed with detailed error:", {
+        name: createError.name,
+        message: createError.message,
+        errors: createError.errors ? JSON.stringify(createError.errors, null, 2) : null,
+        original: createError.original ? {
+          message: createError.original.message,
+          code: createError.original.code,
+          detail: createError.original.detail,
+          constraint: createError.original.constraint,
+          table: createError.original.table,
+        } : null,
+        schoolFeeData: JSON.stringify(schoolFeeData, null, 2),
+      });
+      throw createError; // Re-throw to be caught by outer catch block
+    }
 
     // If we get here, all operations succeeded - commit the transaction
     await transaction.commit();
@@ -510,9 +525,13 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
     console.error("❌ Error processing school fees payment, transaction rolled back:", {
       message: error.message,
       name: error.name,
-      errors: error.errors,
-      original: error.original,
-      stack: error.stack,
+      errors: error.errors ? JSON.stringify(error.errors, null, 2) : null,
+      original: error.original ? {
+        message: error.original.message,
+        code: error.original.code,
+        detail: error.original.detail,
+        constraint: error.original.constraint,
+      } : null,
       studentId,
       amount,
       currency,
@@ -522,15 +541,30 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
     });
     
     // If it's a Sequelize validation error, provide more details
-    if (error.name === "SequelizeValidationError" || error.name === "SequelizeDatabaseError") {
+    if (error.name === "SequelizeValidationError") {
       if (error.errors && error.errors.length > 0) {
         const validationErrors = error.errors.map(e => `${e.path || e.column || 'unknown'}: ${e.message}`).join(", ");
         throw new ErrorClass(`Validation error: ${validationErrors}`, 400);
       }
-      // Database constraint errors
-      if (error.original) {
-        throw new ErrorClass(`Database error: ${error.original.message || error.message}`, 400);
+    }
+    
+    // Database constraint errors (e.g., unique constraint, foreign key, check constraint)
+    if (error.name === "SequelizeDatabaseError" || error.original) {
+      const dbError = error.original || error;
+      const errorMessage = dbError.message || error.message;
+      const errorDetail = dbError.detail || "";
+      const errorConstraint = dbError.constraint || "";
+      
+      // Provide detailed error message
+      let detailedMessage = `Database error: ${errorMessage}`;
+      if (errorDetail) {
+        detailedMessage += ` | Detail: ${errorDetail}`;
       }
+      if (errorConstraint) {
+        detailedMessage += ` | Constraint: ${errorConstraint}`;
+      }
+      
+      throw new ErrorClass(detailedMessage, 400);
     }
     
     // Re-throw the error so it's handled by TryCatchFunction
