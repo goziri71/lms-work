@@ -160,12 +160,12 @@ export const getSchoolFeesConfigurations = TryCatchFunction(async (req, res) => 
 
   const programs = programIds.length > 0 ? await Program.findAll({
     where: { id: { [Op.in]: programIds } },
-    attributes: ["id", "name", "code"],
+    attributes: ["id", "title", "description"],
   }) : [];
 
   const faculties = facultyIds.length > 0 ? await Faculty.findAll({
     where: { id: { [Op.in]: facultyIds } },
-    attributes: ["id", "name", "code"],
+    attributes: ["id", "name", "description"],
   }) : [];
 
   // Create lookup maps
@@ -187,15 +187,15 @@ export const getSchoolFeesConfigurations = TryCatchFunction(async (req, res) => 
           program: program
             ? {
                 id: program.id,
-                name: program.name,
-                code: program.code,
+                name: program.title, // Program uses 'title' not 'name'
+                description: program.description,
               }
             : null,
           faculty: faculty
             ? {
                 id: faculty.id,
                 name: faculty.name,
-                code: faculty.code,
+                description: faculty.description,
               }
             : null,
           amount: parseFloat(config.amount),
