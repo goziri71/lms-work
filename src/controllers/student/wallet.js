@@ -33,7 +33,10 @@ export const getWalletBalance = TryCatchFunction(async (req, res) => {
   }
 
   // Get wallet balance (with automatic migration of old balances)
-  const { balance: walletBalance, migrated } = await getWalletBalanceService(studentId, true);
+  const { balance: walletBalance, migrated } = await getWalletBalanceService(
+    studentId,
+    true
+  );
 
   res.status(200).json({
     success: true,
@@ -61,7 +64,8 @@ export const fundWallet = TryCatchFunction(async (req, res) => {
   }
 
   // Frontend sends transaction reference from Flutterwave callback
-  const { transaction_reference, flutterwave_transaction_id, amount } = req.body || {};
+  const { transaction_reference, flutterwave_transaction_id, amount } =
+    req.body || {};
 
   if (!transaction_reference && !flutterwave_transaction_id) {
     throw new ErrorClass(
@@ -109,13 +113,13 @@ export const fundWallet = TryCatchFunction(async (req, res) => {
   try {
     verificationResult = await verifyTransaction(verificationId);
   } catch (error) {
-    throw new ErrorClass(
-      `Payment verification failed: ${error.message}`,
-      400
-    );
+    throw new ErrorClass(`Payment verification failed: ${error.message}`, 400);
   }
 
-  if (!verificationResult.success || !isTransactionSuccessful(verificationResult.transaction)) {
+  if (
+    !verificationResult.success ||
+    !isTransactionSuccessful(verificationResult.transaction)
+  ) {
     throw new ErrorClass("Payment was not successful", 400);
   }
 
@@ -147,7 +151,10 @@ export const fundWallet = TryCatchFunction(async (req, res) => {
 
   if (existingTransaction) {
     // Return existing transaction info
-    const { balance: currentBalance } = await getWalletBalanceService(studentId, true);
+    const { balance: currentBalance } = await getWalletBalanceService(
+      studentId,
+      true
+    );
 
     return res.status(200).json({
       success: true,
@@ -181,7 +188,10 @@ export const fundWallet = TryCatchFunction(async (req, res) => {
   });
 
   // Get current wallet balance (with automatic migration of old balances)
-  const { balance: currentBalance } = await getWalletBalanceService(studentId, true);
+  const { balance: currentBalance } = await getWalletBalanceService(
+    studentId,
+    true
+  );
 
   // Credit wallet
   const newBalance = currentBalance + transactionAmount;
@@ -223,3 +233,106 @@ export const fundWallet = TryCatchFunction(async (req, res) => {
   });
 });
 
+/**
+ * Get student's funding transaction history
+ * GET /api/wallet/transactions
+ */
+export const getFundingHistory = TryCatchFunction(async (req, res) => {
+  const studentId = Number(req.user?.id);
+  const userType = req.user?.userType;
+
+  if (userType !== "student") {
+    throw new ErrorClass("Only students can access this endpoint", 403);
+  }
+
+  // Get student
+  const student = await Students.findByPk(studentId);
+  if (!student) {
+    throw new ErrorClass("Student not found", 404);
+  }
+
+  // Get query parameters for filtering
+  const {
+    page = 1,
+    limit = 50,
+    type, // Credit or Debit
+    semester,
+    academic_year,
+    start_date,
+    end_date,
+  } = req.query;
+
+  // Build where clause - always filter by current student
+  const where = {
+    student_id: studentId,
+  };
+
+  if (type) {
+    where.type = type; // Filter by Credit or Debit
+  }
+
+  if (semester) {
+    where.semester = semester.toString().toUpperCase();
+  }
+
+  if (academic_year) {
+    where.academic_year = academic_year.toString();
+  }
+
+  // Date filtering (if dates are provided)
+  if (start_date || end_date) {
+    where.date = {};
+    if (start_date) where.date[Op.gte] = start_date;
+    if (end_date) where.date[Op.lte] = end_date;
+  }
+
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+
+  // Get funding transactions with pagination
+  const { count, rows: fundings } = await Funding.findAndCountAll({
+    where,
+    limit: parseInt(limit),
+    offset,
+    // Order by date DESC (most recent first), then by id DESC as tiebreaker
+    order: [
+      ["date", "DESC"],
+      ["id", "DESC"],
+    ],
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Funding history retrieved successfully",
+    data: {
+      transactions: fundings.map((funding) => ({
+        id: funding.id,
+        type: funding.type, // Credit or Debit
+        amount: parseFloat(funding.amount) || 0,
+        currency: funding.currency || student.currency || "NGN",
+        service_name: funding.service_name,
+        ref: funding.ref,
+        date: funding.date,
+        semester: funding.semester,
+        academic_year: funding.academic_year,
+        balance: funding.balance ? parseFloat(funding.balance) : null,
+      })),
+      pagination: {
+        total: count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(count / parseInt(limit)),
+      },
+      summary: {
+        currency: student.currency || "NGN",
+        total_credits:
+          (await Funding.sum("amount", {
+            where: { ...where, type: "Credit" },
+          })) || 0,
+        total_debits:
+          (await Funding.sum("amount", {
+            where: { ...where, type: "Debit" },
+          })) || 0,
+      },
+    },
+  });
+});
