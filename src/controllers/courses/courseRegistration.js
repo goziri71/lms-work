@@ -225,7 +225,7 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
 
     funding = await Funding.create({
       student_id: studentId,
-      amount: totalAmount,
+      amount: totalAmount, // DECIMAL(10, 2) - supports decimal amounts accurately
       type: "Debit",
       service_name: "Course Registration",
       date: today,

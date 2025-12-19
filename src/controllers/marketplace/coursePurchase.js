@@ -115,11 +115,9 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
   const newBalance = walletBalance - priceInStudentCurrency;
 
   // Create Funding transaction (Debit) - store in student's currency
-  // Note: Funding.amount is INTEGER, so we round to nearest integer
-  // But wallet_balance maintains decimal precision
   await Funding.create({
     student_id: studentId,
-    amount: Math.round(priceInStudentCurrency), // Round to integer for Funding record
+    amount: priceInStudentCurrency, // DECIMAL(10, 2) - supports decimal amounts accurately
     type: "Debit",
     service_name: "Marketplace Course Purchase",
     ref: txRef,

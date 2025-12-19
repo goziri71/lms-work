@@ -14,8 +14,9 @@ export const Funding = db.define(
       allowNull: true,
     },
     amount: {
-      type: DataTypes.INTEGER,
+      type: DataTypes.DECIMAL(10, 2),
       allowNull: true,
+      comment: "Amount in student's currency (supports decimals for USD, etc.)",
     },
     date: {
       type: DataTypes.STRING(20),

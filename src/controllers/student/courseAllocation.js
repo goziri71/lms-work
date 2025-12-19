@@ -8,6 +8,7 @@ import { Semester } from "../../models/auth/semester.js";
 import { CourseOrder } from "../../models/payment/courseOrder.js";
 import { Funding } from "../../models/payment/funding.js";
 import { CourseSemesterPricing } from "../../models/course/courseSemesterPricing.js";
+import { GeneralSetup } from "../../models/settings/generalSetup.js";
 import { checkSchoolFeesPayment } from "../../services/paymentVerificationService.js";
 import { checkAndProgressStudentLevel } from "../../services/studentLevelProgressionService.js";
 import { getWalletBalance } from "../../services/walletBalanceService.js";
@@ -250,7 +251,7 @@ export const registerAllocatedCourses = TryCatchFunction(async (req, res) => {
       {
         model: Courses,
         as: "course",
-        attributes: ["id", "title", "course_code", "price"],
+        attributes: ["id", "title", "course_code", "price", "currency"],
       },
     ],
   });
@@ -262,25 +263,77 @@ export const registerAllocatedCourses = TryCatchFunction(async (req, res) => {
     );
   }
 
+  // Get exchange rate for currency conversion
+  const generalSetup = await GeneralSetup.findOne({
+    order: [["id", "DESC"]],
+  });
+  const exchangeRate = parseFloat(generalSetup?.rate || "1500"); // Default 1500 if not set
+
+  // Get student currency
+  const studentCurrency = (student.currency || "NGN").toUpperCase();
+
   // Calculate total amount (use current prices, not allocated prices)
+  // But convert to student's currency
   let totalAmount = 0;
   const courseDetails = [];
 
   for (const allocation of allocatedCourses) {
-    // Get current price (may have changed since allocation)
-    const currentPrice = await getCoursePriceForSemester(
-      allocation.course_id,
-      currentSemester.academic_year?.toString(),
-      currentSemester.semester?.toString()
-    );
+    // Get current price and currency (may have changed since allocation)
+    // First check CourseSemesterPricing for currency
+    const semesterPricing = await CourseSemesterPricing.findOne({
+      where: {
+        course_id: allocation.course_id,
+        academic_year: currentSemester.academic_year?.toString(),
+        semester: currentSemester.semester?.toString(),
+      },
+    });
 
-    totalAmount += currentPrice;
+    let currentPrice = 0;
+    let courseCurrency = "NGN";
+
+    if (semesterPricing) {
+      currentPrice = parseFloat(semesterPricing.price) || 0;
+      courseCurrency = (semesterPricing.currency || allocation.course?.currency || "NGN").toUpperCase();
+    } else {
+      // Fallback to course base price
+      currentPrice = await getCoursePriceForSemester(
+        allocation.course_id,
+        currentSemester.academic_year?.toString(),
+        currentSemester.semester?.toString()
+      );
+      // Get currency from included course or fetch if not included
+      if (allocation.course?.currency) {
+        courseCurrency = allocation.course.currency.toUpperCase();
+      } else {
+        // Fallback: fetch course if currency not in include
+        const course = await Courses.findByPk(allocation.course_id, {
+          attributes: ["currency"],
+        });
+        courseCurrency = (course?.currency || "NGN").toUpperCase();
+      }
+    }
+
+    // Convert price to student's currency if they differ
+    let priceInStudentCurrency = currentPrice;
+    if (courseCurrency !== studentCurrency) {
+      if (courseCurrency === "USD" && studentCurrency === "NGN") {
+        // USD to NGN: multiply by exchange rate
+        priceInStudentCurrency = currentPrice * exchangeRate;
+      } else if (courseCurrency === "NGN" && studentCurrency === "USD") {
+        // NGN to USD: divide by exchange rate
+        priceInStudentCurrency = currentPrice / exchangeRate;
+      }
+      // Round to 2 decimal places
+      priceInStudentCurrency = Math.round(priceInStudentCurrency * 100) / 100;
+    }
+
+    totalAmount += priceInStudentCurrency;
     courseDetails.push({
       allocation_id: allocation.id,
       course_id: allocation.course_id,
       course_code: allocation.course?.course_code,
       course_title: allocation.course?.title,
-      price: currentPrice,
+      price: priceInStudentCurrency,
       allocated_price: allocation.allocated_price
         ? parseFloat(allocation.allocated_price)
         : null,
@@ -311,13 +364,13 @@ export const registerAllocatedCourses = TryCatchFunction(async (req, res) => {
   // Create Funding transaction (Debit)
   const funding = await Funding.create({
     student_id: studentId,
-    amount: totalAmount,
+    amount: totalAmount, // DECIMAL(10, 2) - supports decimal amounts accurately
     type: "Debit",
     service_name: "Course Registration",
     date: today,
     semester: currentSemester.semester?.toString(),
     academic_year: currentSemester.academic_year?.toString(),
-    currency: student.currency || "NGN",
+    currency: studentCurrency,
     balance: (walletBalance - totalAmount).toString(),
     ref: `COURSE-REG-${courseOrder.id}`,
   });
