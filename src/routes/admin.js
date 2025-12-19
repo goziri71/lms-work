@@ -22,6 +22,14 @@ import {
   getStudentStats,
 } from "../controllers/admin/superAdmin/studentManagement.js";
 import {
+  getStudentKycDocuments,
+  getStudentDocumentSignedUrl,
+  getAllStudentsKycStatus,
+  approveStudentDocument,
+  rejectStudentDocument,
+  getPendingDocuments,
+} from "../controllers/admin/superAdmin/studentKycManagement.js";
+import {
   getAllStaff,
   createStaff,
   updateStaff,
@@ -176,6 +184,14 @@ router.get("/students", getAllStudents);
 router.get("/students/stats", getStudentStats);
 router.get("/students/:id", getStudentById);
 router.get("/students/:id/full", requireSuperAdmin, getStudentFullDetails);
+
+// Student KYC Management
+router.get("/students/kyc/status", getAllStudentsKycStatus);
+router.get("/students/kyc/pending", getPendingDocuments);
+router.get("/students/:id/kyc", getStudentKycDocuments);
+router.post("/students/:id/kyc/signed-url", getStudentDocumentSignedUrl);
+router.put("/students/:id/kyc/documents/:document_type/approve", approveStudentDocument);
+router.put("/students/:id/kyc/documents/:document_type/reject", rejectStudentDocument);
 
 // Super Admin or permission required for modifications
 router.post(

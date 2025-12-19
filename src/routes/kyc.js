@@ -6,6 +6,7 @@ import {
   uploadKycDocument,
   uploadFileMiddleware,
   getKycDocuments,
+  getSignedUrl,
   updateSchoolInfo,
 } from "../controllers/student/kyc.js";
 
@@ -27,6 +28,8 @@ router.post(
 );
 
 router.get("/documents", authorize, getKycDocuments);
+
+router.post("/documents/signed-url", authorize, getSignedUrl);
 
 router.put("/schools", authorize, updateSchoolInfo);
 

@@ -30,6 +30,7 @@ import { GeneralSetup } from "./settings/generalSetup.js";
 import { Notice } from "./notice/notice.js";
 import { SchoolAttended } from "./auth/schoolAttended.js";
 import { LegacyUser } from "./auth/legacyUser.js";
+import { StudentDocumentApproval } from "./kyc/studentDocumentApproval.js";
 import {
   SoleTutor,
   Organization,
@@ -351,6 +352,16 @@ export const setupAssociations = () => {
     as: "schoolsAttended",
   });
   SchoolAttended.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Students -> StudentDocumentApproval (One-to-Many)
+  Students.hasMany(StudentDocumentApproval, {
+    foreignKey: "student_id",
+    as: "documentApprovals",
+  });
+  StudentDocumentApproval.belongsTo(Students, {
     foreignKey: "student_id",
     as: "student",
   });

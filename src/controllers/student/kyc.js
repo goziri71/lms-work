@@ -1,7 +1,9 @@
 import multer from "multer";
+import { Op } from "sequelize";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { Students } from "../../models/auth/student.js";
+import { StudentDocumentApproval } from "../../models/kyc/studentDocumentApproval.js";
 import { supabase } from "../../utils/supabase.js";
 
 // Configure multer for file uploads
@@ -99,18 +101,51 @@ export const uploadProfileImageHandler = TryCatchFunction(async (req, res) => {
     throw new ErrorClass(`Upload failed: ${error.message}`, 500);
   }
 
-  // Get public URL
-  const publicUrl = supabase.storage.from(bucket).getPublicUrl(objectPath)
-    .data.publicUrl;
+  // Generate signed URL for private bucket (expires in 1 year)
+  // For private buckets, signed URLs are required; for public buckets, this still works
+  const { data: signedUrlData, error: urlError } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(objectPath, 31536000); // 1 year expiration
 
-  // Update student record
-  await student.update({ profile_image: publicUrl });
+  if (urlError) {
+    // Fallback to public URL if signed URL fails (for public buckets)
+    const publicUrl = supabase.storage.from(bucket).getPublicUrl(objectPath)
+      .data.publicUrl;
+    await student.update({ profile_image: publicUrl });
+    
+    res.status(200).json({
+      success: true,
+      message: "Profile image uploaded successfully",
+      data: {
+        profile_image_url: publicUrl,
+      },
+    });
+    return;
+  }
+
+  // Use signed URL for private bucket
+  const fileUrl = signedUrlData.signedUrl;
+  await student.update({ profile_image: fileUrl });
+
+  // Create or update approval record with "pending" status
+  await StudentDocumentApproval.upsert({
+    student_id: studentId,
+    document_type: "profile_image",
+    file_url: fileUrl,
+    status: "pending",
+    rejection_reason: null,
+    reviewed_by: null,
+    reviewed_at: null,
+  }, {
+    conflictFields: ["student_id", "document_type"],
+  });
 
   res.status(200).json({
     success: true,
-    message: "Profile image uploaded successfully",
+    message: "Profile image uploaded successfully. Pending admin approval.",
     data: {
-      profile_image_url: publicUrl,
+      profile_image_url: fileUrl,
+      status: "pending",
     },
   });
 });
@@ -172,20 +207,46 @@ export const uploadKycDocument = TryCatchFunction(async (req, res) => {
     throw new ErrorClass(`Upload failed: ${error.message}`, 500);
   }
 
-  // Get public URL
-  const publicUrl = supabase.storage.from(bucket).getPublicUrl(objectPath)
-    .data.publicUrl;
+  // Generate signed URL for private bucket (expires in 1 year)
+  // For private buckets, signed URLs are required; for public buckets, this still works
+  const { data: signedUrlData, error: urlError } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(objectPath, 31536000); // 1 year expiration
+
+  let fileUrl;
+  if (urlError) {
+    // Fallback to public URL if signed URL fails (for public buckets)
+    fileUrl = supabase.storage.from(bucket).getPublicUrl(objectPath)
+      .data.publicUrl;
+  } else {
+    // Use signed URL for private bucket
+    fileUrl = signedUrlData.signedUrl;
+  }
 
   // Update student record with document URL
-  const updateData = { [document_type]: publicUrl };
+  const updateData = { [document_type]: fileUrl };
   await student.update(updateData);
+
+  // Create or update approval record with "pending" status
+  await StudentDocumentApproval.upsert({
+    student_id: studentId,
+    document_type,
+    file_url: fileUrl,
+    status: "pending",
+    rejection_reason: null,
+    reviewed_by: null,
+    reviewed_at: null,
+  }, {
+    conflictFields: ["student_id", "document_type"],
+  });
 
   res.status(200).json({
     success: true,
-    message: "Document uploaded successfully",
+    message: "Document uploaded successfully. Pending admin approval.",
     data: {
       document_type,
-      file_url: publicUrl,
+      file_url: fileUrl,
+      status: "pending",
       uploaded_at: new Date().toISOString(),
     },
   });
@@ -227,18 +288,66 @@ export const getKycDocuments = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Student not found", 404);
   }
 
+  // Get approval status for all documents
+  const approvals = await StudentDocumentApproval.findAll({
+    where: { student_id: studentId },
+    attributes: ["document_type", "status", "rejection_reason", "reviewed_at"],
+  });
+
+  // Create a map of document_type -> approval status
+  const approvalMap = {};
+  approvals.forEach((approval) => {
+    approvalMap[approval.document_type] = {
+      status: approval.status,
+      rejection_reason: approval.rejection_reason,
+      reviewed_at: approval.reviewed_at,
+    };
+  });
+
+  // Helper function to get approval status for a document
+  const getApprovalStatus = (docType) => {
+    return approvalMap[docType] || {
+      status: student[docType] ? "pending" : null,
+      rejection_reason: null,
+      reviewed_at: null,
+    };
+  };
+
+  // For private buckets, URLs stored are signed URLs (valid for 1 year)
+  // If URLs expire, frontend can call /api/student/kyc/documents/signed-url endpoint
   res.status(200).json({
     success: true,
     message: "KYC documents retrieved successfully",
     data: {
-      profile_image: student.profile_image || null,
+      profile_image: {
+        url: student.profile_image || null,
+        ...getApprovalStatus("profile_image"),
+      },
       documents: {
-        birth_certificate: student.birth_certificate || null,
-        ref_letter: student.ref_letter || null,
-        valid_id: student.valid_id || null,
-        resume_cv: student.resume_cv || null,
-        certificate_file: student.certificate_file || null,
-        other_file: student.other_file || null,
+        birth_certificate: {
+          url: student.birth_certificate || null,
+          ...getApprovalStatus("birth_certificate"),
+        },
+        ref_letter: {
+          url: student.ref_letter || null,
+          ...getApprovalStatus("ref_letter"),
+        },
+        valid_id: {
+          url: student.valid_id || null,
+          ...getApprovalStatus("valid_id"),
+        },
+        resume_cv: {
+          url: student.resume_cv || null,
+          ...getApprovalStatus("resume_cv"),
+        },
+        certificate_file: {
+          url: student.certificate_file || null,
+          ...getApprovalStatus("certificate_file"),
+        },
+        other_file: {
+          url: student.other_file || null,
+          ...getApprovalStatus("other_file"),
+        },
       },
       schools: {
         school1: {
@@ -254,6 +363,74 @@ export const getKycDocuments = TryCatchFunction(async (req, res) => {
           date: student.school_date || null,
         },
       },
+    },
+  });
+});
+
+/**
+ * Get signed URL for a document (for private buckets when URLs expire)
+ * POST /api/student/kyc/documents/signed-url
+ */
+export const getSignedUrl = TryCatchFunction(async (req, res) => {
+  const studentId = Number(req.user?.id);
+  const userType = req.user?.userType;
+  const { document_type, file_url } = req.body;
+
+  if (userType !== "student") {
+    throw new ErrorClass("Only students can access signed URLs", 403);
+  }
+
+  // Validate document type
+  const allowedDocumentTypes = [
+    "profile_image",
+    "birth_certificate",
+    "ref_letter",
+    "valid_id",
+    "resume_cv",
+    "certificate_file",
+    "other_file",
+  ];
+
+  if (!document_type || !allowedDocumentTypes.includes(document_type)) {
+    throw new ErrorClass(
+      `Invalid document type. Allowed types: ${allowedDocumentTypes.join(", ")}`,
+      400
+    );
+  }
+
+  if (!file_url) {
+    throw new ErrorClass("File URL is required", 400);
+  }
+
+  // Extract file path from URL
+  // URL format: https://{supabase-url}/storage/v1/object/public/{bucket}/{path}
+  // or: https://{supabase-url}/storage/v1/object/sign/{bucket}/{path}?token=...
+  const urlParts = file_url.split("/storage/v1/object/");
+  if (urlParts.length < 2) {
+    throw new ErrorClass("Invalid file URL format", 400);
+  }
+
+  const pathPart = urlParts[1].split("?")[0]; // Remove query params if any
+  const pathParts = pathPart.split("/");
+  const bucket = pathParts[0];
+  const objectPath = pathParts.slice(1).join("/");
+
+  // Generate new signed URL (expires in 1 hour for security)
+  const { data: signedUrlData, error } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(objectPath, 3600); // 1 hour expiration
+
+  if (error) {
+    throw new ErrorClass(`Failed to generate signed URL: ${error.message}`, 500);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Signed URL generated successfully",
+    data: {
+      document_type,
+      signed_url: signedUrlData.signedUrl,
+      expires_in: 3600, // seconds
     },
   });
 });

@@ -199,10 +199,6 @@ export const Students = db.define(
       type: DataTypes.STRING,
       allowNull: true,
     },
-    profile_image: {
-      type: DataTypes.STRING(500),
-      allowNull: true,
-    },
     application_fee: {
       type: DataTypes.STRING,
       allowNull: true,
