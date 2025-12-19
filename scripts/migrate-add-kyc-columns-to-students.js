@@ -4,7 +4,7 @@ import { QueryTypes } from "sequelize";
 
 /**
  * Migration script to add KYC columns to students table
- * Adds: profile_image column
+ * Adds: profile_image, school, school_date, school1, school1_date, school2, school2_date columns
  * 
  * Note: Other document columns (birth_certificate, ref_letter, etc.) should already exist
  * 
@@ -34,6 +34,42 @@ async function migrateAddKycColumns() {
         nullable: true,
         comment: "Profile picture URL from Supabase",
       },
+      {
+        name: "school",
+        type: dialect === 'postgres' ? "VARCHAR(255)" : "VARCHAR(255)",
+        nullable: true,
+        comment: "General school information",
+      },
+      {
+        name: "school_date",
+        type: dialect === 'postgres' ? "DATE" : "DATE",
+        nullable: true,
+        comment: "Date for general school",
+      },
+      {
+        name: "school1",
+        type: dialect === 'postgres' ? "VARCHAR(255)" : "VARCHAR(255)",
+        nullable: true,
+        comment: "First previous school",
+      },
+      {
+        name: "school1_date",
+        type: dialect === 'postgres' ? "VARCHAR(255)" : "VARCHAR(255)",
+        nullable: true,
+        comment: "Date for first previous school",
+      },
+      {
+        name: "school2",
+        type: dialect === 'postgres' ? "VARCHAR(255)" : "VARCHAR(255)",
+        nullable: true,
+        comment: "Second previous school",
+      },
+      {
+        name: "school2_date",
+        type: dialect === 'postgres' ? "VARCHAR(255)" : "VARCHAR(255)",
+        nullable: true,
+        comment: "Date for second previous school",
+      },
     ];
 
     // Also check existing document columns (they should exist but verify)
@@ -49,14 +85,14 @@ async function migrateAddKycColumns() {
     if (dialect === 'postgres') {
       // Check existing columns
       for (const column of columnsToAdd) {
+        // Use string interpolation for column name (safe - we control the values)
         const columnInfo = await db.query(`
           SELECT column_name
           FROM information_schema.columns
           WHERE table_name = 'students'
-            AND column_name = $1
+            AND column_name = '${column.name}'
         `, {
           type: QueryTypes.SELECT,
-          replacements: [column.name],
         });
 
         if (columnInfo && columnInfo.length > 0) {
@@ -77,14 +113,14 @@ async function migrateAddKycColumns() {
     } else if (dialect === 'mysql' || dialect === 'mariadb') {
       // Check existing columns
       for (const column of columnsToAdd) {
+        // Use string interpolation for column name (safe - we control the values)
         const columnInfo = await db.query(`
           SELECT column_name
           FROM information_schema.columns
           WHERE table_name = 'students'
-            AND column_name = ?
+            AND column_name = '${column.name}'
         `, {
           type: QueryTypes.SELECT,
-          replacements: [column.name],
         });
 
         if (columnInfo && columnInfo.length > 0) {
@@ -109,13 +145,11 @@ async function migrateAddKycColumns() {
     // Check existing document columns
     console.log("\n🔄 Checking existing document columns...");
     for (const colName of existingColumns) {
+      // Use string interpolation for column name (safe - we control the values)
       const colInfo = await db.query(
-        dialect === 'postgres'
-          ? `SELECT column_name FROM information_schema.columns WHERE table_name = 'students' AND column_name = $1`
-          : `SELECT column_name FROM information_schema.columns WHERE table_name = 'students' AND column_name = ?`,
+        `SELECT column_name FROM information_schema.columns WHERE table_name = 'students' AND column_name = '${colName}'`,
         {
           type: QueryTypes.SELECT,
-          replacements: [colName],
         }
       );
 
@@ -132,7 +166,7 @@ async function migrateAddKycColumns() {
       SELECT column_name, data_type, is_nullable
       FROM information_schema.columns
       WHERE table_name = 'students'
-        AND column_name IN ('profile_image', 'birth_certificate', 'ref_letter', 'valid_id', 'resume_cv', 'certificate_file', 'other_file')
+        AND column_name IN ('profile_image', 'birth_certificate', 'ref_letter', 'valid_id', 'resume_cv', 'certificate_file', 'other_file', 'school', 'school_date', 'school1', 'school1_date', 'school2', 'school2_date')
       ORDER BY column_name
     `, { type: QueryTypes.SELECT });
 
