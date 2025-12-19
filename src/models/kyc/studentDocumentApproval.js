@@ -45,7 +45,7 @@ export const StudentDocumentApproval = db.define(
       allowNull: true,
     },
     file_url: {
-      type: DataTypes.STRING(500),
+      type: DataTypes.TEXT,
       allowNull: true,
       comment: "URL of the uploaded document",
     },
