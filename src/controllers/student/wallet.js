@@ -254,7 +254,7 @@ export const getFundingHistory = TryCatchFunction(async (req, res) => {
   // Get query parameters for filtering
   const {
     page = 1,
-    limit = 50,
+    limit = 20,
     type, // Credit or Debit
     semester,
     academic_year,
