@@ -2,6 +2,7 @@ import { Courses } from "../../models/course/courses.js";
 import { Students } from "../../models/auth/student.js";
 import { CourseReg } from "../../models/course_reg.js";
 import { Funding } from "../../models/payment/funding.js";
+import { GeneralSetup } from "../../models/settings/generalSetup.js";
 import { processMarketplacePurchase } from "../../services/revenueSharingService.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
@@ -46,6 +47,30 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Student not found", 404);
   }
 
+  // Get exchange rate from system settings (USD to NGN)
+  const generalSetup = await GeneralSetup.findOne({
+    order: [["id", "DESC"]],
+  });
+  const exchangeRate = parseFloat(generalSetup?.rate || "1500"); // Default 1500 if not set
+
+  // Get currencies
+  const courseCurrency = (course.currency || "NGN").toUpperCase();
+  const studentCurrency = (student.currency || "NGN").toUpperCase();
+
+  // Convert course price to student's currency if they differ
+  let priceInStudentCurrency = coursePrice;
+  if (courseCurrency !== studentCurrency) {
+    if (courseCurrency === "USD" && studentCurrency === "NGN") {
+      // USD to NGN: multiply by exchange rate
+      priceInStudentCurrency = coursePrice * exchangeRate;
+    } else if (courseCurrency === "NGN" && studentCurrency === "USD") {
+      // NGN to USD: divide by exchange rate
+      priceInStudentCurrency = coursePrice / exchangeRate;
+    }
+    // Round to 2 decimal places to avoid floating point precision issues
+    priceInStudentCurrency = Math.round(priceInStudentCurrency * 100) / 100;
+  }
+
   // Check if already purchased from marketplace (lifetime access - no duplicate purchases)
   const existingMarketplacePurchase = await CourseReg.findOne({
     where: {
@@ -61,12 +86,23 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
 
   // All transactions use wallet balance (Flutterwave only funds wallet)
   // Check wallet balance (with automatic migration of old balances)
+  // Wallet balance is always in student's currency
   const { balance: walletBalance } = await getWalletBalance(studentId, true);
 
-  // Check if wallet has sufficient balance
-  if (walletBalance < coursePrice) {
+  // Check if wallet has sufficient balance (compare in student's currency)
+  if (walletBalance < priceInStudentCurrency) {
+    // Format amounts for display - always show in student's currency first
+    let requiredDisplay;
+    if (courseCurrency !== studentCurrency) {
+      // Show converted amount in student's currency, with original in parentheses
+      requiredDisplay = `${priceInStudentCurrency.toFixed(2)} ${studentCurrency} (${coursePrice} ${courseCurrency})`;
+    } else {
+      // Same currency - just show the amount
+      requiredDisplay = `${priceInStudentCurrency.toFixed(2)} ${studentCurrency}`;
+    }
+    
     throw new ErrorClass(
-      `Insufficient wallet balance. Required: ${coursePrice} ${course.currency || "NGN"}, Available: ${walletBalance} ${course.currency || "NGN"}. Please fund your wallet first.`,
+      `Insufficient wallet balance. Required: ${requiredDisplay}, Available: ${walletBalance.toFixed(2)} ${studentCurrency}. Please fund your wallet first.`,
       400
     );
   }
@@ -75,20 +111,22 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
   const txRef = `MARKETPLACE-${course_id}-${Date.now()}`;
   const today = new Date().toISOString().split("T")[0];
 
-  // Debit wallet
-  const newBalance = walletBalance - coursePrice;
+  // Debit wallet (in student's currency)
+  const newBalance = walletBalance - priceInStudentCurrency;
 
-  // Create Funding transaction (Debit)
+  // Create Funding transaction (Debit) - store in student's currency
+  // Note: Funding.amount is INTEGER, so we round to nearest integer
+  // But wallet_balance maintains decimal precision
   await Funding.create({
     student_id: studentId,
-    amount: coursePrice,
+    amount: Math.round(priceInStudentCurrency), // Round to integer for Funding record
     type: "Debit",
     service_name: "Marketplace Course Purchase",
     ref: txRef,
     date: today,
     semester: null, // Marketplace courses are not tied to semester
     academic_year: null, // Marketplace courses are not tied to academic year
-    currency: course.currency || "NGN",
+    currency: studentCurrency, // Store in student's currency
     balance: newBalance.toString(),
   });
 
@@ -152,8 +190,12 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
       wallet: {
         previous_balance: walletBalance,
         new_balance: newBalance,
-        debited: coursePrice,
-        currency: course.currency || "NGN",
+        debited: priceInStudentCurrency,
+        currency: studentCurrency,
+        course_price_original: courseCurrency !== studentCurrency ? {
+          amount: coursePrice,
+          currency: courseCurrency,
+        } : null,
       },
     },
   });
