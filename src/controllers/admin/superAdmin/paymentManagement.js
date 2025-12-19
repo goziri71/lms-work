@@ -414,7 +414,7 @@ export const getPaymentOverview = TryCatchFunction(async (req, res) => {
         [
           db.Sequelize.fn(
             "SUM",
-            db.Sequelize.cast(db.Sequelize.col("amount"), "INTEGER")
+            db.Sequelize.cast(db.Sequelize.col("amount"), "DECIMAL")
           ),
           "total",
         ],
