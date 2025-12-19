@@ -147,28 +147,34 @@ export const Students = db.define(
       allowNull: false,
     },
     certificate_file: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(500),
       allowNull: true,
+      comment: "Certificate file URL from Supabase",
     },
     birth_certificate: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(500),
       allowNull: true,
+      comment: "Birth certificate URL from Supabase",
     },
     ref_letter: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(500),
       allowNull: true,
+      comment: "Reference letter URL from Supabase",
     },
     valid_id: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(500),
       allowNull: true,
+      comment: "Valid ID URL from Supabase",
     },
     resume_cv: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(500),
       allowNull: true,
+      comment: "Resume/CV URL from Supabase",
     },
     other_file: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(500),
       allowNull: true,
+      comment: "Other file URL from Supabase",
     },
     profile_image: {
       type: DataTypes.STRING(500),

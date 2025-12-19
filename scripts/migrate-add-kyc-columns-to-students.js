@@ -5,8 +5,7 @@ import { QueryTypes } from "sequelize";
 /**
  * Migration script to add KYC columns to students table
  * Adds: profile_image, school, school_date, school1, school1_date, school2, school2_date columns
- * 
- * Note: Other document columns (birth_certificate, ref_letter, etc.) should already exist
+ * Alters: Existing document columns (birth_certificate, ref_letter, etc.) to VARCHAR(500) to support long Supabase URLs
  * 
  * Run with: node scripts/migrate-add-kyc-columns-to-students.js
  */
@@ -142,19 +141,39 @@ async function migrateAddKycColumns() {
       process.exit(1);
     }
 
-    // Check existing document columns
-    console.log("\n🔄 Checking existing document columns...");
+    // Check and alter existing document columns to VARCHAR(500) if needed
+    console.log("\n🔄 Checking and updating existing document columns...");
     for (const colName of existingColumns) {
       // Use string interpolation for column name (safe - we control the values)
       const colInfo = await db.query(
-        `SELECT column_name FROM information_schema.columns WHERE table_name = 'students' AND column_name = '${colName}'`,
+        `SELECT column_name, character_maximum_length 
+         FROM information_schema.columns 
+         WHERE table_name = 'students' AND column_name = '${colName}'`,
         {
           type: QueryTypes.SELECT,
         }
       );
 
       if (colInfo && colInfo.length > 0) {
-        console.log(`   ✅ ${colName} exists`);
+        const maxLength = colInfo[0].character_maximum_length;
+        if (maxLength && maxLength < 500) {
+          // Alter column to VARCHAR(500)
+          console.log(`   🔄 Altering '${colName}' from VARCHAR(${maxLength}) to VARCHAR(500)...`);
+          if (dialect === 'postgres') {
+            await db.query(`
+              ALTER TABLE students
+              ALTER COLUMN ${colName} TYPE VARCHAR(500)
+            `);
+          } else if (dialect === 'mysql' || dialect === 'mariadb') {
+            await db.query(`
+              ALTER TABLE students
+              MODIFY COLUMN ${colName} VARCHAR(500)
+            `);
+          }
+          console.log(`   ✅ ${colName} updated to VARCHAR(500)`);
+        } else {
+          console.log(`   ✅ ${colName} already has sufficient length (${maxLength || 'unlimited'})`);
+        }
       } else {
         console.log(`   ⚠️  ${colName} is missing - you may need to add it manually`);
       }
