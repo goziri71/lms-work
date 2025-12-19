@@ -361,6 +361,9 @@ export const registerAllocatedCourses = TryCatchFunction(async (req, res) => {
     level: student.level,
   });
 
+  // Generate transaction reference for course registration
+  const txRef = `COURSE-REG-${Date.now()}`;
+
   // Create Funding transaction (Debit)
   const funding = await Funding.create({
     student_id: studentId,
@@ -372,7 +375,7 @@ export const registerAllocatedCourses = TryCatchFunction(async (req, res) => {
     academic_year: currentSemester.academic_year?.toString(),
     currency: studentCurrency,
     balance: (walletBalance - totalAmount).toString(),
-    ref: `COURSE-REG-${courseOrder.id}`,
+    ref: txRef,
   });
 
   // Update wallet balance

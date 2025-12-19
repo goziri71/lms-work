@@ -223,6 +223,9 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
     });
     const walletBalance = (totalCredits || 0) - (totalDebits || 0);
 
+    // Generate transaction reference for course registration
+    const txRef = `COURSE-REG-${Date.now()}`;
+
     funding = await Funding.create({
       student_id: studentId,
       amount: totalAmount, // DECIMAL(10, 2) - supports decimal amounts accurately
@@ -233,7 +236,7 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
       academic_year: academic_year,
       currency: student.currency || "NGN",
       balance: (walletBalance - totalAmount).toString(),
-      ref: `COURSE-REG-${courseOrder.id}`,
+      ref: txRef,
     });
 
     // Update wallet balance
