@@ -15,7 +15,7 @@ import { Op } from "sequelize";
 export const getAllFundings = TryCatchFunction(async (req, res) => {
   const {
     page = 1,
-    limit = 20,
+    limit = 100,
     student_id,
     type,
     semester,
@@ -39,12 +39,12 @@ export const getAllFundings = TryCatchFunction(async (req, res) => {
     if (end_date) where.date[db.Sequelize.Op.lte] = end_date;
   }
 
-  const offset = (page - 1) * limit;
+  // Allow limit=0 to get all records
+  const limitNum = parseInt(limit);
+  const offset = (parseInt(page) - 1) * (limitNum || 100);
 
-  const { count, rows: fundings } = await Funding.findAndCountAll({
+  const queryOptions = {
     where,
-    limit: parseInt(limit),
-    offset,
     include: [
       {
         model: Students,
@@ -53,8 +53,21 @@ export const getAllFundings = TryCatchFunction(async (req, res) => {
         required: false,
       },
     ],
-    order: [["id", "DESC"]],
-  });
+    // Order by date DESC (most recent first), then by id DESC as tiebreaker
+    // Since date is STRING in YYYY-MM-DD format, string ordering works correctly
+    order: [
+      ["date", "DESC"],
+      ["id", "DESC"],
+    ],
+  };
+
+  // Only apply limit and offset if limit is not 0
+  if (limitNum > 0) {
+    queryOptions.limit = limitNum;
+    queryOptions.offset = offset;
+  }
+
+  const { count, rows: fundings } = await Funding.findAndCountAll(queryOptions);
 
   res.status(200).json({
     success: true,
