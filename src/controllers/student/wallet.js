@@ -5,6 +5,7 @@ import { Students } from "../../models/auth/student.js";
 import { Funding } from "../../models/payment/funding.js";
 import { PaymentTransaction } from "../../models/payment/paymentTransaction.js";
 import { Semester } from "../../models/auth/semester.js";
+import { GeneralSetup } from "../../models/settings/generalSetup.js";
 import {
   verifyTransaction,
   isTransactionSuccessful,
@@ -333,6 +334,40 @@ export const getFundingHistory = TryCatchFunction(async (req, res) => {
             where: { ...where, type: "Debit" },
           })) || 0,
       },
+    },
+  });
+});
+
+/**
+ * Get current exchange rate (USD to NGN)
+ * GET /api/wallet/rate
+ */
+export const getExchangeRate = TryCatchFunction(async (req, res) => {
+  const userType = req.user?.userType;
+
+  if (userType !== "student") {
+    throw new ErrorClass("Only students can access this endpoint", 403);
+  }
+
+  // Get exchange rate from system settings (USD to NGN)
+  const generalSetup = await GeneralSetup.findOne({
+    order: [["id", "DESC"]],
+  });
+
+  if (!generalSetup || !generalSetup.rate) {
+    throw new ErrorClass("Exchange rate not configured", 404);
+  }
+
+  const exchangeRate = parseFloat(generalSetup.rate) || 1500; // Default 1500 if invalid
+
+  res.status(200).json({
+    success: true,
+    message: "Exchange rate retrieved successfully",
+    data: {
+      exchange_rate: exchangeRate,
+      from_currency: "USD",
+      to_currency: "NGN",
+      description: "1 USD = " + exchangeRate + " NGN",
     },
   });
 });
