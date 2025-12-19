@@ -3,11 +3,13 @@ import { Students } from "../models/auth/student.js";
 import { Courses } from "../models/course/courses.js";
 import { CourseReg } from "../models/course_reg.js";
 import { Semester } from "../models/auth/semester.js";
+import { CourseSemesterPricing } from "../models/course/courseSemesterPricing.js";
+import { GeneralSetup } from "../models/settings/generalSetup.js";
 
 /**
  * Automatically allocate courses to all active WPU students for a semester
  * Matches courses based on: program_id, course_level (vs student level), and semester
- * 
+ *
  * @param {number|string} academicYear - Academic year (will be converted to string)
  * @param {string} semester - Semester ("1ST" or "2ND")
  * @returns {Promise<{allocated: number, skipped: number, errors: Array}>}
@@ -25,15 +27,23 @@ export async function allocateCoursesToAllStudents(academicYear, semester) {
   // Validate semester format
   const semesterStr = semester?.toString().toUpperCase();
   if (semesterStr !== "1ST" && semesterStr !== "2ND") {
-    throw new Error(`Invalid semester format. Must be "1ST" or "2ND", got: ${semester}`);
+    throw new Error(
+      `Invalid semester format. Must be "1ST" or "2ND", got: ${semester}`
+    );
   }
+
+  // Get exchange rate from system settings (USD to NGN)
+  const generalSetup = await GeneralSetup.findOne({
+    order: [["id", "DESC"]],
+  });
+  const exchangeRate = parseFloat(generalSetup?.rate || "1500"); // Default 1500 if not set
 
   // Get all active WPU students
   const students = await Students.findAll({
     where: {
       admin_status: "active", // Only active students
     },
-    attributes: ["id", "program_id", "facaulty_id", "level"],
+    attributes: ["id", "program_id", "facaulty_id", "level", "currency"],
   });
 
   if (students.length === 0) {
@@ -77,7 +87,7 @@ export async function allocateCoursesToAllStudents(academicYear, semester) {
 
     const matchingCourses = await Courses.findAll({
       where: courseWhere,
-      attributes: ["id", "price", "title", "course_code"],
+      attributes: ["id", "price", "title", "course_code", "currency"],
     });
 
     if (matchingCourses.length === 0) {
@@ -104,8 +114,52 @@ export async function allocateCoursesToAllStudents(academicYear, semester) {
           continue;
         }
 
-        // Get course price (convert STRING to DECIMAL)
-        const coursePrice = parseFloat(course.price) || 0;
+        // Get course price and currency
+        // First check CourseSemesterPricing (semester-specific pricing)
+        let coursePrice = 0;
+        let courseCurrency = "NGN";
+
+        const semesterPricing = await CourseSemesterPricing.findOne({
+          where: {
+            course_id: course.id,
+            academic_year: academicYearStr,
+            semester: semesterStr,
+          },
+        });
+
+        if (semesterPricing) {
+          coursePrice = parseFloat(semesterPricing.price) || 0;
+          courseCurrency = semesterPricing.currency || course.currency || "NGN";
+        } else {
+          // Fallback to course base price
+          coursePrice = parseFloat(course.price) || 0;
+          courseCurrency = course.currency || "NGN";
+        }
+
+        // Get student currency (default to NGN if not set)
+        const studentCurrency = student.currency || "NGN";
+
+        // Convert price if currencies differ
+        let finalPrice = coursePrice;
+        if (courseCurrency.toUpperCase() !== studentCurrency.toUpperCase()) {
+          if (
+            courseCurrency.toUpperCase() === "USD" &&
+            studentCurrency.toUpperCase() === "NGN"
+          ) {
+            // USD to NGN: multiply by exchange rate
+            finalPrice = coursePrice * exchangeRate;
+          } else if (
+            courseCurrency.toUpperCase() === "NGN" &&
+            studentCurrency.toUpperCase() === "USD"
+          ) {
+            // NGN to USD: divide by exchange rate
+            finalPrice = coursePrice / exchangeRate;
+          }
+          // For other currency pairs, keep original price (can be extended later)
+
+          // Round to 2 decimal places to avoid floating point precision issues
+          finalPrice = Math.round(finalPrice * 100) / 100;
+        }
 
         // Create allocation
         await CourseReg.create({
@@ -117,7 +171,7 @@ export async function allocateCoursesToAllStudents(academicYear, semester) {
           facaulty_id: student.facaulty_id,
           level: student.level,
           registration_status: "allocated",
-          allocated_price: coursePrice,
+          allocated_price: finalPrice,
           allocated_at: allocationDate,
           first_ca: 0,
           second_ca: 0,
@@ -173,4 +227,3 @@ export async function getCurrentActiveSemester() {
 
   return currentSemester;
 }
-
