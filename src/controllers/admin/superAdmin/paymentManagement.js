@@ -101,7 +101,13 @@ export const getFundingStats = TryCatchFunction(async (req, res) => {
     attributes: [
       "type",
       [db.Sequelize.fn("COUNT", db.Sequelize.col("id")), "count"],
-      [db.Sequelize.fn("SUM", db.Sequelize.col("amount")), "total"],
+      [
+        db.Sequelize.fn(
+          "SUM",
+          db.Sequelize.cast(db.Sequelize.col("amount"), "DECIMAL")
+        ),
+        "total",
+      ],
     ],
     group: ["type"],
     raw: true,
@@ -112,7 +118,13 @@ export const getFundingStats = TryCatchFunction(async (req, res) => {
     attributes: [
       "currency",
       [db.Sequelize.fn("COUNT", db.Sequelize.col("id")), "count"],
-      [db.Sequelize.fn("SUM", db.Sequelize.col("amount")), "total"],
+      [
+        db.Sequelize.fn(
+          "SUM",
+          db.Sequelize.cast(db.Sequelize.col("amount"), "DECIMAL")
+        ),
+        "total",
+      ],
     ],
     group: ["currency"],
     raw: true,
@@ -374,7 +386,13 @@ export const getPaymentOverview = TryCatchFunction(async (req, res) => {
     Funding.findAll({
       attributes: [
         [db.Sequelize.fn("COUNT", db.Sequelize.col("id")), "count"],
-        [db.Sequelize.fn("SUM", db.Sequelize.col("amount")), "total"],
+        [
+          db.Sequelize.fn(
+            "SUM",
+            db.Sequelize.cast(db.Sequelize.col("amount"), "DECIMAL")
+          ),
+          "total",
+        ],
         "type",
         "currency",
       ],
