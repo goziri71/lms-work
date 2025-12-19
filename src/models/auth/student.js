@@ -170,6 +170,19 @@ export const Students = db.define(
       type: DataTypes.STRING,
       allowNull: true,
     },
+    profile_image: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+      comment: "Profile picture URL from Supabase",
+    },
+    school: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    school1: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
     school1_date: {
       type: DataTypes.STRING,
       allowNull: true,
@@ -184,6 +197,10 @@ export const Students = db.define(
     },
     school2_date: {
       type: DataTypes.STRING,
+      allowNull: true,
+    },
+    profile_image: {
+      type: DataTypes.STRING(500),
       allowNull: true,
     },
     application_fee: {

@@ -18,6 +18,7 @@ import marketplaceRoutes from "./src/routes/marketplace.js";
 import webhookRoutes from "./src/routes/webhooks.js";
 import walletRoutes from "./src/routes/wallet.js";
 import noticeRoutes from "./src/routes/notice.js";
+import kycRoutes from "./src/routes/kyc.js";
 import { getProgramById, getFacultyById } from "./src/controllers/public/programFacultyController.js";
 import { authorize } from "./src/middlewares/authorize.js";
 import { setupAssociations } from "./src/models/associations.js";
@@ -60,6 +61,7 @@ app.use("/api/marketplace", marketplaceRoutes);
 app.use("/api/webhooks", webhookRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/notices", noticeRoutes);
+app.use("/api/student/kyc", kycRoutes);
 app.use("/api", modulesRoutes);
 
 // ============================================
