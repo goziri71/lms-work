@@ -290,6 +290,7 @@ export const login = TryCatchFunction(async (req, res) => {
       gender: user.gender,
       phone: user.phone,
       level: user.level,
+      status: user.admin_status,
       matricNumber: user.matric_number,
       facultyId: user.faculty_id,
       programId: user.program_id,
