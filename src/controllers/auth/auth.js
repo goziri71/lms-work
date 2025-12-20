@@ -517,7 +517,30 @@ export const updateStaffProfile = TryCatchFunction(async (req, res) => {
 
 // Student Registration with Welcome Email
 export const registerStudent = TryCatchFunction(async (req, res) => {
-  const { email, password, fname, lname, program_id, referral_code, designated_institute, ...otherData } = req.body;
+  const { 
+    email, 
+    password, 
+    fname, 
+    lname, 
+    // Exclude these fields from registration
+    program_id, 
+    referral_code, 
+    designated_institute,
+    // Extract allowed optional fields
+    gender,
+    phone,
+    mname,
+    dob,
+    address,
+    state_origin,
+    lcda,
+    country,
+    level,
+    study_mode,
+    currency,
+    foreign_student,
+    ...otherData 
+  } = req.body;
 
   // Validate required fields
   if (!email || !password || !fname || !lname) {
@@ -546,14 +569,23 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
     password: hashedPassword,
     fname,
     lname,
+    mname: mname || null,
+    gender: gender || null,
+    phone: phone || null,
+    dob: dob || null,
+    address: address || null,
+    state_origin: state_origin || null,
+    lcda: lcda || null,
+    country: country || null,
+    level: level || null,
+    study_mode: study_mode || null,
     admin_status: "active",
     date: new Date(),
     // Required fields with defaults (not set during registration)
-    currency: otherData.currency || "NGN",
+    currency: currency || "NGN",
     referral_code: "", // Default empty string (not set during registration)
     designated_institute: 0, // Default 0 (not set during registration)
-    foreign_student: otherData.foreign_student || 0,
-    ...otherData,
+    foreign_student: foreign_student ? Number(foreign_student) : 0,
   });
 
   // Create default email preferences
