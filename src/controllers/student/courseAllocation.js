@@ -112,27 +112,77 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
     order: [[{ model: Courses, as: "course" }, "course_code", "ASC"]],
   });
 
-  // Calculate total amount
-  let totalAmount = 0;
-  const coursesWithDetails = allocatedCourses.map((allocation) => {
-    const price = allocation.allocated_price
-      ? parseFloat(allocation.allocated_price)
-      : 0;
-    totalAmount += price;
-
-    return {
-      allocation_id: allocation.id,
-      course: {
-        id: allocation.course?.id,
-        title: allocation.course?.title,
-        course_code: allocation.course?.course_code,
-        course_unit: allocation.course?.course_unit,
-      },
-      price: price,
-      currency: allocation.course?.currency || "NGN",
-      allocated_at: allocation.allocated_at,
-    };
+  // Get exchange rate for currency conversion
+  const generalSetup = await GeneralSetup.findOne({
+    order: [["id", "DESC"]],
   });
+  const exchangeRate = parseFloat(generalSetup?.rate || "1500");
+  
+  // Get student currency
+  const student = await Students.findByPk(studentId, {
+    attributes: ["currency"],
+  });
+  const studentCurrency = (student?.currency || "NGN").toUpperCase();
+
+  // Calculate total amount using CURRENT prices (not allocated prices)
+  let totalAmount = 0;
+  const coursesWithDetails = await Promise.all(
+    allocatedCourses.map(async (allocation) => {
+      // Get current price for this course in this semester
+      const semesterPricing = await CourseSemesterPricing.findOne({
+        where: {
+          course_id: allocation.course_id,
+          academic_year: currentSemester.academic_year?.toString(),
+          semester: currentSemester.semester?.toString(),
+        },
+      });
+
+      let currentPrice = 0;
+      let courseCurrency = "NGN";
+
+      if (semesterPricing) {
+        currentPrice = parseFloat(semesterPricing.price) || 0;
+        courseCurrency = (semesterPricing.currency || allocation.course?.currency || "NGN").toUpperCase();
+      } else {
+        // Fallback to course base price
+        currentPrice = await getCoursePriceForSemester(
+          allocation.course_id,
+          currentSemester.academic_year?.toString(),
+          currentSemester.semester?.toString()
+        );
+        courseCurrency = (allocation.course?.currency || "NGN").toUpperCase();
+      }
+
+      // Convert price to student's currency if they differ
+      let priceInStudentCurrency = currentPrice;
+      if (courseCurrency !== studentCurrency) {
+        if (courseCurrency === "USD" && studentCurrency === "NGN") {
+          priceInStudentCurrency = currentPrice * exchangeRate;
+        } else if (courseCurrency === "NGN" && studentCurrency === "USD") {
+          priceInStudentCurrency = currentPrice / exchangeRate;
+        }
+        priceInStudentCurrency = Math.round(priceInStudentCurrency * 100) / 100;
+      }
+
+      totalAmount += priceInStudentCurrency;
+
+      return {
+        allocation_id: allocation.id,
+        course: {
+          id: allocation.course?.id,
+          title: allocation.course?.title,
+          course_code: allocation.course?.course_code,
+          course_unit: allocation.course?.course_unit,
+        },
+        price: priceInStudentCurrency,
+        currency: studentCurrency,
+        allocated_price: allocation.allocated_price
+          ? parseFloat(allocation.allocated_price)
+          : null,
+        allocated_at: allocation.allocated_at,
+      };
+    })
+  );
 
   // Check if deadline has passed
   const deadline = currentSemester.registration_deadline
@@ -161,15 +211,25 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
 });
 
 /**
- * Register for all allocated courses (student self-process)
+ * Register for selected allocated courses (student self-process)
  * POST /api/student/courses/register-allocated
+ * Body: { allocation_ids: [123, 124, 125] } - Array of allocation IDs to register
  */
 export const registerAllocatedCourses = TryCatchFunction(async (req, res) => {
   const studentId = Number(req.user?.id);
   const userType = req.user?.userType;
+  const { allocation_ids } = req.body;
 
   if (userType !== "student") {
     throw new ErrorClass("Only students can register for courses", 403);
+  }
+
+  // Validate allocation_ids
+  if (!allocation_ids || !Array.isArray(allocation_ids) || allocation_ids.length === 0) {
+    throw new ErrorClass(
+      "Please select at least one course to register. Provide allocation_ids as an array.",
+      400
+    );
   }
 
   // Get student
@@ -239,9 +299,10 @@ export const registerAllocatedCourses = TryCatchFunction(async (req, res) => {
     }
   }
 
-  // Get all allocated courses for this semester
+  // Get selected allocated courses (validate they belong to student and are still allocated)
   const allocatedCourses = await CourseReg.findAll({
     where: {
+      id: allocation_ids,
       student_id: studentId,
       academic_year: currentSemester.academic_year?.toString(),
       semester: currentSemester.semester?.toString(),
@@ -258,8 +319,18 @@ export const registerAllocatedCourses = TryCatchFunction(async (req, res) => {
 
   if (allocatedCourses.length === 0) {
     throw new ErrorClass(
-      "No allocated courses found for current semester",
+      "No valid allocated courses found. The selected courses may have already been registered or do not belong to you.",
       404
+    );
+  }
+
+  // Check if all requested allocation_ids were found
+  if (allocatedCourses.length !== allocation_ids.length) {
+    const foundIds = allocatedCourses.map((a) => a.id);
+    const missingIds = allocation_ids.filter((id) => !foundIds.includes(id));
+    throw new ErrorClass(
+      `Some selected courses could not be found or have already been registered. Missing IDs: ${missingIds.join(", ")}`,
+      400
     );
   }
 
@@ -403,7 +474,7 @@ export const registerAllocatedCourses = TryCatchFunction(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: "All allocated courses registered successfully",
+    message: `Successfully registered for ${allocatedCourses.length} course(s)`,
     data: {
       order: {
         id: courseOrder.id,
