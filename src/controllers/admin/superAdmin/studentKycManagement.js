@@ -3,6 +3,7 @@ import { TryCatchFunction } from "../../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../../utils/errorClass/index.js";
 import { Students } from "../../../models/auth/student.js";
 import { StudentDocumentApproval } from "../../../models/kyc/studentDocumentApproval.js";
+import { Program } from "../../../models/program/program.js";
 import { supabase } from "../../../utils/supabase.js";
 
 /**
@@ -472,54 +473,447 @@ export const rejectStudentDocument = TryCatchFunction(async (req, res) => {
 });
 
 /**
- * Get pending documents for review (Admin)
+ * Get pending documents for review (Admin) - Grouped by student
  * GET /api/admin/students/kyc/pending
+ * Returns students who have at least one pending document, with all their documents grouped together
  */
 export const getPendingDocuments = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
-  const { page = 1, limit = 20 } = req.query;
+  const { page = 1, limit = 20, search } = req.query;
 
   // Only admin can access
   if (userType !== "admin") {
     throw new ErrorClass("Only admins can view pending documents", 403);
   }
 
-  // Get pending approvals with student info
-  const offset = (parseInt(page) - 1) * parseInt(limit);
-  const { count, rows: approvals } = await StudentDocumentApproval.findAndCountAll({
+  // Get all students who have at least one pending document
+  const pendingApprovals = await StudentDocumentApproval.findAll({
     where: {
       status: "pending",
     },
+    attributes: ["student_id"],
+    group: ["student_id"],
+    raw: true,
+  });
+
+  const studentIdsWithPending = pendingApprovals.map((a) => a.student_id);
+
+  if (studentIdsWithPending.length === 0) {
+    return res.status(200).json({
+      success: true,
+      message: "No pending documents found",
+      data: {
+        students: [],
+        pagination: {
+          total: 0,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalPages: 0,
+        },
+      },
+    });
+  }
+
+  // Build where clause for students
+  const studentWhere = {
+    id: { [Op.in]: studentIdsWithPending },
+  };
+
+  if (search) {
+    studentWhere[Op.or] = [
+      { fname: { [Op.iLike]: `%${search}%` } },
+      { lname: { [Op.iLike]: `%${search}%` } },
+      { email: { [Op.iLike]: `%${search}%` } },
+      { matric_number: { [Op.iLike]: `%${search}%` } },
+    ];
+  }
+
+  // Get students with pagination (including program)
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const { count, rows: students } = await Students.findAndCountAll({
+    where: studentWhere,
+    attributes: [
+      "id",
+      "fname",
+      "mname",
+      "lname",
+      "email",
+      "matric_number",
+      "admin_status",
+      "program_id",
+      "profile_image",
+      "birth_certificate",
+      "ref_letter",
+      "valid_id",
+      "resume_cv",
+      "certificate_file",
+      "other_file",
+    ],
     include: [
       {
-        model: Students,
-        as: "student",
-        attributes: ["id", "fname", "mname", "lname", "email", "matric_number"],
+        model: Program,
+        as: "program",
+        attributes: ["id", "title", "description"],
+        required: false,
       },
     ],
     limit: parseInt(limit),
     offset,
-    order: [["created_at", "DESC"]],
+    order: [["id", "DESC"]],
   });
 
-  const pendingDocuments = approvals.map((approval) => ({
-    id: approval.id,
-    student_id: approval.student_id,
-    student_name: approval.student
-      ? `${approval.student.fname || ""} ${approval.student.mname || ""} ${approval.student.lname || ""}`.trim()
+  // Get all approval records for these students
+  const studentIds = students.map((s) => s.id);
+  const allApprovals = await StudentDocumentApproval.findAll({
+    where: {
+      student_id: { [Op.in]: studentIds },
+    },
+    attributes: ["student_id", "document_type", "status", "rejection_reason", "reviewed_at", "file_url"],
+  });
+
+  // Group approvals by student_id
+  const approvalsByStudent = {};
+  allApprovals.forEach((approval) => {
+    if (!approvalsByStudent[approval.student_id]) {
+      approvalsByStudent[approval.student_id] = [];
+    }
+    approvalsByStudent[approval.student_id].push(approval);
+  });
+
+  // Build response with all documents grouped by student
+  const studentsWithDocuments = students.map((student) => {
+    const approvals = approvalsByStudent[student.id] || [];
+    const approvalMap = {};
+    approvals.forEach((approval) => {
+      approvalMap[approval.document_type] = {
+        status: approval.status,
+        rejection_reason: approval.rejection_reason,
+        reviewed_at: approval.reviewed_at,
+        file_url: approval.file_url,
+      };
+    });
+
+    // Helper to get document info
+    const getDocumentInfo = (docType, fieldName) => {
+      const url = student[fieldName] || null;
+      const approval = approvalMap[docType];
+      
+      if (!url) {
+        return null;
+      }
+
+      return {
+        url,
+        status: approval?.status || "pending",
+        rejection_reason: approval?.rejection_reason || null,
+        reviewed_at: approval?.reviewed_at || null,
+      };
+    };
+
+    const documents = {
+      profile_image: getDocumentInfo("profile_image", "profile_image"),
+      birth_certificate: getDocumentInfo("birth_certificate", "birth_certificate"),
+      ref_letter: getDocumentInfo("ref_letter", "ref_letter"),
+      valid_id: getDocumentInfo("valid_id", "valid_id"),
+      resume_cv: getDocumentInfo("resume_cv", "resume_cv"),
+      certificate_file: getDocumentInfo("certificate_file", "certificate_file"),
+      other_file: getDocumentInfo("other_file", "other_file"),
+    };
+
+    // Count statuses
+    const statusCounts = { pending: 0, approved: 0, rejected: 0 };
+    Object.values(documents).forEach((doc) => {
+      if (doc && doc.status) {
+        statusCounts[doc.status] = (statusCounts[doc.status] || 0) + 1;
+      }
+    });
+
+    return {
+      student_id: student.id,
+      name: `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim(),
+      email: student.email,
+      matric_number: student.matric_number,
+      admin_status: student.admin_status,
+      program: student.program
+        ? {
+            id: student.program.id,
+            title: student.program.title,
+            description: student.program.description,
+          }
+        : null,
+      documents,
+      summary: {
+        pending: statusCounts.pending,
+        approved: statusCounts.approved,
+        rejected: statusCounts.rejected,
+        total: statusCounts.pending + statusCounts.approved + statusCounts.rejected,
+      },
+    };
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Pending documents retrieved successfully (grouped by student)",
+    data: {
+      students: studentsWithDocuments,
+      pagination: {
+        total: count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(count / parseInt(limit)),
+      },
+    },
+  });
+});
+
+/**
+ * Get all students with fully approved KYC documents
+ * GET /api/admin/students/kyc/approved
+ * Returns students who have ALL their uploaded documents approved (no pending or rejected)
+ */
+export const getFullyApprovedStudents = TryCatchFunction(async (req, res) => {
+  const userType = req.user?.userType;
+  const { page = 1, limit = 20, search } = req.query;
+
+  // Only admin can access
+  if (userType !== "admin") {
+    throw new ErrorClass("Only admins can view approved students", 403);
+  }
+
+  // Get all students who have uploaded at least one document
+  const studentsWithDocuments = await Students.findAll({
+    where: {
+      [Op.or]: [
+        { profile_image: { [Op.ne]: null } },
+        { birth_certificate: { [Op.ne]: null } },
+        { ref_letter: { [Op.ne]: null } },
+        { valid_id: { [Op.ne]: null } },
+        { resume_cv: { [Op.ne]: null } },
+        { certificate_file: { [Op.ne]: null } },
+        { other_file: { [Op.ne]: null } },
+      ],
+    },
+    attributes: [
+      "id",
+      "profile_image",
+      "birth_certificate",
+      "ref_letter",
+      "valid_id",
+      "resume_cv",
+      "certificate_file",
+      "other_file",
+    ],
+  });
+
+  const studentIds = studentsWithDocuments.map((s) => s.id);
+
+  if (studentIds.length === 0) {
+    return res.status(200).json({
+      success: true,
+      message: "No students with documents found",
+      data: {
+        students: [],
+        pagination: {
+          total: 0,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalPages: 0,
+        },
+      },
+    });
+  }
+
+  // Get all approval records for these students
+  const allApprovals = await StudentDocumentApproval.findAll({
+    where: {
+      student_id: { [Op.in]: studentIds },
+    },
+    attributes: ["student_id", "document_type", "status"],
+  });
+
+  // Group approvals by student_id
+  const approvalsByStudent = {};
+  allApprovals.forEach((approval) => {
+    if (!approvalsByStudent[approval.student_id]) {
+      approvalsByStudent[approval.student_id] = [];
+    }
+    approvalsByStudent[approval.student_id].push(approval);
+  });
+
+  // Find students who have ALL their documents approved (no pending or rejected)
+  const fullyApprovedStudentIds = [];
+  
+  for (const student of studentsWithDocuments) {
+    const studentId = student.id;
+
+    const uploadedDocuments = [
+      { type: "profile_image", url: student.profile_image },
+      { type: "birth_certificate", url: student.birth_certificate },
+      { type: "ref_letter", url: student.ref_letter },
+      { type: "valid_id", url: student.valid_id },
+      { type: "resume_cv", url: student.resume_cv },
+      { type: "certificate_file", url: student.certificate_file },
+      { type: "other_file", url: student.other_file },
+    ].filter((doc) => doc.url); // Only documents that were uploaded
+
+    if (uploadedDocuments.length === 0) continue;
+
+    const approvals = approvalsByStudent[studentId] || [];
+    const approvalMap = {};
+    approvals.forEach((approval) => {
+      approvalMap[approval.document_type] = approval.status;
+    });
+
+    // Check if all uploaded documents are approved
+    const allApproved = uploadedDocuments.every((doc) => {
+      const status = approvalMap[doc.type];
+      return status === "approved";
+    });
+
+    // Also check that there are no pending or rejected documents
+    const hasPendingOrRejected = approvals.some(
+      (approval) => approval.status === "pending" || approval.status === "rejected"
+    );
+
+    if (allApproved && !hasPendingOrRejected) {
+      fullyApprovedStudentIds.push(studentId);
+    }
+  }
+
+  if (fullyApprovedStudentIds.length === 0) {
+    return res.status(200).json({
+      success: true,
+      message: "No fully approved students found",
+      data: {
+        students: [],
+        pagination: {
+          total: 0,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalPages: 0,
+        },
+      },
+    });
+  }
+
+  // Build where clause
+  const where = {
+    id: { [Op.in]: fullyApprovedStudentIds },
+  };
+
+  if (search) {
+    where[Op.or] = [
+      { fname: { [Op.iLike]: `%${search}%` } },
+      { lname: { [Op.iLike]: `%${search}%` } },
+      { email: { [Op.iLike]: `%${search}%` } },
+      { matric_number: { [Op.iLike]: `%${search}%` } },
+    ];
+  }
+
+  // Get students with pagination (including program)
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const { count, rows: students } = await Students.findAndCountAll({
+    where,
+    attributes: [
+      "id",
+      "fname",
+      "mname",
+      "lname",
+      "email",
+      "matric_number",
+      "admin_status",
+      "program_id",
+    ],
+    include: [
+      {
+        model: Program,
+        as: "program",
+        attributes: ["id", "title", "description"],
+        required: false,
+      },
+    ],
+    limit: parseInt(limit),
+    offset,
+    order: [["id", "DESC"]],
+  });
+
+  // Get approval info to find when they were fully approved
+  const studentIdsForApproval = students.map((s) => s.id);
+  const studentApprovals = await StudentDocumentApproval.findAll({
+    where: {
+      student_id: { [Op.in]: studentIdsForApproval },
+      status: "approved",
+    },
+    attributes: ["student_id", "reviewed_at"],
+    order: [["reviewed_at", "DESC"]],
+  });
+
+  // Find the latest approval date for each student (when they were fully approved)
+  const latestApprovalByStudent = {};
+  studentApprovals.forEach((approval) => {
+    if (
+      !latestApprovalByStudent[approval.student_id] ||
+      new Date(approval.reviewed_at) > new Date(latestApprovalByStudent[approval.student_id])
+    ) {
+      latestApprovalByStudent[approval.student_id] = approval.reviewed_at;
+    }
+  });
+
+  // Get full student data for document counting
+  const studentsWithFullData = await Students.findAll({
+    where: {
+      id: { [Op.in]: studentIdsForApproval },
+    },
+    attributes: [
+      "id",
+      "profile_image",
+      "birth_certificate",
+      "ref_letter",
+      "valid_id",
+      "resume_cv",
+      "certificate_file",
+      "other_file",
+    ],
+  });
+
+  // Count documents for each student
+  const documentCounts = {};
+  studentsWithFullData.forEach((student) => {
+    const count = [
+      student.profile_image,
+      student.birth_certificate,
+      student.ref_letter,
+      student.valid_id,
+      student.resume_cv,
+      student.certificate_file,
+      student.other_file,
+    ].filter(Boolean).length;
+
+    documentCounts[student.id] = count;
+  });
+
+  const approvedStudents = students.map((student) => ({
+    student_id: student.id,
+    name: `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim(),
+    email: student.email,
+    matric_number: student.matric_number,
+    admin_status: student.admin_status,
+    program: student.program
+      ? {
+          id: student.program.id,
+          title: student.program.title,
+          description: student.program.description,
+        }
       : null,
-    student_email: approval.student?.email || null,
-    matric_number: approval.student?.matric_number || null,
-    document_type: approval.document_type,
-    file_url: approval.file_url,
-    uploaded_at: approval.created_at,
+    approved_at: latestApprovalByStudent[student.id] || null,
+    documents_count: documentCounts[student.id] || 0,
   }));
 
   res.status(200).json({
     success: true,
-    message: "Pending documents retrieved successfully",
+    message: "Fully approved students retrieved successfully",
     data: {
-      documents: pendingDocuments,
+      students: approvedStudents,
       pagination: {
         total: count,
         page: parseInt(page),

@@ -28,6 +28,7 @@ import {
   approveStudentDocument,
   rejectStudentDocument,
   getPendingDocuments,
+  getFullyApprovedStudents,
 } from "../controllers/admin/superAdmin/studentKycManagement.js";
 import {
   getAllStaff,
@@ -188,6 +189,7 @@ router.get("/students/:id/full", requireSuperAdmin, getStudentFullDetails);
 // Student KYC Management
 router.get("/students/kyc/status", getAllStudentsKycStatus);
 router.get("/students/kyc/pending", getPendingDocuments);
+router.get("/students/kyc/approved", getFullyApprovedStudents);
 router.get("/students/:id/kyc", getStudentKycDocuments);
 router.post("/students/:id/kyc/signed-url", getStudentDocumentSignedUrl);
 router.put("/students/:id/kyc/documents/:document_type/approve", approveStudentDocument);
