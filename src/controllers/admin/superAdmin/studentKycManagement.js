@@ -837,26 +837,40 @@ export const getFullyApprovedStudents = TryCatchFunction(async (req, res) => {
     order: [["id", "DESC"]],
   });
 
-  // Get approval info to find when they were fully approved
+  // Get approval info to find when they were fully approved and get approved document types
   const studentIdsForApproval = students.map((s) => s.id);
   const studentApprovals = await StudentDocumentApproval.findAll({
     where: {
       student_id: { [Op.in]: studentIdsForApproval },
       status: "approved",
     },
-    attributes: ["student_id", "reviewed_at"],
+    attributes: ["student_id", "document_type", "reviewed_at"],
     order: [["reviewed_at", "DESC"]],
   });
 
   // Find the latest approval date for each student (when they were fully approved)
+  // Also group approved documents by student
   const latestApprovalByStudent = {};
+  const approvedDocumentsByStudent = {};
+  
   studentApprovals.forEach((approval) => {
+    const studentId = approval.student_id;
+    
+    // Track latest approval date
     if (
-      !latestApprovalByStudent[approval.student_id] ||
-      new Date(approval.reviewed_at) > new Date(latestApprovalByStudent[approval.student_id])
+      !latestApprovalByStudent[studentId] ||
+      new Date(approval.reviewed_at) > new Date(latestApprovalByStudent[studentId])
     ) {
-      latestApprovalByStudent[approval.student_id] = approval.reviewed_at;
+      latestApprovalByStudent[studentId] = approval.reviewed_at;
     }
+    
+    // Group approved documents by student (just track which types are approved)
+    if (!approvedDocumentsByStudent[studentId]) {
+      approvedDocumentsByStudent[studentId] = {};
+    }
+    
+    // Mark this document type as approved (we'll get URLs from students table)
+    approvedDocumentsByStudent[studentId][approval.document_type] = true;
   });
 
   // Get full student data for document counting
@@ -892,22 +906,61 @@ export const getFullyApprovedStudents = TryCatchFunction(async (req, res) => {
     documentCounts[student.id] = count;
   });
 
-  const approvedStudents = students.map((student) => ({
-    student_id: student.id,
-    name: `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim(),
-    email: student.email,
-    matric_number: student.matric_number,
-    admin_status: student.admin_status,
-    program: student.program
-      ? {
-          id: student.program.id,
-          title: student.program.title,
-          description: student.program.description,
-        }
-      : null,
-    approved_at: latestApprovalByStudent[student.id] || null,
-    documents_count: documentCounts[student.id] || 0,
-  }));
+  // Map students with their approved document links
+  const approvedStudents = students.map((student) => {
+    const studentId = student.id;
+    
+    // Get the student's full data to include document URLs from students table
+    const studentFullData = studentsWithFullData.find((s) => s.id === studentId);
+    
+    // Get approved document types for this student
+    const approvedDocTypes = approvedDocumentsByStudent[studentId] || {};
+    
+    // Build approved documents object with URLs from students table
+    // Only include documents that have been approved (exist in approvedDocTypes)
+    const approvedDocuments = {};
+    
+    // Check if document type is approved and URL exists in students table
+    if (approvedDocTypes.profile_image && studentFullData?.profile_image) {
+      approvedDocuments.profile_image = studentFullData.profile_image;
+    }
+    if (approvedDocTypes.birth_certificate && studentFullData?.birth_certificate) {
+      approvedDocuments.birth_certificate = studentFullData.birth_certificate;
+    }
+    if (approvedDocTypes.ref_letter && studentFullData?.ref_letter) {
+      approvedDocuments.ref_letter = studentFullData.ref_letter;
+    }
+    if (approvedDocTypes.valid_id && studentFullData?.valid_id) {
+      approvedDocuments.valid_id = studentFullData.valid_id;
+    }
+    if (approvedDocTypes.resume_cv && studentFullData?.resume_cv) {
+      approvedDocuments.resume_cv = studentFullData.resume_cv;
+    }
+    if (approvedDocTypes.certificate_file && studentFullData?.certificate_file) {
+      approvedDocuments.certificate_file = studentFullData.certificate_file;
+    }
+    if (approvedDocTypes.other_file && studentFullData?.other_file) {
+      approvedDocuments.other_file = studentFullData.other_file;
+    }
+    
+    return {
+      student_id: student.id,
+      name: `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim(),
+      email: student.email,
+      matric_number: student.matric_number,
+      admin_status: student.admin_status,
+      program: student.program
+        ? {
+            id: student.program.id,
+            title: student.program.title,
+            description: student.program.description,
+          }
+        : null,
+      approved_at: latestApprovalByStudent[student.id] || null,
+      documents_count: documentCounts[student.id] || 0,
+      approved_documents: approvedDocuments, // Add approved document links
+    };
+  });
 
   res.status(200).json({
     success: true,
