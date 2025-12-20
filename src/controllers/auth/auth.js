@@ -581,7 +581,7 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
       country: country || null,
       level: level || null,
       study_mode: study_mode || null,
-      admin_status: "active",
+      admin_status: "pending",
       date: new Date(),
       // Required fields with defaults (not set during registration)
       currency: currency || "NGN",
@@ -638,7 +638,7 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
     throw createError;
   }
 
-  // Create default email preferences
+  // Create default email preferences (optional - table may not exist)
   try {
     await EmailPreference.create({
       user_id: student.id,
@@ -650,7 +650,12 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
       receive_announcements: true,
     });
   } catch (prefError) {
-    console.error("Error creating email preferences:", prefError);
+    // Silently ignore if table doesn't exist (42P01 = relation does not exist)
+    if (prefError.parent?.code !== "42P01") {
+      // Only log if it's a different error (not just missing table)
+      console.error("Error creating email preferences:", prefError.message);
+    }
+    // Table doesn't exist - this is optional, so we continue
   }
 
   // Send welcome email (non-blocking)
@@ -663,7 +668,7 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
       "student"
     )
     .then((result) => {
-      // Log email send
+      // Log email send (optional - table may not exist)
       EmailLog.create({
         user_id: student.id,
         user_type: "student",
@@ -674,9 +679,12 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
         status: result.success ? "sent" : "failed",
         error_message: result.success ? null : result.message,
         sent_at: result.success ? new Date() : null,
-      }).catch((logError) =>
-        console.error("Error logging welcome email:", logError)
-      );
+      }).catch((logError) => {
+        // Silently ignore if table doesn't exist (42P01 = relation does not exist)
+        if (logError.parent?.code !== "42P01") {
+          console.error("Error logging welcome email:", logError.message);
+        }
+      });
     })
     .catch((error) => {
       console.error("Error sending welcome email:", error);
@@ -735,7 +743,7 @@ export const registerStaff = TryCatchFunction(async (req, res) => {
     ...otherData,
   });
 
-  // Create default email preferences
+  // Create default email preferences (optional - table may not exist)
   try {
     await EmailPreference.create({
       user_id: staff.id,
@@ -744,7 +752,12 @@ export const registerStaff = TryCatchFunction(async (req, res) => {
       receive_announcements: true,
     });
   } catch (prefError) {
-    console.error("Error creating email preferences:", prefError);
+    // Silently ignore if table doesn't exist (42P01 = relation does not exist)
+    if (prefError.parent?.code !== "42P01") {
+      // Only log if it's a different error (not just missing table)
+      console.error("Error creating email preferences:", prefError.message);
+    }
+    // Table doesn't exist - this is optional, so we continue
   }
 
   // Send welcome email (non-blocking)
