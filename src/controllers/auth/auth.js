@@ -73,6 +73,7 @@ export const studentLogin = TryCatchFunction(async (req, res) => {
       studyMode: student.study_mode,
       adminStatus: student.admin_status,
       walletBalance: student.wallet_balance,
+      profileImage: student.profile_image,
     };
 
     res.status(200).json({
@@ -297,6 +298,7 @@ export const login = TryCatchFunction(async (req, res) => {
       studyMode: user.study_mode,
       adminStatus: user.admin_status,
       walletBalance: user.wallet_balance,
+      profileImage: user.profile_image,
     };
   } else {
     userData = {
