@@ -564,29 +564,48 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
 
   // Create student with required defaults
   // Note: program_id, referral_code, and designated_institute are excluded from registration
-  const student = await Students.create({
-    email: email.toLowerCase(),
-    password: hashedPassword,
-    fname,
-    lname,
-    mname: mname || null,
-    gender: gender || null,
-    phone: phone || null,
-    dob: dob || null,
-    address: address || null,
-    state_origin: state_origin || null,
-    lcda: lcda || null,
-    country: country || null,
-    level: level || null,
-    study_mode: study_mode || null,
-    admin_status: "active",
-    date: new Date(),
-    // Required fields with defaults (not set during registration)
-    currency: currency || "NGN",
-    referral_code: "", // Default empty string (not set during registration)
-    designated_institute: 0, // Default 0 (not set during registration)
-    foreign_student: foreign_student ? Number(foreign_student) : 0,
-  });
+  let student;
+  try {
+    student = await Students.create({
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      fname,
+      lname,
+      mname: mname || null,
+      gender: gender || null,
+      phone: phone || null,
+      dob: dob || null,
+      address: address || null,
+      state_origin: state_origin || null,
+      lcda: lcda || null,
+      country: country || null,
+      level: level || null,
+      study_mode: study_mode || null,
+      admin_status: "active",
+      date: new Date(),
+      // Required fields with defaults (not set during registration)
+      currency: currency || "NGN",
+      referral_code: "", // Default empty string (not set during registration)
+      designated_institute: 0, // Default 0 (not set during registration)
+      foreign_student: foreign_student !== undefined && foreign_student !== null ? parseInt(foreign_student, 10) : 0,
+    });
+  } catch (createError) {
+    // Log detailed error for debugging
+    console.error("Student creation error:", createError);
+    if (createError.name === "SequelizeValidationError") {
+      const errors = createError.errors?.map((err) => ({
+        field: err.path,
+        message: err.message,
+        value: err.value,
+      }));
+      console.error("Validation errors:", JSON.stringify(errors, null, 2));
+      throw new ErrorClass(
+        `Validation failed: ${errors?.map((e) => `${e.field}: ${e.message}`).join(", ") || createError.message}`,
+        400
+      );
+    }
+    throw createError;
+  }
 
   // Create default email preferences
   try {
