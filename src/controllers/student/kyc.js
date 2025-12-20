@@ -59,9 +59,44 @@ const uploadProfileImage = multer({
   },
 });
 
-export const uploadProfileImageMiddleware = uploadProfileImage.single(
-  "profile_image"
-);
+// Accept any field name for profile image (more flexible)
+export const uploadProfileImageMiddleware = (req, res, next) => {
+  // Use .any() to accept any field name, then validate it's an image
+  const middleware = uploadProfileImage.any();
+  
+  middleware(req, res, (err) => {
+    if (err) {
+      return next(err);
+    }
+    
+    // Check if any file was uploaded
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({
+        status: false,
+        code: 400,
+        message: "No file uploaded. Please upload a profile image file.",
+      });
+    }
+    
+    // Multer .any() returns files in req.files array, but we expect single file
+    // Take the first file and put it in req.file for consistency
+    if (req.files.length > 0) {
+      req.file = req.files[0];
+    }
+    
+    // Validate it's an image
+    const allowedMimeTypes = ["image/jpeg", "image/jpg", "image/png"];
+    if (!allowedMimeTypes.includes(req.file.mimetype)) {
+      return res.status(400).json({
+        status: false,
+        code: 400,
+        message: "Invalid file type. Only JPEG and PNG images are allowed for profile picture",
+      });
+    }
+    
+    next();
+  });
+};
 
 /**
  * Upload profile image
