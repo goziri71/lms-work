@@ -517,7 +517,7 @@ export const updateStaffProfile = TryCatchFunction(async (req, res) => {
 
 // Student Registration with Welcome Email
 export const registerStudent = TryCatchFunction(async (req, res) => {
-  const { email, password, fname, lname, ...otherData } = req.body;
+  const { email, password, fname, lname, program_id, referral_code, designated_institute, ...otherData } = req.body;
 
   // Validate required fields
   if (!email || !password || !fname || !lname) {
@@ -540,6 +540,7 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
   const hashedPassword = await authService.hashPassword(password);
 
   // Create student with required defaults
+  // Note: program_id, referral_code, and designated_institute are excluded from registration
   const student = await Students.create({
     email: email.toLowerCase(),
     password: hashedPassword,
@@ -547,10 +548,10 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
     lname,
     admin_status: "active",
     date: new Date(),
-    // Required fields with defaults (if not provided)
+    // Required fields with defaults (not set during registration)
     currency: otherData.currency || "NGN",
-    referral_code: otherData.referral_code || "",
-    designated_institute: otherData.designated_institute || 0,
+    referral_code: "", // Default empty string (not set during registration)
+    designated_institute: 0, // Default 0 (not set during registration)
     foreign_student: otherData.foreign_student || 0,
     ...otherData,
   });
