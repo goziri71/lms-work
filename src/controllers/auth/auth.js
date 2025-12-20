@@ -592,6 +592,36 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
   } catch (createError) {
     // Log detailed error for debugging
     console.error("Student creation error:", createError);
+    
+    // Handle unique constraint errors (e.g., duplicate email or ID sequence issue)
+    if (createError.name === "SequelizeUniqueConstraintError") {
+      const errors = createError.errors || [];
+      const errorMessages = errors.map((err) => {
+        if (err.path === "id") {
+          return "Database sequence error. Please contact support.";
+        }
+        if (err.path === "email") {
+          return "Email already exists";
+        }
+        return `${err.path}: ${err.message}`;
+      });
+      
+      // Check if it's an ID sequence issue
+      if (createError.parent?.code === "23505" && createError.parent?.detail?.includes("id")) {
+        console.error("⚠️ Database sequence out of sync. The students table sequence needs to be reset.");
+        throw new ErrorClass(
+          "Registration temporarily unavailable due to a database issue. Please try again in a moment or contact support.",
+          500
+        );
+      }
+      
+      throw new ErrorClass(
+        errorMessages.join(", ") || "A record with this information already exists",
+        409
+      );
+    }
+    
+    // Handle validation errors
     if (createError.name === "SequelizeValidationError") {
       const errors = createError.errors?.map((err) => ({
         field: err.path,
@@ -604,6 +634,7 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
         400
       );
     }
+    
     throw createError;
   }
 
