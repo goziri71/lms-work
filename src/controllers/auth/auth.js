@@ -537,7 +537,7 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
   // Hash password
   const hashedPassword = await authService.hashPassword(password);
 
-  // Create student
+  // Create student with required defaults
   const student = await Students.create({
     email: email.toLowerCase(),
     password: hashedPassword,
@@ -545,6 +545,11 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
     lname,
     admin_status: "active",
     date: new Date(),
+    // Required fields with defaults (if not provided)
+    currency: otherData.currency || "NGN",
+    referral_code: otherData.referral_code || "",
+    designated_institute: otherData.designated_institute || 0,
+    foreign_student: otherData.foreign_student || 0,
     ...otherData,
   });
 
