@@ -128,7 +128,12 @@ export const getAdminProfile = TryCatchFunction(async (req, res) => {
 
   const admin = await WspAdmin.findByPk(id, {
     attributes: {
-      exclude: ["password", "password_reset_token", "two_factor_secret", "token"],
+      exclude: [
+        "password",
+        "password_reset_token",
+        "two_factor_secret",
+        "token",
+      ],
     },
   });
 
@@ -157,12 +162,18 @@ export const changeAdminPassword = TryCatchFunction(async (req, res) => {
   }
 
   if (currentPassword === newPassword) {
-    throw new ErrorClass("New password must be different from current password", 400);
+    throw new ErrorClass(
+      "New password must be different from current password",
+      400
+    );
   }
 
   // Validate new password strength (optional - add your requirements)
   if (newPassword.length < 6) {
-    throw new ErrorClass("New password must be at least 6 characters long", 400);
+    throw new ErrorClass(
+      "New password must be at least 6 characters long",
+      400
+    );
   }
 
   const admin = await WspAdmin.findByPk(id);
@@ -298,22 +309,30 @@ export const requestAdminPasswordReset = TryCatchFunction(async (req, res) => {
   // Generate reset token
   const crypto = await import("crypto");
   const resetToken = crypto.randomBytes(32).toString("hex");
-  const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
 
   // Save hashed token
   await admin.update({
     password_reset_token: hashedToken,
   });
 
+  // Create reset URL for admin (different from student/staff)
+  const resetUrl = `https://${
+    process.env.ADMIN_FRONTEND_URL || "manage.lenerme.com"
+  }/reset-password?token=${resetToken}&type=admin`;
+
   // Send password reset email
   try {
     await emailService.sendPasswordResetEmail(
       {
         email: admin.email,
-        fname: admin.fname,
-        lname: admin.lname,
+        name: `${admin.fname || ""} ${admin.lname || ""}`.trim() || admin.email,
       },
-      resetToken
+      resetToken,
+      resetUrl
     );
 
     // Log email sent
@@ -400,7 +419,7 @@ export const resetAdminPassword = TryCatchFunction(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: "Password reset successful. You can now login with your new password.",
+    message:
+      "Password reset successful. You can now login with your new password.",
   });
 });
-

@@ -517,14 +517,14 @@ export const updateStaffProfile = TryCatchFunction(async (req, res) => {
 
 // Student Registration with Welcome Email
 export const registerStudent = TryCatchFunction(async (req, res) => {
-  const { 
-    email, 
-    password, 
-    fname, 
-    lname, 
+  const {
+    email,
+    password,
+    fname,
+    lname,
     // Exclude these fields from registration
-    program_id, 
-    referral_code, 
+    program_id,
+    referral_code,
     designated_institute,
     // Extract allowed optional fields
     gender,
@@ -539,7 +539,7 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
     study_mode,
     currency,
     foreign_student,
-    ...otherData 
+    ...otherData
   } = req.body;
 
   // Validate required fields
@@ -587,12 +587,15 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
       currency: currency || "NGN",
       referral_code: "", // Default empty string (not set during registration)
       designated_institute: 0, // Default 0 (not set during registration)
-      foreign_student: foreign_student !== undefined && foreign_student !== null ? parseInt(foreign_student, 10) : 0,
+      foreign_student:
+        foreign_student !== undefined && foreign_student !== null
+          ? parseInt(foreign_student, 10)
+          : 0,
     });
   } catch (createError) {
     // Log detailed error for debugging
     console.error("Student creation error:", createError);
-    
+
     // Handle unique constraint errors (e.g., duplicate email or ID sequence issue)
     if (createError.name === "SequelizeUniqueConstraintError") {
       const errors = createError.errors || [];
@@ -605,22 +608,28 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
         }
         return `${err.path}: ${err.message}`;
       });
-      
+
       // Check if it's an ID sequence issue
-      if (createError.parent?.code === "23505" && createError.parent?.detail?.includes("id")) {
-        console.error("⚠️ Database sequence out of sync. The students table sequence needs to be reset.");
+      if (
+        createError.parent?.code === "23505" &&
+        createError.parent?.detail?.includes("id")
+      ) {
+        console.error(
+          "⚠️ Database sequence out of sync. The students table sequence needs to be reset."
+        );
         throw new ErrorClass(
           "Registration temporarily unavailable due to a database issue. Please try again in a moment or contact support.",
           500
         );
       }
-      
+
       throw new ErrorClass(
-        errorMessages.join(", ") || "A record with this information already exists",
+        errorMessages.join(", ") ||
+          "A record with this information already exists",
         409
       );
     }
-    
+
     // Handle validation errors
     if (createError.name === "SequelizeValidationError") {
       const errors = createError.errors?.map((err) => ({
@@ -630,11 +639,14 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
       }));
       console.error("Validation errors:", JSON.stringify(errors, null, 2));
       throw new ErrorClass(
-        `Validation failed: ${errors?.map((e) => `${e.field}: ${e.message}`).join(", ") || createError.message}`,
+        `Validation failed: ${
+          errors?.map((e) => `${e.field}: ${e.message}`).join(", ") ||
+          createError.message
+        }`,
         400
       );
     }
-    
+
     throw createError;
   }
 
@@ -852,7 +864,7 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
 
   // Create reset URL (adjust based on your frontend)
   const resetUrl = `${
-    process.env.FRONTEND_URL || "https://pinnacleuniversity.co"
+    process.env.FRONTEND_URL || "https://app.lenerme.com"
   }/reset-password?token=${resetToken}&type=${userType}`;
 
   // Send password reset email
