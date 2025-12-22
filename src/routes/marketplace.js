@@ -17,7 +17,7 @@ import { browseMarketplaceCourses } from "../controllers/marketplace/browseMarke
 import { getAllTutors } from "../controllers/marketplace/getAllTutors.js";
 import { getAllPrograms } from "../controllers/marketplace/getAllPrograms.js";
 import { authorize } from "../middlewares/authorize.js";
-import { tutorAuthorize } from "../middlewares/tutorAuthorize.js";
+import { tutorAuthorize, requireOrganization } from "../middlewares/tutorAuthorize.js";
 import { getDashboard } from "../controllers/marketplace/tutorDashboard.js";
 import {
   getMyCourses,
@@ -33,6 +33,15 @@ import {
   getTransactionById,
 } from "../controllers/marketplace/tutorEarnings.js";
 import { getProfile, updateProfile } from "../controllers/marketplace/tutorProfile.js";
+import {
+  getOrganizationUsers,
+  getOrganizationUserById,
+  createOrganizationUser,
+  updateOrganizationUser,
+  deleteOrganizationUser,
+  resetOrganizationUserPassword,
+  getOrganizationUsersStats,
+} from "../controllers/marketplace/organizationUserManagement.js";
 
 const router = express.Router();
 
@@ -106,6 +115,52 @@ router.patch("/tutor/courses/:id/status", tutorAuthorize, updateCourseStatus);
 router.get("/tutor/earnings/summary", tutorAuthorize, getEarningsSummary);
 router.get("/tutor/earnings/transactions", tutorAuthorize, getTransactions);
 router.get("/tutor/earnings/transactions/:id", tutorAuthorize, getTransactionById);
+
+// ============================================
+// ORGANIZATION USER MANAGEMENT (Organization Account Only)
+// ============================================
+router.get(
+  "/tutor/organization/users",
+  tutorAuthorize,
+  requireOrganization,
+  getOrganizationUsers
+);
+router.get(
+  "/tutor/organization/users/stats",
+  tutorAuthorize,
+  requireOrganization,
+  getOrganizationUsersStats
+);
+router.get(
+  "/tutor/organization/users/:id",
+  tutorAuthorize,
+  requireOrganization,
+  getOrganizationUserById
+);
+router.post(
+  "/tutor/organization/users",
+  tutorAuthorize,
+  requireOrganization,
+  createOrganizationUser
+);
+router.put(
+  "/tutor/organization/users/:id",
+  tutorAuthorize,
+  requireOrganization,
+  updateOrganizationUser
+);
+router.delete(
+  "/tutor/organization/users/:id",
+  tutorAuthorize,
+  requireOrganization,
+  deleteOrganizationUser
+);
+router.post(
+  "/tutor/organization/users/:id/reset-password",
+  tutorAuthorize,
+  requireOrganization,
+  resetOrganizationUserPassword
+);
 
 export default router;
 
