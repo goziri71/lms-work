@@ -1,9 +1,11 @@
+import crypto from "crypto";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { OrganizationUser } from "../../models/marketplace/organizationUser.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { authService } from "../../service/authservice.js";
+import { emailService } from "../../services/emailService.js";
 
 /**
  * Sole Tutor Registration
@@ -402,6 +404,368 @@ export const organizationUserLogin = TryCatchFunction(async (req, res) => {
       userType: "organization_user",
       expiresIn: 14400, // 4 hours
     },
+  });
+});
+
+/**
+ * Unified Login - Auto-detects Sole Tutor or Organization
+ */
+export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    throw new ErrorClass("Email and password are required", 400);
+  }
+
+  // Try to find in SoleTutor table first
+  let tutor = await SoleTutor.findOne({
+    where: { email: email.toLowerCase() },
+  });
+
+  if (tutor) {
+    // Check status
+    if (tutor.status === "pending") {
+      throw new ErrorClass(
+        "Your account is pending approval. Please wait for admin approval.",
+        403
+      );
+    }
+
+    if (tutor.status === "rejected") {
+      throw new ErrorClass(
+        "Your account has been rejected. Please contact support.",
+        403
+      );
+    }
+
+    if (tutor.status === "suspended") {
+      throw new ErrorClass(
+        "Your account has been suspended. Please contact support.",
+        403
+      );
+    }
+
+    // Verify password
+    const isPasswordValid = await authService.comparePassword(
+      password,
+      tutor.password
+    );
+
+    if (!isPasswordValid) {
+      throw new ErrorClass("Invalid email or password", 401);
+    }
+
+    // Update last login
+    await tutor.update({ last_login: new Date() });
+
+    // Generate JWT token
+    const accessToken = await authService.generateAccessToken({
+      id: tutor.id,
+      userType: "sole_tutor",
+      email: tutor.email,
+      firstName: tutor.fname,
+      lastName: tutor.lname,
+      status: tutor.status,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+      data: {
+        tutor: {
+          id: tutor.id,
+          fname: tutor.fname,
+          lname: tutor.lname,
+          email: tutor.email,
+          status: tutor.status,
+          wallet_balance: tutor.wallet_balance,
+          rating: tutor.rating,
+        },
+        accessToken,
+        userType: "sole_tutor",
+        expiresIn: 14400, // 4 hours
+      },
+    });
+  }
+
+  // If not found in SoleTutor, try Organization
+  const organization = await Organization.findOne({
+    where: { email: email.toLowerCase() },
+  });
+
+  if (organization) {
+    // Check status
+    if (organization.status === "pending") {
+      throw new ErrorClass(
+        "Your organization account is pending approval. Please wait for admin approval.",
+        403
+      );
+    }
+
+    if (organization.status === "rejected") {
+      throw new ErrorClass(
+        "Your organization account has been rejected. Please contact support.",
+        403
+      );
+    }
+
+    if (organization.status === "suspended") {
+      throw new ErrorClass(
+        "Your organization account has been suspended. Please contact support.",
+        403
+      );
+    }
+
+    // Verify password
+    const isPasswordValid = await authService.comparePassword(
+      password,
+      organization.password
+    );
+
+    if (!isPasswordValid) {
+      throw new ErrorClass("Invalid email or password", 401);
+    }
+
+    // Update last login
+    await organization.update({ last_login: new Date() });
+
+    // Generate JWT token
+    const accessToken = await authService.generateAccessToken({
+      id: organization.id,
+      userType: "organization",
+      email: organization.email,
+      name: organization.name,
+      status: organization.status,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+      data: {
+        organization: {
+          id: organization.id,
+          name: organization.name,
+          email: organization.email,
+          status: organization.status,
+          wallet_balance: organization.wallet_balance,
+          rating: organization.rating,
+        },
+        accessToken,
+        userType: "organization",
+        expiresIn: 14400, // 4 hours
+      },
+    });
+  }
+
+  // If not found in either table, return generic error
+  throw new ErrorClass("Invalid email or password", 401);
+});
+
+/**
+ * Request Password Reset - Sole Tutor
+ */
+export const requestPasswordResetSoleTutor = TryCatchFunction(
+  async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+      throw new ErrorClass("Email is required", 400);
+    }
+
+    // Find tutor
+    const tutor = await SoleTutor.findOne({
+      where: { email: email.toLowerCase() },
+    });
+
+    // Don't reveal if user exists or not (security best practice)
+    if (!tutor) {
+      return res.status(200).json({
+        success: true,
+        message: "If the email exists, a password reset link has been sent.",
+      });
+    }
+
+    // Generate secure reset token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
+
+    // Save hashed token to tutor
+    await tutor.update({
+      password_reset_token: hashedToken,
+    });
+
+    // Create reset URL
+    const resetUrl = `${
+      process.env.FRONTEND_URL || "https://app.lenerme.com"
+    }/reset-password?token=${resetToken}&type=sole_tutor`;
+
+    // Send password reset email
+    try {
+      await emailService.sendPasswordResetEmail(
+        {
+          email: tutor.email,
+          name: `${tutor.fname || ""} ${tutor.lname || ""}`.trim(),
+        },
+        resetToken,
+        resetUrl
+      );
+    } catch (error) {
+      console.error("Error sending password reset email:", error);
+      // Don't throw error - still return success to prevent email enumeration
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "If the email exists, a password reset link has been sent.",
+    });
+  }
+);
+
+/**
+ * Request Password Reset - Organization
+ */
+export const requestPasswordResetOrganization = TryCatchFunction(
+  async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+      throw new ErrorClass("Email is required", 400);
+    }
+
+    // Find organization
+    const organization = await Organization.findOne({
+      where: { email: email.toLowerCase() },
+    });
+
+    // Don't reveal if user exists or not (security best practice)
+    if (!organization) {
+      return res.status(200).json({
+        success: true,
+        message: "If the email exists, a password reset link has been sent.",
+      });
+    }
+
+    // Generate secure reset token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
+
+    // Save hashed token to organization
+    await organization.update({
+      password_reset_token: hashedToken,
+    });
+
+    // Create reset URL
+    const resetUrl = `${
+      process.env.FRONTEND_URL || "https://app.lenerme.com"
+    }/reset-password?token=${resetToken}&type=organization`;
+
+    // Send password reset email
+    try {
+      await emailService.sendPasswordResetEmail(
+        {
+          email: organization.email,
+          name: organization.name || "Organization",
+        },
+        resetToken,
+        resetUrl
+      );
+    } catch (error) {
+      console.error("Error sending password reset email:", error);
+      // Don't throw error - still return success to prevent email enumeration
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "If the email exists, a password reset link has been sent.",
+    });
+  }
+);
+
+/**
+ * Reset Password - Sole Tutor
+ */
+export const resetPasswordSoleTutor = TryCatchFunction(async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  if (!token || !newPassword) {
+    throw new ErrorClass("Token and new password are required", 400);
+  }
+
+  // Hash the token from URL
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+  // Find tutor with this token
+  const tutor = await SoleTutor.findOne({
+    where: { password_reset_token: hashedToken },
+  });
+
+  if (!tutor) {
+    throw new ErrorClass(
+      "Invalid or expired reset token. Please request a new password reset.",
+      400
+    );
+  }
+
+  // Hash new password
+  const hashedPassword = authService.hashPassword(newPassword);
+
+  // Update password and clear token
+  await tutor.update({
+    password: hashedPassword,
+    password_reset_token: null,
+  });
+
+  res.status(200).json({
+    success: true,
+    message:
+      "Password has been reset successfully. You can now login with your new password.",
+  });
+});
+
+/**
+ * Reset Password - Organization
+ */
+export const resetPasswordOrganization = TryCatchFunction(async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  if (!token || !newPassword) {
+    throw new ErrorClass("Token and new password are required", 400);
+  }
+
+  // Hash the token from URL
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+  // Find organization with this token
+  const organization = await Organization.findOne({
+    where: { password_reset_token: hashedToken },
+  });
+
+  if (!organization) {
+    throw new ErrorClass(
+      "Invalid or expired reset token. Please request a new password reset.",
+      400
+    );
+  }
+
+  // Hash new password
+  const hashedPassword = authService.hashPassword(newPassword);
+
+  // Update password and clear token
+  await organization.update({
+    password: hashedPassword,
+    password_reset_token: null,
+  });
+
+  res.status(200).json({
+    success: true,
+    message:
+      "Password has been reset successfully. You can now login with your new password.",
   });
 });
 

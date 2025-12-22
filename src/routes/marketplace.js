@@ -5,6 +5,11 @@ import {
   soleTutorLogin,
   organizationLogin,
   organizationUserLogin,
+  unifiedTutorLogin,
+  requestPasswordResetSoleTutor,
+  requestPasswordResetOrganization,
+  resetPasswordSoleTutor,
+  resetPasswordOrganization,
 } from "../controllers/marketplace/tutorAuth.js";
 import { purchaseMarketplaceCourse } from "../controllers/marketplace/coursePurchase.js";
 import { getMyMarketplaceCourses } from "../controllers/marketplace/myMarketplaceCourses.js";
@@ -12,6 +17,22 @@ import { browseMarketplaceCourses } from "../controllers/marketplace/browseMarke
 import { getAllTutors } from "../controllers/marketplace/getAllTutors.js";
 import { getAllPrograms } from "../controllers/marketplace/getAllPrograms.js";
 import { authorize } from "../middlewares/authorize.js";
+import { tutorAuthorize } from "../middlewares/tutorAuthorize.js";
+import { getDashboard } from "../controllers/marketplace/tutorDashboard.js";
+import {
+  getMyCourses,
+  getCourseById,
+  createCourse,
+  updateCourse,
+  deleteCourse,
+  updateCourseStatus,
+} from "../controllers/marketplace/tutorCourseManagement.js";
+import {
+  getEarningsSummary,
+  getTransactions,
+  getTransactionById,
+} from "../controllers/marketplace/tutorEarnings.js";
+import { getProfile, updateProfile } from "../controllers/marketplace/tutorProfile.js";
 
 const router = express.Router();
 
@@ -24,9 +45,21 @@ router.post("/register/sole-tutor", registerSoleTutor);
 router.post("/register/organization", registerOrganization);
 
 // Login
+// Unified login - auto-detects sole tutor or organization
+router.post("/login", unifiedTutorLogin);
+// Separate login endpoints (kept for backward compatibility)
 router.post("/login/sole-tutor", soleTutorLogin);
 router.post("/login/organization", organizationLogin);
 router.post("/login/organization-user", organizationUserLogin);
+
+// Password Reset
+router.post("/password/reset-request/sole-tutor", requestPasswordResetSoleTutor);
+router.post(
+  "/password/reset-request/organization",
+  requestPasswordResetOrganization
+);
+router.post("/password/reset/sole-tutor", resetPasswordSoleTutor);
+router.post("/password/reset/organization", resetPasswordOrganization);
 
 // Get all tutors/organizations (for filtering marketplace courses)
 // Public endpoint - accessible to all (students can use for filtering)
@@ -50,7 +83,29 @@ router.post("/courses/purchase", authorize, purchaseMarketplaceCourse);
 // This must come last because it's less specific than /courses/my-courses
 router.get("/courses", authorize, browseMarketplaceCourses);
 
-// TODO: Add tutor dashboard, course management, etc.
+// ============================================
+// TUTOR DASHBOARD ROUTES (Tutor Authentication Required)
+// ============================================
+
+// Dashboard
+router.get("/tutor/dashboard", tutorAuthorize, getDashboard);
+
+// Profile Management
+router.get("/tutor/profile", tutorAuthorize, getProfile);
+router.put("/tutor/profile", tutorAuthorize, updateProfile);
+
+// Course Management
+router.get("/tutor/courses", tutorAuthorize, getMyCourses);
+router.get("/tutor/courses/:id", tutorAuthorize, getCourseById);
+router.post("/tutor/courses", tutorAuthorize, createCourse);
+router.put("/tutor/courses/:id", tutorAuthorize, updateCourse);
+router.delete("/tutor/courses/:id", tutorAuthorize, deleteCourse);
+router.patch("/tutor/courses/:id/status", tutorAuthorize, updateCourseStatus);
+
+// Earnings & Wallet
+router.get("/tutor/earnings/summary", tutorAuthorize, getEarningsSummary);
+router.get("/tutor/earnings/transactions", tutorAuthorize, getTransactions);
+router.get("/tutor/earnings/transactions/:id", tutorAuthorize, getTransactionById);
 
 export default router;
 
