@@ -130,7 +130,7 @@ class EmailService {
       return await this.sendEmail({
         to: user.email,
         name: user.name,
-        subject: "Welcome to Pinnacle University LMS",
+        subject: "Welcome to LenerMe by WPUN",
         htmlBody,
       });
     } catch (error) {
@@ -158,7 +158,7 @@ class EmailService {
       return await this.sendEmail({
         to: user.email,
         name: user.name,
-        subject: "Password Reset Request - Pinnacle University",
+        subject: "Password Reset Request - LenerMe by WPUN",
         htmlBody,
       });
     } catch (error) {
