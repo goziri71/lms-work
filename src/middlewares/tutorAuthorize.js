@@ -1,5 +1,6 @@
 import { authService } from "../service/authservice.js";
 import { ErrorClass } from "../utils/errorClass/index.js";
+import { Config } from "../config/config.js";
 import { SoleTutor } from "../models/marketplace/soleTutor.js";
 import { Organization } from "../models/marketplace/organization.js";
 import { OrganizationUser } from "../models/marketplace/organizationUser.js";
@@ -15,7 +16,7 @@ export const tutorAuthorize = async (req, res, next) => {
       throw new ErrorClass("Authentication token required", 401);
     }
 
-    const decoded = await authService.verifyToken(token);
+    const decoded = await authService.verifyToken(token, Config.JWT_SECRET);
 
     // Check user type
     if (
@@ -123,4 +124,3 @@ export const requireOrgAdmin = (req, res, next) => {
   }
   next();
 };
-
