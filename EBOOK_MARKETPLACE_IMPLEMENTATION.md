@@ -713,47 +713,406 @@ curl -X POST http://localhost:3000/api/marketplace/ebooks/purchase \
 
 ## Module & Unit Management
 
-### Tutor Endpoints for Course Modules/Units
+Tutors can now manage modules and units for their marketplace courses. This allows tutors to structure their course content into organized modules, with each module containing multiple units (lessons).
 
-Tutors can now manage modules and units for their marketplace courses:
+### Base URL
+All module/unit endpoints are prefixed with: `/api/marketplace/tutor`
 
-**Base URL:** `/api/marketplace/tutor`
+### Authentication
+All endpoints require tutor authentication:
+```
+Authorization: Bearer <tutor_token>
+```
 
-#### Module Management
+### Module Management
 
-- `POST /courses/:courseId/modules` - Create module
-- `GET /courses/:courseId/modules` - Get all modules for a course
-- `PATCH /modules/:moduleId` - Update module
-- `DELETE /modules/:moduleId` - Delete module
+#### 1. Create Module
 
-#### Unit Management
+**Endpoint:** `POST /api/marketplace/tutor/courses/:courseId/modules`
 
-- `POST /modules/:moduleId/units` - Create unit
-- `GET /modules/:moduleId/units` - Get all units for a module
-- `PATCH /units/:unitId` - Update unit
-- `DELETE /units/:unitId` - Delete unit
+**Path Parameters:**
+- `courseId`: ID of the course (must be owned by the tutor)
 
-**Example: Create Module**
+**Request Body:**
 ```json
-POST /api/marketplace/tutor/courses/123/modules
 {
-  "title": "Module 1: Introduction",
-  "description": "Introduction to the course",
+  "title": "Module 1: Introduction to JavaScript",
+  "description": "This module covers the basics of JavaScript programming",
   "status": "draft"
 }
 ```
 
-**Example: Create Unit**
+**Required Fields:**
+- `title`: Module title
+
+**Optional Fields:**
+- `description`: Module description
+- `status`: Module status (`draft` or `published`) - default: `draft`
+
+**Response:**
 ```json
-POST /api/marketplace/tutor/modules/456/units
 {
-  "title": "Unit 1.1: Getting Started",
-  "content": "<p>Content here...</p>",
+  "success": true,
+  "message": "Module created successfully",
+  "data": {
+    "module": {
+      "id": 1,
+      "course_id": 123,
+      "title": "Module 1: Introduction to JavaScript",
+      "description": "This module covers the basics...",
+      "status": "draft",
+      "created_at": "2024-01-15T10:00:00Z"
+    }
+  }
+}
+```
+
+**Validation:**
+- Course must exist and be owned by the tutor
+- Course must be a marketplace course (`is_marketplace: true`)
+
+#### 2. Get All Modules for a Course
+
+**Endpoint:** `GET /api/marketplace/tutor/courses/:courseId/modules`
+
+**Path Parameters:**
+- `courseId`: ID of the course
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Modules retrieved successfully",
+  "data": {
+    "modules": [
+      {
+        "id": 1,
+        "course_id": 123,
+        "title": "Module 1: Introduction",
+        "description": "Introduction to the course",
+        "status": "draft",
+        "units_count": 5,
+        "created_at": "2024-01-15T10:00:00Z",
+        "updated_at": "2024-01-15T10:00:00Z"
+      },
+      {
+        "id": 2,
+        "course_id": 123,
+        "title": "Module 2: Advanced Topics",
+        "description": "Advanced concepts",
+        "status": "published",
+        "units_count": 8,
+        "created_at": "2024-01-16T10:00:00Z",
+        "updated_at": "2024-01-16T10:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+**Note:** Response includes `units_count` showing how many units each module contains.
+
+#### 3. Update Module
+
+**Endpoint:** `PATCH /api/marketplace/tutor/modules/:moduleId`
+
+**Path Parameters:**
+- `moduleId`: ID of the module
+
+**Request Body:** (All fields optional)
+```json
+{
+  "title": "Updated Module Title",
+  "description": "Updated description",
+  "status": "published"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Module updated successfully",
+  "data": {
+    "module": {
+      "id": 1,
+      "course_id": 123,
+      "title": "Updated Module Title",
+      "description": "Updated description",
+      "status": "published",
+      "updated_at": "2024-01-20T10:00:00Z"
+    }
+  }
+}
+```
+
+#### 4. Delete Module
+
+**Endpoint:** `DELETE /api/marketplace/tutor/modules/:moduleId`
+
+**Path Parameters:**
+- `moduleId`: ID of the module
+
+**Validation:**
+- Cannot delete modules that have units
+- Must delete all units first, then delete the module
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Module deleted successfully"
+}
+```
+
+**Error Response (if module has units):**
+```json
+{
+  "success": false,
+  "message": "Cannot delete module with existing units. Please delete all units first."
+}
+```
+
+---
+
+### Unit Management
+
+#### 1. Create Unit
+
+**Endpoint:** `POST /api/marketplace/tutor/modules/:moduleId/units`
+
+**Path Parameters:**
+- `moduleId`: ID of the module
+
+**Request Body:**
+```json
+{
+  "title": "Unit 1.1: Getting Started with JavaScript",
+  "content": "<p>Welcome to JavaScript! In this unit, we'll cover...</p>",
   "content_type": "html",
   "order": 1,
-  "status": "draft"
+  "status": "draft",
+  "duration_min": 30
 }
 ```
+
+**Required Fields:**
+- `title`: Unit title
+
+**Optional Fields:**
+- `content`: Unit content (HTML, Markdown, or URL)
+- `content_type`: Type of content (`html`, `md`, `url`) - default: `html`
+- `order`: Display order within the module - default: `1`
+- `status`: Unit status (`draft` or `published`) - default: `draft`
+- `duration_min`: Estimated duration in minutes
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Unit created successfully",
+  "data": {
+    "unit": {
+      "id": 1,
+      "module_id": 456,
+      "title": "Unit 1.1: Getting Started with JavaScript",
+      "content": "<p>Welcome to JavaScript!...</p>",
+      "content_type": "html",
+      "order": 1,
+      "status": "draft",
+      "duration_min": 30,
+      "created_at": "2024-01-15T10:00:00Z"
+    }
+  }
+}
+```
+
+**Validation:**
+- Module must exist and belong to a course owned by the tutor
+
+#### 2. Get All Units for a Module
+
+**Endpoint:** `GET /api/marketplace/tutor/modules/:moduleId/units`
+
+**Path Parameters:**
+- `moduleId`: ID of the module
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Units retrieved successfully",
+  "data": {
+    "units": [
+      {
+        "id": 1,
+        "module_id": 456,
+        "title": "Unit 1.1: Getting Started",
+        "content": "<p>Content here...</p>",
+        "content_type": "html",
+        "photo_url": null,
+        "video_url": null,
+        "order": 1,
+        "status": "draft",
+        "duration_min": 30,
+        "created_at": "2024-01-15T10:00:00Z",
+        "updated_at": "2024-01-15T10:00:00Z"
+      },
+      {
+        "id": 2,
+        "module_id": 456,
+        "title": "Unit 1.2: Variables and Data Types",
+        "content": "<p>In this unit, we'll learn about...</p>",
+        "content_type": "html",
+        "photo_url": null,
+        "video_url": "https://...",
+        "order": 2,
+        "status": "published",
+        "duration_min": 45,
+        "created_at": "2024-01-15T11:00:00Z",
+        "updated_at": "2024-01-15T11:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+**Note:** Units are ordered by `order` field, then by `id`.
+
+#### 3. Update Unit
+
+**Endpoint:** `PATCH /api/marketplace/tutor/units/:unitId`
+
+**Path Parameters:**
+- `unitId`: ID of the unit
+
+**Request Body:** (All fields optional)
+```json
+{
+  "title": "Updated Unit Title",
+  "content": "<p>Updated content...</p>",
+  "content_type": "html",
+  "order": 2,
+  "status": "published",
+  "duration_min": 35
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Unit updated successfully",
+  "data": {
+    "unit": {
+      "id": 1,
+      "module_id": 456,
+      "title": "Updated Unit Title",
+      "content": "<p>Updated content...</p>",
+      "content_type": "html",
+      "order": 2,
+      "status": "published",
+      "duration_min": 35,
+      "updated_at": "2024-01-20T10:00:00Z"
+    }
+  }
+}
+```
+
+#### 4. Delete Unit
+
+**Endpoint:** `DELETE /api/marketplace/tutor/units/:unitId`
+
+**Path Parameters:**
+- `unitId`: ID of the unit
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Unit deleted successfully"
+}
+```
+
+---
+
+### Module & Unit Workflow
+
+**Recommended workflow for structuring course content:**
+
+1. **Create Course** → Use course management endpoints
+2. **Create Modules** → Organize course into logical sections
+3. **Create Units** → Add lessons/content to each module
+4. **Order Units** → Set `order` field to control display sequence
+5. **Publish** → Set status to `published` when ready
+
+**Example Structure:**
+```
+Course: "Complete JavaScript Course"
+├── Module 1: Introduction (order: 1)
+│   ├── Unit 1.1: Getting Started (order: 1)
+│   ├── Unit 1.2: Variables (order: 2)
+│   └── Unit 1.3: Data Types (order: 3)
+├── Module 2: Functions (order: 2)
+│   ├── Unit 2.1: Function Basics (order: 1)
+│   └── Unit 2.2: Advanced Functions (order: 2)
+└── Module 3: Objects & Arrays (order: 3)
+    ├── Unit 3.1: Objects (order: 1)
+    └── Unit 3.2: Arrays (order: 2)
+```
+
+---
+
+### Testing Module & Unit Endpoints
+
+**Test Create Module:**
+```bash
+curl -X POST http://localhost:3000/api/marketplace/tutor/courses/123/modules \
+  -H "Authorization: Bearer <tutor_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Module 1: Introduction",
+    "description": "Introduction to the course",
+    "status": "draft"
+  }'
+```
+
+**Test Get Modules:**
+```bash
+curl -X GET http://localhost:3000/api/marketplace/tutor/courses/123/modules \
+  -H "Authorization: Bearer <tutor_token>"
+```
+
+**Test Create Unit:**
+```bash
+curl -X POST http://localhost:3000/api/marketplace/tutor/modules/456/units \
+  -H "Authorization: Bearer <tutor_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Unit 1.1: Getting Started",
+    "content": "<p>Welcome to the course!</p>",
+    "content_type": "html",
+    "order": 1,
+    "status": "draft"
+  }'
+```
+
+**Test Get Units:**
+```bash
+curl -X GET http://localhost:3000/api/marketplace/tutor/modules/456/units \
+  -H "Authorization: Bearer <tutor_token>"
+```
+
+---
+
+### Important Notes
+
+1. **Ownership Verification**: All endpoints verify that the tutor owns the course before allowing module/unit operations
+2. **Cascade Deletion**: Deleting a module requires deleting all its units first
+3. **Order Management**: Use the `order` field to control the sequence of units within a module
+4. **Content Types**: Units support HTML, Markdown, or URL-based content
+5. **Video Support**: Units can have `video_url` and `photo_url` fields (can be set via update endpoint)
+6. **Status Management**: Both modules and units have `draft` and `published` statuses for content management
 
 ---
 
