@@ -62,6 +62,8 @@ import {
   getUnitsByModule,
   updateUnit,
   deleteUnit,
+  uploadUnitVideo,
+  uploadVideoMiddleware,
 } from "../controllers/marketplace/tutorModuleManagement.js";
 import {
   getMyEBooks as getTutorEBooks,
@@ -191,6 +193,12 @@ router.post("/tutor/modules/:moduleId/units", tutorAuthorize, createUnit);
 router.get("/tutor/modules/:moduleId/units", tutorAuthorize, getUnitsByModule);
 router.patch("/tutor/units/:unitId", tutorAuthorize, updateUnit);
 router.delete("/tutor/units/:unitId", tutorAuthorize, deleteUnit);
+router.post(
+  "/tutor/modules/:moduleId/units/:unitId/video",
+  tutorAuthorize,
+  uploadVideoMiddleware,
+  uploadUnitVideo
+);
 
 // E-Book Management (Tutor)
 router.get("/tutor/ebooks", tutorAuthorize, getTutorEBooks);

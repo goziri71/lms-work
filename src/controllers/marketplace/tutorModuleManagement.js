@@ -4,6 +4,33 @@ import { Modules } from "../../models/modules/modules.js";
 import { Units } from "../../models/modules/units.js";
 import { Courses } from "../../models/course/courses.js";
 import { Op } from "sequelize";
+import multer from "multer";
+import { supabase } from "../../utils/supabase.js";
+
+// Configure multer for video uploads
+const uploadVideo = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 500 * 1024 * 1024, // 500MB max for videos
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      "video/mp4",
+      "video/mpeg",
+      "video/quicktime",
+      "video/x-msvideo",
+      "video/webm",
+    ];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new ErrorClass("Only video files are allowed (MP4, MPEG, MOV, AVI, WEBM)", 400), false);
+    }
+  },
+});
+
+// Middleware export
+export const uploadVideoMiddleware = uploadVideo.single("video");
 
 /**
  * Helper function to verify tutor owns the course
@@ -399,6 +426,90 @@ export const deleteUnit = TryCatchFunction(async (req, res) => {
   res.status(200).json({
     success: true,
     message: "Unit deleted successfully",
+  });
+});
+
+/**
+ * Upload video for a unit
+ * POST /api/marketplace/tutor/modules/:moduleId/units/:unitId/video
+ */
+export const uploadUnitVideo = TryCatchFunction(async (req, res) => {
+  const tutor = req.tutor;
+  const userType = req.user.userType;
+  const { moduleId, unitId } = req.params;
+
+  if (!req.file) {
+    throw new ErrorClass("Video file is required (field name: 'video')", 400);
+  }
+
+  // Get unit
+  const unit = await Units.findByPk(parseInt(unitId));
+  if (!unit) {
+    throw new ErrorClass("Unit not found", 404);
+  }
+
+  // Verify unit belongs to module
+  if (unit.module_id !== parseInt(moduleId)) {
+    throw new ErrorClass("Unit does not belong to this module", 400);
+  }
+
+  // Get module to verify course ownership
+  const moduleRecord = await Modules.findByPk(parseInt(moduleId));
+  if (!moduleRecord) {
+    throw new ErrorClass("Module not found", 404);
+  }
+
+  // Verify tutor owns the course
+  await verifyTutorCourseAccess(tutor, userType, moduleRecord.course_id);
+
+  // Upload to Supabase
+  const bucket = process.env.VIDEOS_BUCKET || "lmsvideo";
+  const tutorId = tutor.id;
+  const timestamp = Date.now();
+  const ext = (req.file.mimetype?.split("/")[1] || "mp4").toLowerCase();
+  const sanitizedFileName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
+  const objectPath = `tutors/${tutorId}/videos/${moduleId}/${unitId}/${timestamp}_${sanitizedFileName}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(bucket)
+    .upload(objectPath, req.file.buffer, {
+      contentType: req.file.mimetype,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new ErrorClass(`Upload failed: ${uploadError.message}`, 500);
+  }
+
+  // Generate signed URL for private bucket (expires in 1 year)
+  // For private buckets, signed URLs are required; for public buckets, this still works
+  const { data: signedUrlData, error: urlError } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(objectPath, 31536000); // 1 year expiration
+
+  let videoUrl;
+  if (urlError) {
+    // Fallback to public URL if signed URL fails (for public buckets)
+    const { data: urlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(objectPath);
+    videoUrl = urlData.publicUrl;
+  } else {
+    // Use signed URL for private bucket
+    videoUrl = signedUrlData.signedUrl;
+  }
+
+  // Update unit with video URL
+  await unit.update({ video_url: videoUrl });
+
+  res.status(200).json({
+    success: true,
+    message: "Video uploaded successfully",
+    data: {
+      video_url: videoUrl,
+      file_path: objectPath,
+      unit_id: unit.id,
+    },
   });
 });
 
