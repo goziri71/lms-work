@@ -6,6 +6,7 @@ import { Program } from "../../models/program/program.js";
 import { Faculty } from "../../models/faculty/faculty.js";
 import { Staff } from "../../models/auth/staff.js";
 import { Op } from "sequelize";
+import { db } from "../../database/database.js";
 
 /**
  * Get all courses created by tutor
@@ -77,7 +78,7 @@ export const getMyCourses = TryCatchFunction(async (req, res) => {
     },
     attributes: [
       "course_id",
-      [Op.fn("COUNT", Op.col("id")), "enrollment_count"],
+      [db.Sequelize.fn("COUNT", db.Sequelize.col("id")), "enrollment_count"],
     ],
     group: ["course_id"],
     raw: true,
