@@ -232,7 +232,11 @@ export const getMyEBooks = TryCatchFunction(async (req, res) => {
 
   const offset = (parseInt(page) - 1) * parseInt(limit);
 
-  const { count, rows: purchases } = await EBookPurchase.findAndCountAll({
+  let count = 0;
+  let purchases = [];
+
+  try {
+    const result = await EBookPurchase.findAndCountAll({
     where,
     include: [
       {
@@ -249,33 +253,67 @@ export const getMyEBooks = TryCatchFunction(async (req, res) => {
           "tags",
           "pdf_url",
         ],
-        required: true,
+        required: false, // Changed to false to handle deleted e-books gracefully
       },
     ],
-    limit: parseInt(limit),
-    offset,
-    order: [["created_at", "DESC"]],
-  });
+      limit: parseInt(limit),
+      offset,
+      order: [["created_at", "DESC"]],
+    });
+    count = result.count;
+    purchases = result.rows;
+  } catch (error) {
+    // Handle case where table doesn't exist yet
+    if (error.name === "SequelizeDatabaseError" && 
+        (error.message?.includes("does not exist") || 
+         error.message?.includes("relation") ||
+         error.parent?.code === "42P01")) {
+      // Table doesn't exist - return empty result
+      console.warn("ebook_purchases table does not exist yet. Run migration: node scripts/migrate-create-ebooks-tables.js");
+      return res.status(200).json({
+        success: true,
+        message: "Purchased e-books retrieved successfully",
+        data: {
+          ebooks: [],
+          pagination: {
+            total: 0,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: 0,
+          },
+        },
+      });
+    }
+    // Re-throw other errors
+    throw error;
+  }
 
-  const ebooksData = purchases.map((purchase) => {
-    const purchaseJson = purchase.toJSON();
-    const ebook = purchaseJson.ebook;
-    
-    return {
-      id: ebook.id,
-      title: ebook.title,
-      description: ebook.description,
-      author: ebook.author,
-      pages: ebook.pages,
-      cover_image: ebook.cover_image,
-      category: ebook.category,
-      tags: ebook.tags || [],
-      pdf_url: ebook.pdf_url,
-      purchased_at: purchaseJson.created_at,
-      purchase_price: parseFloat(purchaseJson.price || 0),
-      purchase_currency: purchaseJson.currency,
-    };
-  });
+  const ebooksData = purchases
+    .map((purchase) => {
+      const purchaseJson = purchase.toJSON();
+      const ebook = purchaseJson.ebook;
+      
+      // Skip if ebook was deleted
+      if (!ebook) {
+        return null;
+      }
+      
+      return {
+        id: ebook.id,
+        title: ebook.title,
+        description: ebook.description,
+        author: ebook.author,
+        pages: ebook.pages,
+        cover_image: ebook.cover_image,
+        category: ebook.category,
+        tags: ebook.tags || [],
+        pdf_url: ebook.pdf_url,
+        purchased_at: purchaseJson.created_at,
+        purchase_price: parseFloat(purchaseJson.price || 0),
+        purchase_currency: purchaseJson.currency,
+      };
+    })
+    .filter((item) => item !== null); // Remove null entries
 
   res.status(200).json({
     success: true,

@@ -146,6 +146,8 @@ import {
   rejectOrganization,
   updateOrganizationStatus,
   getTutorStats,
+  updateSoleTutorCommissionRate,
+  updateOrganizationCommissionRate,
 } from "../controllers/admin/superAdmin/tutorManagement.js";
 import {
   getAllMarketplaceTransactions,
@@ -436,6 +438,11 @@ router.patch(
   requireSuperAdmin,
   updateSoleTutorStatus
 );
+router.patch(
+  "/tutors/sole-tutors/:id/commission-rate",
+  requireSuperAdmin,
+  updateSoleTutorCommissionRate
+);
 
 // Organizations
 router.get("/tutors/organizations", requireSuperAdmin, getAllOrganizations);
@@ -454,6 +461,11 @@ router.patch(
   "/tutors/organizations/:id/status",
   requireSuperAdmin,
   updateOrganizationStatus
+);
+router.patch(
+  "/tutors/organizations/:id/commission-rate",
+  requireSuperAdmin,
+  updateOrganizationCommissionRate
 );
 
 // Statistics

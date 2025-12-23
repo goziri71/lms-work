@@ -93,7 +93,9 @@ async function migrateCreateEBooksTables() {
           transaction_ref VARCHAR(100) NOT NULL UNIQUE,
           created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
           CONSTRAINT fk_ebook_purchases_student 
-            FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+            FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+          CONSTRAINT fk_ebook_purchases_ebook 
+            FOREIGN KEY (ebook_id) REFERENCES ebooks(id) ON DELETE CASCADE
         );
       `);
 

@@ -521,6 +521,122 @@ export const updateOrganizationStatus = TryCatchFunction(async (req, res) => {
 });
 
 /**
+ * Update commission rate for sole tutor
+ * PATCH /api/admin/tutors/sole-tutors/:id/commission-rate
+ */
+export const updateSoleTutorCommissionRate = TryCatchFunction(async (req, res) => {
+  const { id } = req.params;
+  const { commission_rate } = req.body;
+
+  if (commission_rate === undefined || commission_rate === null) {
+    throw new ErrorClass("Commission rate is required", 400);
+  }
+
+  const rate = parseFloat(commission_rate);
+  if (isNaN(rate) || rate < 0 || rate > 100) {
+    throw new ErrorClass("Commission rate must be a number between 0 and 100", 400);
+  }
+
+  const tutor = await SoleTutor.findByPk(id);
+  if (!tutor) {
+    throw new ErrorClass("Sole tutor not found", 404);
+  }
+
+  const oldCommissionRate = tutor.commission_rate;
+  await tutor.update({ commission_rate: rate });
+
+  // Log activity
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(
+        req.user.id,
+        "updated_sole_tutor_commission_rate",
+        "sole_tutor",
+        id,
+        {
+          old_commission_rate: oldCommissionRate,
+          new_commission_rate: rate,
+        }
+      );
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Commission rate updated successfully",
+    data: {
+      tutor: {
+        id: tutor.id,
+        name: `${tutor.fname || ""} ${tutor.lname || ""}`.trim(),
+        email: tutor.email,
+        old_commission_rate: oldCommissionRate,
+        new_commission_rate: rate,
+      },
+    },
+  });
+});
+
+/**
+ * Update commission rate for organization
+ * PATCH /api/admin/tutors/organizations/:id/commission-rate
+ */
+export const updateOrganizationCommissionRate = TryCatchFunction(async (req, res) => {
+  const { id } = req.params;
+  const { commission_rate } = req.body;
+
+  if (commission_rate === undefined || commission_rate === null) {
+    throw new ErrorClass("Commission rate is required", 400);
+  }
+
+  const rate = parseFloat(commission_rate);
+  if (isNaN(rate) || rate < 0 || rate > 100) {
+    throw new ErrorClass("Commission rate must be a number between 0 and 100", 400);
+  }
+
+  const organization = await Organization.findByPk(id);
+  if (!organization) {
+    throw new ErrorClass("Organization not found", 404);
+  }
+
+  const oldCommissionRate = organization.commission_rate;
+  await organization.update({ commission_rate: rate });
+
+  // Log activity
+  try {
+    if (req.user && req.user.id) {
+      await logAdminActivity(
+        req.user.id,
+        "updated_organization_commission_rate",
+        "organization",
+        id,
+        {
+          old_commission_rate: oldCommissionRate,
+          new_commission_rate: rate,
+        }
+      );
+    }
+  } catch (logError) {
+    console.error("Error logging admin activity:", logError);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Commission rate updated successfully",
+    data: {
+      organization: {
+        id: organization.id,
+        name: organization.name,
+        email: organization.email,
+        old_commission_rate: oldCommissionRate,
+        new_commission_rate: rate,
+      },
+    },
+  });
+});
+
+/**
  * Get tutor statistics
  */
 export const getTutorStats = TryCatchFunction(async (req, res) => {
