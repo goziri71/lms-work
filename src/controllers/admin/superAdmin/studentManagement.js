@@ -741,8 +741,23 @@ export const updateStudent = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Student not found", 404);
   }
 
+  // Auto-generate matric number if admin_status is being changed to "active"
+  // and student doesn't already have a matric number
+  if (
+    updateData.admin_status === "active" &&
+    student.admin_status !== "active" &&
+    (!student.matric_number || student.matric_number.trim() === "")
+  ) {
+    updateData.matric_number = await generateUniqueMatricNumber();
+  }
+
   const oldData = { ...student.dataValues };
+  const matricWasGenerated = !!updateData.matric_number;
+  
   await student.update(updateData);
+
+  // Refresh student data to get updated values
+  await student.reload();
 
   // Log activity
   await logAdminActivity(
@@ -750,13 +765,14 @@ export const updateStudent = TryCatchFunction(async (req, res) => {
     "updated_student",
     "student",
     id,
-    `Updated student: ${student.fname} ${student.lname}`,
+    `Updated student: ${student.fname} ${student.lname}${matricWasGenerated ? ` (Matric: ${updateData.matric_number})` : ""}`,
     {
       student_id: id,
       changes: {
         before: oldData,
         after: student.dataValues,
       },
+      matric_generated: matricWasGenerated,
     }
   );
 
@@ -770,6 +786,8 @@ export const updateStudent = TryCatchFunction(async (req, res) => {
         lastName: student.lname,
         email: student.email,
         status: student.admin_status,
+        matric_number: student.matric_number,
+        matric_generated: matricWasGenerated,
       },
     },
   });
@@ -807,6 +825,46 @@ export const deactivateStudent = TryCatchFunction(async (req, res) => {
 });
 
 /**
+ * Generate matric number in format: WPU + YYYY + MM + DD + HH + mm
+ * Example: WPU202512201009
+ * If duplicate exists, appends seconds (ss) to ensure uniqueness
+ */
+async function generateUniqueMatricNumber() {
+  const now = new Date();
+  const year = now.getFullYear(); // YYYY
+  const month = String(now.getMonth() + 1).padStart(2, "0"); // MM (01-12)
+  const day = String(now.getDate()).padStart(2, "0"); // DD (01-31)
+  const hour = String(now.getHours()).padStart(2, "0"); // HH (00-23)
+  const minutes = String(now.getMinutes()).padStart(2, "0"); // mm (00-59)
+  
+  let baseMatric = `WPU${year}${month}${day}${hour}${minutes}`;
+  
+  // Check if base matric number exists
+  const existingStudent = await Students.findOne({
+    where: { matric_number: baseMatric },
+  });
+  
+  // If exists, append seconds to ensure uniqueness
+  if (existingStudent) {
+    const seconds = String(now.getSeconds()).padStart(2, "0"); // ss (00-59)
+    baseMatric = `${baseMatric}${seconds}`;
+    
+    // Double-check with seconds appended (very unlikely but possible)
+    const existingWithSeconds = await Students.findOne({
+      where: { matric_number: baseMatric },
+    });
+    
+    // If still exists (extremely rare), append milliseconds
+    if (existingWithSeconds) {
+      const milliseconds = String(now.getMilliseconds()).padStart(3, "0"); // mmm (000-999)
+      baseMatric = `${baseMatric}${milliseconds}`;
+    }
+  }
+  
+  return baseMatric;
+}
+
+/**
  * Activate student
  */
 export const activateStudent = TryCatchFunction(async (req, res) => {
@@ -818,7 +876,15 @@ export const activateStudent = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Student not found", 404);
   }
 
-  await student.update({ admin_status: "active" });
+  // Prepare update data
+  const updateData = { admin_status: "active" };
+
+  // Auto-generate matric number if not already set
+  if (!student.matric_number || student.matric_number.trim() === "") {
+    updateData.matric_number = await generateUniqueMatricNumber();
+  }
+
+  await student.update(updateData);
 
   // Log activity
   await logAdminActivity(
@@ -826,13 +892,22 @@ export const activateStudent = TryCatchFunction(async (req, res) => {
     "activated_student",
     "student",
     id,
-    `Activated student: ${student.fname} ${student.lname}`,
-    { student_id: id }
+    `Activated student: ${student.fname} ${student.lname}${updateData.matric_number ? ` (Matric: ${updateData.matric_number})` : ""}`,
+    { 
+      student_id: id,
+      matric_number: updateData.matric_number || student.matric_number,
+    }
   );
 
   res.status(200).json({
     success: true,
     message: "Student activated successfully",
+    data: {
+      student_id: id,
+      admin_status: "active",
+      matric_number: student.matric_number || updateData.matric_number,
+      matric_generated: !!updateData.matric_number,
+    },
   });
 });
 
