@@ -769,3 +769,22 @@ export const resetPasswordOrganization = TryCatchFunction(async (req, res) => {
   });
 });
 
+/**
+ * Tutor Logout
+ * POST /api/marketplace/logout
+ * 
+ * Since we're using stateless JWT tokens, logout is primarily handled client-side
+ * by removing the token from storage. This endpoint provides a consistent API
+ * for logout operations and can be used for future activity logging if needed.
+ */
+export const tutorLogout = TryCatchFunction(async (req, res) => {
+  // Since we're using stateless JWT tokens, logout is handled client-side
+  // by simply removing the token from storage
+  // Future: Could add activity logging here if needed
+
+  res.status(200).json({
+    success: true,
+    message: "Logout successful",
+  });
+});
+

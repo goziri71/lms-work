@@ -280,6 +280,33 @@ Content-Type: application/json
 - For organizations: `name` is required if provided
 - All fields are optional (only provided fields will be updated)
 
+### Logout
+
+Log out the current tutor session. Since the system uses stateless JWT tokens, logout is primarily handled client-side by removing the token from storage. This endpoint provides a consistent API for logout operations.
+
+**Endpoint:** `POST /api/marketplace/logout`
+
+**Headers:**
+
+```
+Authorization: Bearer <tutor_token>
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "message": "Logout successful"
+}
+```
+
+**Notes:**
+
+- After calling this endpoint, the client should remove the JWT token from storage (localStorage, sessionStorage, cookies, etc.)
+- The token itself remains valid until it expires, but removing it from client storage effectively logs the user out
+- This endpoint works for both sole tutors and organizations
+
 ---
 
 ## Course Management

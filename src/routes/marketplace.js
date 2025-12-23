@@ -10,6 +10,7 @@ import {
   requestPasswordResetOrganization,
   resetPasswordSoleTutor,
   resetPasswordOrganization,
+  tutorLogout,
 } from "../controllers/marketplace/tutorAuth.js";
 import { purchaseMarketplaceCourse } from "../controllers/marketplace/coursePurchase.js";
 import { getMyMarketplaceCourses } from "../controllers/marketplace/myMarketplaceCourses.js";
@@ -70,6 +71,9 @@ router.post(
 );
 router.post("/password/reset/sole-tutor", resetPasswordSoleTutor);
 router.post("/password/reset/organization", resetPasswordOrganization);
+
+// Logout (requires tutor authentication)
+router.post("/logout", tutorAuthorize, tutorLogout);
 
 // Get all tutors/organizations (for filtering marketplace courses)
 // Public endpoint - accessible to all (students can use for filtering)
