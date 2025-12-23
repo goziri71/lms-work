@@ -139,11 +139,12 @@ router.post("/courses/purchase", authorize, purchaseMarketplaceCourse);
 router.get("/courses", authorize, browseMarketplaceCourses);
 
 // E-Book Browsing & Purchase (Student)
+// IMPORTANT: More specific routes must come before parameterized routes
 router.get("/ebooks", authorize, browseEBooks);
-router.get("/ebooks/:id", authorize, getStudentEBookById);
 router.get("/ebooks/my-ebooks", authorize, getStudentEBooks);
 router.post("/ebooks/purchase", authorize, purchaseEBook);
 router.post("/ebooks/:id/signed-url", authorize, getEBookSignedUrl);
+router.get("/ebooks/:id", authorize, getStudentEBookById);
 
 // ============================================
 // TUTOR DASHBOARD ROUTES (Tutor Authentication Required)
