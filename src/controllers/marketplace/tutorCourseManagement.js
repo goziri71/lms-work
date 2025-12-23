@@ -226,6 +226,19 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Course code already exists for your account", 409);
   }
 
+  // For marketplace courses, staff_id is required but not meaningful
+  // Try to find a default staff or use 1 (will fail if foreign key constraint exists)
+  let staffId = 1;
+  try {
+    const defaultStaff = await Staff.findOne({ order: [["id", "ASC"]] });
+    if (defaultStaff) {
+      staffId = defaultStaff.id;
+    }
+  } catch (error) {
+    // If we can't find staff, use 1 (may fail if foreign key constraint exists)
+    console.warn("Could not find default staff, using staff_id: 1");
+  }
+
   // Create course
   const course = await Courses.create({
     title: title.trim(),
@@ -237,7 +250,7 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     semester: semester || null,
     program_id: program_id || null,
     faculty_id: faculty_id || null,
-    staff_id: 1, // Default staff_id (required field)
+    staff_id: staffId,
     currency: currency,
     owner_type: ownerType,
     owner_id: ownerId,

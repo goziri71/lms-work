@@ -488,30 +488,28 @@ export const setupAssociations = () => {
 
   // E-Books associations
   // Sole Tutor -> E-Books (One-to-Many)
+  // Note: Using constraints: false because owner_type is on EBooks, not SoleTutor
   SoleTutor.hasMany(EBooks, {
     foreignKey: "owner_id",
     constraints: false,
-    scope: { owner_type: "sole_tutor" },
     as: "ebooks",
   });
   EBooks.belongsTo(SoleTutor, {
     foreignKey: "owner_id",
     constraints: false,
-    scope: { owner_type: "sole_tutor" },
     as: "soleTutor",
   });
 
   // Organization -> E-Books (One-to-Many)
+  // Note: Using constraints: false because owner_type is on EBooks, not Organization
   Organization.hasMany(EBooks, {
     foreignKey: "owner_id",
     constraints: false,
-    scope: { owner_type: "organization" },
     as: "ebooks",
   });
   EBooks.belongsTo(Organization, {
     foreignKey: "owner_id",
     constraints: false,
-    scope: { owner_type: "organization" },
     as: "organization",
   });
 
