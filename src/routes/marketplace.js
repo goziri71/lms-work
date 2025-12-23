@@ -61,6 +61,10 @@ import {
   updateEBook,
   deleteEBook,
   updateEBookStatus,
+  uploadEBookPDF,
+  uploadEBookCover,
+  uploadPDFMiddleware,
+  uploadCoverImageMiddleware,
 } from "../controllers/marketplace/tutorEbookManagement.js";
 import {
   browseEBooks,
@@ -172,6 +176,18 @@ router.post("/tutor/ebooks", tutorAuthorize, createEBook);
 router.put("/tutor/ebooks/:id", tutorAuthorize, updateEBook);
 router.delete("/tutor/ebooks/:id", tutorAuthorize, deleteEBook);
 router.patch("/tutor/ebooks/:id/status", tutorAuthorize, updateEBookStatus);
+router.post(
+  "/tutor/ebooks/upload-pdf",
+  tutorAuthorize,
+  uploadPDFMiddleware,
+  uploadEBookPDF
+);
+router.post(
+  "/tutor/ebooks/upload-cover",
+  tutorAuthorize,
+  uploadCoverImageMiddleware,
+  uploadEBookCover
+);
 
 // ============================================
 // ORGANIZATION USER MANAGEMENT (Organization Account Only)

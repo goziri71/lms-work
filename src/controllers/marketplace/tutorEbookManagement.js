@@ -2,6 +2,43 @@ import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { EBooks } from "../../models/marketplace/ebooks.js";
 import { Op } from "sequelize";
+import multer from "multer";
+import { supabase } from "../../utils/supabase.js";
+
+// Configure multer for PDF uploads
+const uploadPDF = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB max
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === "application/pdf") {
+      cb(null, true);
+    } else {
+      cb(new ErrorClass("Only PDF files are allowed", 400), false);
+    }
+  },
+});
+
+// Configure multer for cover image uploads
+const uploadCoverImage = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB max
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ["image/jpeg", "image/jpg", "image/png"];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new ErrorClass("Only JPEG and PNG images are allowed", 400), false);
+    }
+  },
+});
+
+// Middleware exports
+export const uploadPDFMiddleware = uploadPDF.single("pdf");
+export const uploadCoverImageMiddleware = uploadCoverImage.single("cover_image");
 
 /**
  * Get all e-books created by tutor
@@ -365,6 +402,95 @@ export const updateEBookStatus = TryCatchFunction(async (req, res) => {
         title: ebook.title,
         status: ebook.status,
       },
+    },
+  });
+});
+
+/**
+ * Upload PDF file for e-book
+ * POST /api/marketplace/tutor/ebooks/upload-pdf
+ */
+export const uploadEBookPDF = TryCatchFunction(async (req, res) => {
+  const tutor = req.tutor;
+  const tutorId = tutor.id;
+
+  if (!req.file) {
+    throw new ErrorClass("PDF file is required", 400);
+  }
+
+  const bucket = process.env.EBOOKS_BUCKET || "ebooks";
+  const timestamp = Date.now();
+  const sanitizedFileName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
+  const objectPath = `tutors/${tutorId}/pdfs/${timestamp}_${sanitizedFileName}`;
+
+  // Upload to Supabase
+  const { error: uploadError } = await supabase.storage
+    .from(bucket)
+    .upload(objectPath, req.file.buffer, {
+      contentType: "application/pdf",
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new ErrorClass(`Upload failed: ${uploadError.message}`, 500);
+  }
+
+  // Generate public URL
+  const { data: urlData } = supabase.storage
+    .from(bucket)
+    .getPublicUrl(objectPath);
+
+  res.status(200).json({
+    success: true,
+    message: "PDF uploaded successfully",
+    data: {
+      pdf_url: urlData.publicUrl,
+      file_path: objectPath,
+    },
+  });
+});
+
+/**
+ * Upload cover image for e-book
+ * POST /api/marketplace/tutor/ebooks/upload-cover
+ */
+export const uploadEBookCover = TryCatchFunction(async (req, res) => {
+  const tutor = req.tutor;
+  const tutorId = tutor.id;
+
+  if (!req.file) {
+    throw new ErrorClass("Cover image file is required", 400);
+  }
+
+  const bucket = process.env.EBOOKS_BUCKET || "ebooks";
+  const timestamp = Date.now();
+  const sanitizedFileName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
+  const ext = req.file.mimetype?.split("/")[1] || "jpg";
+  const objectPath = `tutors/${tutorId}/covers/${timestamp}_${sanitizedFileName}`;
+
+  // Upload to Supabase
+  const { error: uploadError } = await supabase.storage
+    .from(bucket)
+    .upload(objectPath, req.file.buffer, {
+      contentType: req.file.mimetype,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new ErrorClass(`Upload failed: ${uploadError.message}`, 500);
+  }
+
+  // Generate public URL
+  const { data: urlData } = supabase.storage
+    .from(bucket)
+    .getPublicUrl(objectPath);
+
+  res.status(200).json({
+    success: true,
+    message: "Cover image uploaded successfully",
+    data: {
+      cover_image: urlData.publicUrl,
+      file_path: objectPath,
     },
   });
 });
