@@ -30,8 +30,9 @@ Authorization: Bearer <access_token>
 1. [Dashboard](#dashboard)
 2. [Profile Management](#profile-management)
 3. [Course Management](#course-management)
-4. [Earnings & Wallet](#earnings--wallet)
-5. [Organization User Management](#organization-user-management) _(Organizations Only)_
+4. [Metadata (Faculties & Programs)](#metadata-faculties--programs)
+5. [Earnings & Wallet](#earnings--wallet)
+6. [Organization User Management](#organization-user-management) _(Organizations Only)_
 
 ---
 
@@ -653,6 +654,150 @@ Content-Type: application/json
   "message": "Cannot publish course without a valid price"
 }
 ```
+
+---
+
+## Metadata (Faculties & Programs)
+
+These endpoints provide lists of available faculties and programs that tutors can select when creating or updating courses. This is particularly useful for organizational tutors who want to categorize their courses by faculty and program.
+
+**Note:** `faculty_id` and `program_id` are **optional** fields when creating/updating courses. Sole tutors typically don't need them, but organizational tutors may want to use them for categorization.
+
+---
+
+### Get Available Faculties
+
+Get a list of all available faculties that tutors can choose from when creating/updating courses.
+
+**Endpoint:** `GET /api/marketplace/tutor/faculties`
+
+**Headers:**
+
+```
+Authorization: Bearer <tutor_token>
+```
+
+**Query Parameters:**
+
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 100, max recommended: 100)
+- `search` (optional): Search by faculty name or description
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "message": "Faculties retrieved successfully",
+  "data": {
+    "faculties": [
+      {
+        "id": 1,
+        "name": "Faculty of Science",
+        "description": "Science and Technology programs"
+      },
+      {
+        "id": 2,
+        "name": "Faculty of Arts",
+        "description": "Arts and Humanities programs"
+      }
+    ],
+    "pagination": {
+      "total": 10,
+      "page": 1,
+      "limit": 100,
+      "totalPages": 1
+    }
+  }
+}
+```
+
+**Example Request:**
+
+```bash
+GET /api/marketplace/tutor/faculties?search=Science&page=1&limit=20
+```
+
+---
+
+### Get Available Programs
+
+Get a list of all active programs that tutors can choose from when creating/updating courses.
+
+**Endpoint:** `GET /api/marketplace/tutor/programs`
+
+**Headers:**
+
+```
+Authorization: Bearer <tutor_token>
+```
+
+**Query Parameters:**
+
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 100, max recommended: 100)
+- `search` (optional): Search by program title or description
+- `faculty_id` (optional): Filter programs by faculty ID
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "message": "Programs retrieved successfully",
+  "data": {
+    "programs": [
+      {
+        "id": 1,
+        "title": "Computer Science",
+        "description": "Bachelor of Science in Computer Science",
+        "faculty_id": 1,
+        "faculty": {
+          "id": 1,
+          "name": "Faculty of Science"
+        },
+        "status": "Y"
+      },
+      {
+        "id": 2,
+        "title": "English Literature",
+        "description": "Bachelor of Arts in English Literature",
+        "faculty_id": 2,
+        "faculty": {
+          "id": 2,
+          "name": "Faculty of Arts"
+        },
+        "status": "Y"
+      }
+    ],
+    "pagination": {
+      "total": 25,
+      "page": 1,
+      "limit": 100,
+      "totalPages": 1
+    }
+  }
+}
+```
+
+**Example Requests:**
+
+```bash
+# Get all programs
+GET /api/marketplace/tutor/programs
+
+# Get programs for a specific faculty
+GET /api/marketplace/tutor/programs?faculty_id=1
+
+# Search programs
+GET /api/marketplace/tutor/programs?search=Computer&page=1&limit=20
+```
+
+**Notes:**
+
+- Only active programs (`status: "Y"`) are returned
+- Programs include their associated faculty information
+- Use these endpoints to populate dropdown/select fields in the frontend when creating/updating courses
 
 ---
 

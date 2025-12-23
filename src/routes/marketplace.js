@@ -42,6 +42,7 @@ import {
   resetOrganizationUserPassword,
   getOrganizationUsersStats,
 } from "../controllers/marketplace/organizationUserManagement.js";
+import { getFaculties, getPrograms } from "../controllers/marketplace/tutorMetadata.js";
 
 const router = express.Router();
 
@@ -115,6 +116,10 @@ router.patch("/tutor/courses/:id/status", tutorAuthorize, updateCourseStatus);
 router.get("/tutor/earnings/summary", tutorAuthorize, getEarningsSummary);
 router.get("/tutor/earnings/transactions", tutorAuthorize, getTransactions);
 router.get("/tutor/earnings/transactions/:id", tutorAuthorize, getTransactionById);
+
+// Metadata (Faculties & Programs for course creation)
+router.get("/tutor/faculties", tutorAuthorize, getFaculties);
+router.get("/tutor/programs", tutorAuthorize, getPrograms);
 
 // ============================================
 // ORGANIZATION USER MANAGEMENT (Organization Account Only)
