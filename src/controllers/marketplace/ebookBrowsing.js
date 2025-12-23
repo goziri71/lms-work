@@ -3,6 +3,7 @@ import { ErrorClass } from "../../utils/errorClass/index.js";
 import { EBooks, EBookPurchase } from "../../models/marketplace/index.js";
 import { SoleTutor, Organization } from "../../models/marketplace/index.js";
 import { Op } from "sequelize";
+import { supabase } from "../../utils/supabase.js";
 
 /**
  * Browse all published e-books
@@ -288,38 +289,70 @@ export const getMyEBooks = TryCatchFunction(async (req, res) => {
     throw error;
   }
 
-  const ebooksData = purchases
-    .map((purchase) => {
-      const purchaseJson = purchase.toJSON();
-      const ebook = purchaseJson.ebook;
-      
-      // Skip if ebook was deleted
-      if (!ebook) {
-        return null;
-      }
-      
-      return {
-        id: ebook.id,
-        title: ebook.title,
-        description: ebook.description,
-        author: ebook.author,
-        pages: ebook.pages,
-        cover_image: ebook.cover_image,
-        category: ebook.category,
-        tags: ebook.tags || [],
-        pdf_url: ebook.pdf_url,
-        purchased_at: purchaseJson.created_at,
-        purchase_price: parseFloat(purchaseJson.price || 0),
-        purchase_currency: purchaseJson.currency,
-      };
-    })
-    .filter((item) => item !== null); // Remove null entries
+  // Generate signed URLs for PDFs (for private buckets)
+  const ebooksData = await Promise.all(
+    purchases
+      .map(async (purchase) => {
+        const purchaseJson = purchase.toJSON();
+        const ebook = purchaseJson.ebook;
+        
+        // Skip if ebook was deleted
+        if (!ebook) {
+          return null;
+        }
+
+        // Generate signed URL for PDF if needed (for private buckets)
+        let pdfUrl = ebook.pdf_url;
+        if (pdfUrl) {
+          try {
+            // Extract file path from URL
+            const urlParts = pdfUrl.split("/storage/v1/object/");
+            if (urlParts.length >= 2) {
+              const pathPart = urlParts[1].split("?")[0]; // Remove query params if any
+              const pathParts = pathPart.split("/");
+              const bucket = pathParts[0];
+              const objectPath = pathParts.slice(1).join("/");
+
+              // Try to generate signed URL (works for both public and private buckets)
+              const { data: signedUrlData, error: urlError } = await supabase.storage
+                .from(bucket)
+                .createSignedUrl(objectPath, 3600); // 1 hour expiration for student access
+
+              if (!urlError && signedUrlData) {
+                pdfUrl = signedUrlData.signedUrl;
+              }
+            }
+          } catch (error) {
+            // If signed URL generation fails, use original URL
+            console.warn("Failed to generate signed URL for PDF:", error);
+          }
+        }
+        
+        return {
+          id: ebook.id,
+          title: ebook.title,
+          description: ebook.description,
+          author: ebook.author,
+          pages: ebook.pages,
+          cover_image: ebook.cover_image,
+          category: ebook.category,
+          tags: ebook.tags || [],
+          pdf_url: pdfUrl,
+          purchased_at: purchaseJson.created_at,
+          purchase_price: parseFloat(purchaseJson.price || 0),
+          purchase_currency: purchaseJson.currency,
+        };
+      })
+  );
+
+  // Filter out null entries
+  const validEbooks = ebooksData.filter((item) => item !== null);
 
   res.status(200).json({
     success: true,
     message: "Purchased e-books retrieved successfully",
     data: {
-      ebooks: ebooksData,
+      ebooks: validEbooks,
       pagination: {
         total: count,
         page: parseInt(page),

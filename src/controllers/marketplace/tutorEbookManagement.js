@@ -435,16 +435,29 @@ export const uploadEBookPDF = TryCatchFunction(async (req, res) => {
     throw new ErrorClass(`Upload failed: ${uploadError.message}`, 500);
   }
 
-  // Generate public URL
-  const { data: urlData } = supabase.storage
+  // Generate signed URL for private bucket (expires in 1 year)
+  // For private buckets, signed URLs are required; for public buckets, this still works
+  const { data: signedUrlData, error: urlError } = await supabase.storage
     .from(bucket)
-    .getPublicUrl(objectPath);
+    .createSignedUrl(objectPath, 31536000); // 1 year expiration
+
+  let fileUrl;
+  if (urlError) {
+    // Fallback to public URL if signed URL fails (for public buckets)
+    const { data: urlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(objectPath);
+    fileUrl = urlData.publicUrl;
+  } else {
+    // Use signed URL for private bucket
+    fileUrl = signedUrlData.signedUrl;
+  }
 
   res.status(200).json({
     success: true,
     message: "PDF uploaded successfully",
     data: {
-      pdf_url: urlData.publicUrl,
+      pdf_url: fileUrl,
       file_path: objectPath,
     },
   });
@@ -480,16 +493,29 @@ export const uploadEBookCover = TryCatchFunction(async (req, res) => {
     throw new ErrorClass(`Upload failed: ${uploadError.message}`, 500);
   }
 
-  // Generate public URL
-  const { data: urlData } = supabase.storage
+  // Generate signed URL for private bucket (expires in 1 year)
+  // For private buckets, signed URLs are required; for public buckets, this still works
+  const { data: signedUrlData, error: urlError } = await supabase.storage
     .from(bucket)
-    .getPublicUrl(objectPath);
+    .createSignedUrl(objectPath, 31536000); // 1 year expiration
+
+  let fileUrl;
+  if (urlError) {
+    // Fallback to public URL if signed URL fails (for public buckets)
+    const { data: urlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(objectPath);
+    fileUrl = urlData.publicUrl;
+  } else {
+    // Use signed URL for private bucket
+    fileUrl = signedUrlData.signedUrl;
+  }
 
   res.status(200).json({
     success: true,
     message: "Cover image uploaded successfully",
     data: {
-      cover_image: urlData.publicUrl,
+      cover_image: fileUrl,
       file_path: objectPath,
     },
   });

@@ -18,7 +18,10 @@ import { browseMarketplaceCourses } from "../controllers/marketplace/browseMarke
 import { getAllTutors } from "../controllers/marketplace/getAllTutors.js";
 import { getAllPrograms } from "../controllers/marketplace/getAllPrograms.js";
 import { authorize } from "../middlewares/authorize.js";
-import { tutorAuthorize, requireOrganization } from "../middlewares/tutorAuthorize.js";
+import {
+  tutorAuthorize,
+  requireOrganization,
+} from "../middlewares/tutorAuthorize.js";
 import { getDashboard } from "../controllers/marketplace/tutorDashboard.js";
 import {
   getMyCourses,
@@ -33,7 +36,10 @@ import {
   getTransactions,
   getTransactionById,
 } from "../controllers/marketplace/tutorEarnings.js";
-import { getProfile, updateProfile } from "../controllers/marketplace/tutorProfile.js";
+import {
+  getProfile,
+  updateProfile,
+} from "../controllers/marketplace/tutorProfile.js";
 import {
   getOrganizationUsers,
   getOrganizationUserById,
@@ -43,7 +49,10 @@ import {
   resetOrganizationUserPassword,
   getOrganizationUsersStats,
 } from "../controllers/marketplace/organizationUserManagement.js";
-import { getFaculties, getPrograms } from "../controllers/marketplace/tutorMetadata.js";
+import {
+  getFaculties,
+  getPrograms,
+} from "../controllers/marketplace/tutorMetadata.js";
 import {
   createModule,
   getModulesByCourse,
@@ -72,6 +81,7 @@ import {
   getMyEBooks as getStudentEBooks,
 } from "../controllers/marketplace/ebookBrowsing.js";
 import { purchaseEBook } from "../controllers/marketplace/ebookPurchase.js";
+import { getEBookSignedUrl } from "../controllers/marketplace/ebookAccess.js";
 
 const router = express.Router();
 
@@ -92,7 +102,10 @@ router.post("/login/organization", organizationLogin);
 router.post("/login/organization-user", organizationUserLogin);
 
 // Password Reset
-router.post("/password/reset-request/sole-tutor", requestPasswordResetSoleTutor);
+router.post(
+  "/password/reset-request/sole-tutor",
+  requestPasswordResetSoleTutor
+);
 router.post(
   "/password/reset-request/organization",
   requestPasswordResetOrganization
@@ -130,6 +143,7 @@ router.get("/ebooks", authorize, browseEBooks);
 router.get("/ebooks/:id", authorize, getStudentEBookById);
 router.get("/ebooks/my-ebooks", authorize, getStudentEBooks);
 router.post("/ebooks/purchase", authorize, purchaseEBook);
+router.post("/ebooks/:id/signed-url", authorize, getEBookSignedUrl);
 
 // ============================================
 // TUTOR DASHBOARD ROUTES (Tutor Authentication Required)
@@ -153,7 +167,11 @@ router.patch("/tutor/courses/:id/status", tutorAuthorize, updateCourseStatus);
 // Earnings & Wallet
 router.get("/tutor/earnings/summary", tutorAuthorize, getEarningsSummary);
 router.get("/tutor/earnings/transactions", tutorAuthorize, getTransactions);
-router.get("/tutor/earnings/transactions/:id", tutorAuthorize, getTransactionById);
+router.get(
+  "/tutor/earnings/transactions/:id",
+  tutorAuthorize,
+  getTransactionById
+);
 
 // Metadata (Faculties & Programs for course creation)
 router.get("/tutor/faculties", tutorAuthorize, getFaculties);
@@ -161,7 +179,11 @@ router.get("/tutor/programs", tutorAuthorize, getPrograms);
 
 // Course Module & Unit Management
 router.post("/tutor/courses/:courseId/modules", tutorAuthorize, createModule);
-router.get("/tutor/courses/:courseId/modules", tutorAuthorize, getModulesByCourse);
+router.get(
+  "/tutor/courses/:courseId/modules",
+  tutorAuthorize,
+  getModulesByCourse
+);
 router.patch("/tutor/modules/:moduleId", tutorAuthorize, updateModule);
 router.delete("/tutor/modules/:moduleId", tutorAuthorize, deleteModule);
 router.post("/tutor/modules/:moduleId/units", tutorAuthorize, createUnit);
@@ -236,4 +258,3 @@ router.post(
 );
 
 export default router;
-
