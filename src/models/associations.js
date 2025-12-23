@@ -37,6 +37,8 @@ import {
   OrganizationUser,
   MarketplaceTransaction,
   WspCommission,
+  EBooks,
+  EBookPurchase,
 } from "./marketplace/index.js";
 
 export const setupAssociations = () => {
@@ -482,5 +484,70 @@ export const setupAssociations = () => {
   WspCommission.belongsTo(MarketplaceTransaction, {
     foreignKey: "transaction_id",
     as: "transaction",
+  });
+
+  // E-Books associations
+  // Sole Tutor -> E-Books (One-to-Many)
+  SoleTutor.hasMany(EBooks, {
+    foreignKey: "owner_id",
+    constraints: false,
+    scope: { owner_type: "sole_tutor" },
+    as: "ebooks",
+  });
+  EBooks.belongsTo(SoleTutor, {
+    foreignKey: "owner_id",
+    constraints: false,
+    scope: { owner_type: "sole_tutor" },
+    as: "soleTutor",
+  });
+
+  // Organization -> E-Books (One-to-Many)
+  Organization.hasMany(EBooks, {
+    foreignKey: "owner_id",
+    constraints: false,
+    scope: { owner_type: "organization" },
+    as: "ebooks",
+  });
+  EBooks.belongsTo(Organization, {
+    foreignKey: "owner_id",
+    constraints: false,
+    scope: { owner_type: "organization" },
+    as: "organization",
+  });
+
+  // Students -> E-Book Purchases (One-to-Many)
+  Students.hasMany(EBookPurchase, {
+    foreignKey: "student_id",
+    as: "ebookPurchases",
+  });
+  EBookPurchase.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // E-Books -> E-Book Purchases (One-to-Many)
+  EBooks.hasMany(EBookPurchase, {
+    foreignKey: "ebook_id",
+    as: "purchases",
+  });
+  EBookPurchase.belongsTo(EBooks, {
+    foreignKey: "ebook_id",
+    as: "ebook",
+  });
+
+  // Sole Tutor -> E-Book Purchases (One-to-Many)
+  SoleTutor.hasMany(EBookPurchase, {
+    foreignKey: "owner_id",
+    constraints: false,
+    scope: { owner_type: "sole_tutor" },
+    as: "ebookTransactions",
+  });
+
+  // Organization -> E-Book Purchases (One-to-Many)
+  Organization.hasMany(EBookPurchase, {
+    foreignKey: "owner_id",
+    constraints: false,
+    scope: { owner_type: "organization" },
+    as: "ebookTransactions",
   });
 };

@@ -44,6 +44,30 @@ import {
   getOrganizationUsersStats,
 } from "../controllers/marketplace/organizationUserManagement.js";
 import { getFaculties, getPrograms } from "../controllers/marketplace/tutorMetadata.js";
+import {
+  createModule,
+  getModulesByCourse,
+  updateModule,
+  deleteModule,
+  createUnit,
+  getUnitsByModule,
+  updateUnit,
+  deleteUnit,
+} from "../controllers/marketplace/tutorModuleManagement.js";
+import {
+  getMyEBooks as getTutorEBooks,
+  getEBookById as getTutorEBookById,
+  createEBook,
+  updateEBook,
+  deleteEBook,
+  updateEBookStatus,
+} from "../controllers/marketplace/tutorEbookManagement.js";
+import {
+  browseEBooks,
+  getEBookById as getStudentEBookById,
+  getMyEBooks as getStudentEBooks,
+} from "../controllers/marketplace/ebookBrowsing.js";
+import { purchaseEBook } from "../controllers/marketplace/ebookPurchase.js";
 
 const router = express.Router();
 
@@ -97,6 +121,12 @@ router.post("/courses/purchase", authorize, purchaseMarketplaceCourse);
 // This must come last because it's less specific than /courses/my-courses
 router.get("/courses", authorize, browseMarketplaceCourses);
 
+// E-Book Browsing & Purchase (Student)
+router.get("/ebooks", authorize, browseEBooks);
+router.get("/ebooks/:id", authorize, getStudentEBookById);
+router.get("/ebooks/my-ebooks", authorize, getStudentEBooks);
+router.post("/ebooks/purchase", authorize, purchaseEBook);
+
 // ============================================
 // TUTOR DASHBOARD ROUTES (Tutor Authentication Required)
 // ============================================
@@ -124,6 +154,24 @@ router.get("/tutor/earnings/transactions/:id", tutorAuthorize, getTransactionByI
 // Metadata (Faculties & Programs for course creation)
 router.get("/tutor/faculties", tutorAuthorize, getFaculties);
 router.get("/tutor/programs", tutorAuthorize, getPrograms);
+
+// Course Module & Unit Management
+router.post("/tutor/courses/:courseId/modules", tutorAuthorize, createModule);
+router.get("/tutor/courses/:courseId/modules", tutorAuthorize, getModulesByCourse);
+router.patch("/tutor/modules/:moduleId", tutorAuthorize, updateModule);
+router.delete("/tutor/modules/:moduleId", tutorAuthorize, deleteModule);
+router.post("/tutor/modules/:moduleId/units", tutorAuthorize, createUnit);
+router.get("/tutor/modules/:moduleId/units", tutorAuthorize, getUnitsByModule);
+router.patch("/tutor/units/:unitId", tutorAuthorize, updateUnit);
+router.delete("/tutor/units/:unitId", tutorAuthorize, deleteUnit);
+
+// E-Book Management (Tutor)
+router.get("/tutor/ebooks", tutorAuthorize, getTutorEBooks);
+router.get("/tutor/ebooks/:id", tutorAuthorize, getTutorEBookById);
+router.post("/tutor/ebooks", tutorAuthorize, createEBook);
+router.put("/tutor/ebooks/:id", tutorAuthorize, updateEBook);
+router.delete("/tutor/ebooks/:id", tutorAuthorize, deleteEBook);
+router.patch("/tutor/ebooks/:id/status", tutorAuthorize, updateEBookStatus);
 
 // ============================================
 // ORGANIZATION USER MANAGEMENT (Organization Account Only)
