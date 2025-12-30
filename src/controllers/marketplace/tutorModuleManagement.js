@@ -123,7 +123,7 @@ export const getModulesByCourse = TryCatchFunction(async (req, res) => {
         required: false,
       },
     ],
-    order: [["id", "ASC"]],
+    order: [["created_at", "ASC"], ["id", "ASC"]],
   });
 
   const modulesData = modules.map((module) => {

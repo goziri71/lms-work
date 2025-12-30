@@ -218,6 +218,7 @@ export const getModulesByCourse = TryCatchFunction(async (req, res) => {
         order: [["order", "ASC"]],
       },
     ],
+    order: [["created_at", "ASC"], ["id", "ASC"]],
   });
   res.status(200).json({
     status: true,
