@@ -5,7 +5,7 @@ import { CourseReg } from "../../models/course_reg.js";
 import { Program } from "../../models/program/program.js";
 import { Faculty } from "../../models/faculty/faculty.js";
 import { Staff } from "../../models/auth/staff.js";
-import { Op } from "sequelize";
+import { Op, Sequelize } from "sequelize";
 import { db } from "../../database/database.js";
 
 /**
@@ -212,66 +212,156 @@ export const createCourse = TryCatchFunction(async (req, res) => {
   const ownerType = userType === "sole_tutor" ? "sole_tutor" : "organization";
   const ownerId = tutorId;
 
-  // Check if course code already exists for this tutor (scoped to tutor's courses only)
-  const existingCourse = await Courses.findOne({
-    where: {
-      course_code: course_code.trim(),
-      owner_type: ownerType,
-      owner_id: ownerId,
-      is_marketplace: true, // Only check marketplace courses
-    },
+  // Use a transaction to ensure atomicity and prevent race conditions
+  const transaction = await db.transaction({
+    isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
   });
 
-  if (existingCourse) {
-    throw new ErrorClass("Course code already exists for your account", 409);
-  }
-
-  // For marketplace courses, staff_id is required but not meaningful
-  // Try to find a default staff or use 1 (will fail if foreign key constraint exists)
-  let staffId = 1;
   try {
-    const defaultStaff = await Staff.findOne({ order: [["id", "ASC"]] });
-    if (defaultStaff) {
-      staffId = defaultStaff.id;
-    }
-  } catch (error) {
-    // If we can't find staff, use 1 (may fail if foreign key constraint exists)
-    console.warn("Could not find default staff, using staff_id: 1");
-  }
-
-  // Create course
-  const course = await Courses.create({
-    title: title.trim(),
-    course_code: course_code.trim(),
-    course_unit: course_unit || null,
-    price: price ? String(price) : "0",
-    course_type: course_type || null,
-    course_level: course_level || null,
-    semester: semester || null,
-    program_id: program_id || null,
-    faculty_id: faculty_id || null,
-    staff_id: staffId,
-    currency: currency,
-    owner_type: ownerType,
-    owner_id: ownerId,
-    is_marketplace: true,
-    marketplace_status: marketplace_status,
-    date: new Date(),
-  });
-
-  res.status(201).json({
-    success: true,
-    message: "Course created successfully",
-    data: {
-      course: {
-        id: course.id,
-        title: course.title,
-        course_code: course.course_code,
-        marketplace_status: course.marketplace_status,
-        price: parseFloat(course.price || 0),
+    // Check if course code already exists for this tutor (scoped to tutor's courses only)
+    // Using transaction to ensure this check and insert are atomic
+    const existingCourse = await Courses.findOne({
+      where: {
+        course_code: course_code.trim(),
+        owner_type: ownerType,
+        owner_id: ownerId,
+        is_marketplace: true, // Only check marketplace courses
       },
-    },
-  });
+      transaction,
+    });
+
+    if (existingCourse) {
+      await transaction.rollback();
+      throw new ErrorClass("Course code already exists for your account", 409);
+    }
+
+    // Validate program_id if provided
+    if (program_id) {
+      const program = await Program.findByPk(program_id, { transaction });
+      if (!program) {
+        await transaction.rollback();
+        throw new ErrorClass("Program not found", 404);
+      }
+    }
+
+    // Validate faculty_id if provided
+    if (faculty_id) {
+      const faculty = await Faculty.findByPk(faculty_id, { transaction });
+      if (!faculty) {
+        await transaction.rollback();
+        throw new ErrorClass("Faculty not found", 404);
+      }
+    }
+
+    // For marketplace courses, staff_id is required but not meaningful
+    // Find a valid staff member - retry with timeout handling
+    let staffId = null;
+    let retries = 3;
+    let defaultStaff = null;
+    let lastError = null;
+
+    while (retries > 0 && !staffId) {
+      try {
+        defaultStaff = await Staff.findOne({
+          order: [["id", "ASC"]],
+          transaction,
+        });
+        if (defaultStaff) {
+          staffId = defaultStaff.id;
+          break;
+        } else {
+          // No staff found in database
+          retries = 0; // Exit loop
+        }
+      } catch (error) {
+        lastError = error;
+        retries--;
+        if (retries === 0) {
+          break; // Exit loop to handle error below
+        }
+        // Wait a bit before retrying (exponential backoff)
+        await new Promise((resolve) => setTimeout(resolve, 100 * (4 - retries)));
+      }
+    }
+
+    if (!staffId) {
+      await transaction.rollback();
+      if (lastError) {
+        throw new ErrorClass(
+          "Unable to find a valid staff member. Please contact support.",
+          500
+        );
+      } else {
+        throw new ErrorClass(
+          "No staff members found in the system. Please contact support.",
+          500
+        );
+      }
+    }
+
+    // Create course within transaction
+    const course = await Courses.create(
+      {
+        title: title.trim(),
+        course_code: course_code.trim(),
+        course_unit: course_unit || null,
+        price: price ? String(price) : "0",
+        course_type: course_type || null,
+        course_level: course_level || null,
+        semester: semester || null,
+        program_id: program_id || null,
+        faculty_id: faculty_id || null,
+        staff_id: staffId,
+        currency: currency,
+        owner_type: ownerType,
+        owner_id: ownerId,
+        is_marketplace: true,
+        marketplace_status: marketplace_status,
+        date: new Date(),
+      },
+      { transaction }
+    );
+
+    // Commit transaction
+    await transaction.commit();
+
+    res.status(201).json({
+      success: true,
+      message: "Course created successfully",
+      data: {
+        course: {
+          id: course.id,
+          title: course.title,
+          course_code: course.course_code,
+          marketplace_status: course.marketplace_status,
+          price: parseFloat(course.price || 0),
+        },
+      },
+    });
+  } catch (error) {
+    // Rollback transaction on any error
+    await transaction.rollback();
+
+    // Re-throw ErrorClass instances as-is
+    if (error instanceof ErrorClass) {
+      throw error;
+    }
+
+    // Handle database constraint violations
+    if (error.name === "SequelizeUniqueConstraintError") {
+      throw new ErrorClass("Course code already exists for your account", 409);
+    }
+
+    if (error.name === "SequelizeForeignKeyConstraintError") {
+      throw new ErrorClass(
+        "Invalid reference (program, faculty, or staff). Please check your selections.",
+        400
+      );
+    }
+
+    // Re-throw other errors
+    throw error;
+  }
 });
 
 /**
