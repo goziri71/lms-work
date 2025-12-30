@@ -215,7 +215,7 @@ export const getModulesByCourse = TryCatchFunction(async (req, res) => {
         model: Units,
         as: "units",
         required: false,
-        order: [["order", "ASC"]],
+        order: [["created_at", "ASC"], ["id", "ASC"]],
       },
     ],
     order: [["created_at", "ASC"], ["id", "ASC"]],
@@ -601,7 +601,10 @@ export const getUnitsByModule = TryCatchFunction(async (req, res) => {
     );
   }
 
-  const units = await Units.findAll({ where: { module_id: moduleId } });
+  const units = await Units.findAll({
+    where: { module_id: moduleId },
+    order: [["created_at", "ASC"], ["id", "ASC"]],
+  });
   res.status(200).json({
     status: true,
     code: 200,

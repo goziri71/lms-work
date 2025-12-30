@@ -316,7 +316,7 @@ export const getUnitsByModule = TryCatchFunction(async (req, res) => {
     where: {
       module_id: parseInt(moduleId),
     },
-    order: [["order", "ASC"], ["id", "ASC"]],
+    order: [["created_at", "ASC"], ["id", "ASC"]],
   });
 
   res.status(200).json({
