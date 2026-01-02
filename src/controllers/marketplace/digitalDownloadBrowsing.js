@@ -365,14 +365,18 @@ export const getMyDigitalDownloads = TryCatchFunction(async (req, res) => {
           if (fileUrl && typeof fileUrl === "string") {
             try {
               // Extract file path from URL
+              // Handle both formats:
+              // - https://{supabase-url}/storage/v1/object/public/{bucket}/{path}
+              // - https://{supabase-url}/storage/v1/object/sign/{bucket}/{path}?token=...
               const urlParts = fileUrl.split("/storage/v1/object/");
               if (urlParts.length >= 2) {
-                const pathPart = urlParts[1].split("?")[0];
-                const pathParts = pathPart.split("/").filter(p => p);
+                const pathPart = urlParts[1].split("?")[0]; // Remove query params if any
+                const pathParts = pathPart.split("/").filter(p => p); // Remove empty strings
                 
+                // Bucket is the second element (first is "public" or "sign")
                 if (pathParts.length >= 2) {
-                  const bucket = pathParts[0];
-                  const objectPath = pathParts.slice(1).join("/");
+                  const bucket = pathParts[1]; // Second element is the bucket
+                  const objectPath = pathParts.slice(2).join("/"); // Path starts from third element
 
                   if (bucket && objectPath) {
                     // Generate signed URL (1 hour expiration for student access)

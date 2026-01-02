@@ -48,15 +48,24 @@ export const getDigitalDownloadUrl = TryCatchFunction(async (req, res) => {
   }
 
   // Extract file path from URL
+  // Handle both formats:
+  // - https://{supabase-url}/storage/v1/object/public/{bucket}/{path}
+  // - https://{supabase-url}/storage/v1/object/sign/{bucket}/{path}?token=...
   const urlParts = download.file_url.split("/storage/v1/object/");
   if (urlParts.length < 2) {
     throw new ErrorClass("Invalid file URL format", 400);
   }
 
-  const pathPart = urlParts[1].split("?")[0];
-  const pathParts = pathPart.split("/");
-  const bucket = pathParts[0];
-  const objectPath = pathParts.slice(1).join("/");
+  const pathPart = urlParts[1].split("?")[0]; // Remove query params if any
+  const pathParts = pathPart.split("/").filter(p => p); // Remove empty strings
+  
+  // Bucket is the second element (first is "public" or "sign")
+  if (pathParts.length < 2) {
+    throw new ErrorClass("Invalid file URL format: missing bucket or path", 400);
+  }
+  
+  const bucket = pathParts[1]; // Second element is the bucket
+  const objectPath = pathParts.slice(2).join("/"); // Path starts from third element
 
   // Generate new signed URL (expires in 7 days for downloads)
   const { data: signedUrlData, error } = await supabase.storage
@@ -129,15 +138,24 @@ export const getDigitalDownloadStreamUrl = TryCatchFunction(async (req, res) => 
   }
 
   // Extract file path from URL
+  // Handle both formats:
+  // - https://{supabase-url}/storage/v1/object/public/{bucket}/{path}
+  // - https://{supabase-url}/storage/v1/object/sign/{bucket}/{path}?token=...
   const urlParts = download.file_url.split("/storage/v1/object/");
   if (urlParts.length < 2) {
     throw new ErrorClass("Invalid file URL format", 400);
   }
 
-  const pathPart = urlParts[1].split("?")[0];
-  const pathParts = pathPart.split("/");
-  const bucket = pathParts[0];
-  const objectPath = pathParts.slice(1).join("/");
+  const pathPart = urlParts[1].split("?")[0]; // Remove query params if any
+  const pathParts = pathPart.split("/").filter(p => p); // Remove empty strings
+  
+  // Bucket is the second element (first is "public" or "sign")
+  if (pathParts.length < 2) {
+    throw new ErrorClass("Invalid file URL format: missing bucket or path", 400);
+  }
+  
+  const bucket = pathParts[1]; // Second element is the bucket
+  const objectPath = pathParts.slice(2).join("/"); // Path starts from third element
 
   // Generate new signed URL (expires in 1 hour for streaming)
   const { data: signedUrlData, error } = await supabase.storage
@@ -184,9 +202,12 @@ export const getDigitalDownloadPreviewUrl = TryCatchFunction(async (req, res) =>
   }
 
   // Extract file path from URL
+  // Handle both formats:
+  // - https://{supabase-url}/storage/v1/object/public/{bucket}/{path}
+  // - https://{supabase-url}/storage/v1/object/sign/{bucket}/{path}?token=...
   const urlParts = download.preview_url.split("/storage/v1/object/");
   if (urlParts.length < 2) {
-    // If it's already a public URL, return as-is
+    // If it's not a Supabase storage URL, return as-is
     return res.status(200).json({
       success: true,
       message: "Preview URL retrieved successfully",
@@ -197,10 +218,24 @@ export const getDigitalDownloadPreviewUrl = TryCatchFunction(async (req, res) =>
     });
   }
 
-  const pathPart = urlParts[1].split("?")[0];
-  const pathParts = pathPart.split("/");
-  const bucket = pathParts[0];
-  const objectPath = pathParts.slice(1).join("/");
+  const pathPart = urlParts[1].split("?")[0]; // Remove query params if any
+  const pathParts = pathPart.split("/").filter(p => p); // Remove empty strings
+  
+  // Bucket is the second element (first is "public" or "sign")
+  if (pathParts.length < 2) {
+    // If URL format is invalid, return original URL
+    return res.status(200).json({
+      success: true,
+      message: "Preview URL retrieved successfully",
+      data: {
+        digital_download_id: id,
+        preview_url: download.preview_url,
+      },
+    });
+  }
+  
+  const bucket = pathParts[1]; // Second element is the bucket
+  const objectPath = pathParts.slice(2).join("/"); // Path starts from third element
 
   // Generate signed URL for preview (expires in 1 hour)
   const { data: signedUrlData, error } = await supabase.storage

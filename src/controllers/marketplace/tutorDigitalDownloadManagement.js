@@ -637,6 +637,75 @@ export const deleteDigitalDownload = TryCatchFunction(async (req, res) => {
     );
   }
 
+  // Helper function to extract bucket and object path from Supabase URL
+  const extractFileInfo = (url) => {
+    if (!url || typeof url !== "string") return null;
+    
+    try {
+      const urlParts = url.split("/storage/v1/object/");
+      if (urlParts.length < 2) return null;
+      
+      const pathPart = urlParts[1].split("?")[0]; // Remove query params
+      const pathParts = pathPart.split("/").filter(p => p); // Remove empty strings
+      
+      if (pathParts.length < 2) return null;
+      
+      return {
+        bucket: pathParts[1], // Second element is the bucket
+        objectPath: pathParts.slice(2).join("/"), // Path starts from third element
+      };
+    } catch (error) {
+      console.warn("Error parsing file URL:", error);
+      return null;
+    }
+  };
+
+  // Delete files from Supabase storage
+  const bucket = process.env.DIGITAL_DOWNLOADS_BUCKET || "digital-downloads";
+  
+  // Delete main file
+  if (download.file_url) {
+    try {
+      const fileInfo = extractFileInfo(download.file_url);
+      if (fileInfo && fileInfo.bucket && fileInfo.objectPath) {
+        await supabase.storage.from(fileInfo.bucket).remove([fileInfo.objectPath]);
+        console.log(`Deleted main file: ${fileInfo.objectPath}`);
+      }
+    } catch (error) {
+      console.warn("Failed to remove main file from storage:", error?.message || error);
+      // Continue with deletion even if file removal fails
+    }
+  }
+
+  // Delete cover image
+  if (download.cover_image) {
+    try {
+      const fileInfo = extractFileInfo(download.cover_image);
+      if (fileInfo && fileInfo.bucket && fileInfo.objectPath) {
+        await supabase.storage.from(fileInfo.bucket).remove([fileInfo.objectPath]);
+        console.log(`Deleted cover image: ${fileInfo.objectPath}`);
+      }
+    } catch (error) {
+      console.warn("Failed to remove cover image from storage:", error?.message || error);
+      // Continue with deletion even if file removal fails
+    }
+  }
+
+  // Delete preview file
+  if (download.preview_url) {
+    try {
+      const fileInfo = extractFileInfo(download.preview_url);
+      if (fileInfo && fileInfo.bucket && fileInfo.objectPath) {
+        await supabase.storage.from(fileInfo.bucket).remove([fileInfo.objectPath]);
+        console.log(`Deleted preview file: ${fileInfo.objectPath}`);
+      }
+    } catch (error) {
+      console.warn("Failed to remove preview file from storage:", error?.message || error);
+      // Continue with deletion even if file removal fails
+    }
+  }
+
+  // Delete the database record
   await download.destroy();
 
   res.status(200).json({
