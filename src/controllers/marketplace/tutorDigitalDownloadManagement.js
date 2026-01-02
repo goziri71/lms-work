@@ -139,15 +139,36 @@ const createUploadMiddleware = (productType) => {
 };
 
 // Generic file upload middleware (accepts product_type from request)
+// First parse product_type field, then handle file upload based on product_type
 export const uploadDigitalDownloadFileMiddleware = (req, res, next) => {
-  const { product_type } = req.body;
+  // First, parse only the product_type field (not the file yet)
+  const parseProductType = multer().fields([{ name: 'product_type', maxCount: 1 }]);
   
-  if (!product_type || !PRODUCT_TYPES[product_type]) {
-    return next(new ErrorClass("Invalid product_type", 400));
-  }
-  
-  const upload = createUploadMiddleware(product_type);
-  upload.single("file")(req, res, next);
+  parseProductType(req, res, (err) => {
+    if (err) {
+      return next(new ErrorClass(`Form parsing error: ${err.message}`, 400));
+    }
+    
+    // Extract product_type from parsed body (could be string or array)
+    let product_type = req.body?.product_type;
+    if (Array.isArray(product_type)) {
+      product_type = product_type[0];
+    }
+    
+    if (!product_type || !PRODUCT_TYPES[product_type]) {
+      return next(new ErrorClass(
+        `Invalid or missing product_type. Must be one of: ${Object.keys(PRODUCT_TYPES).join(", ")}`,
+        400
+      ));
+    }
+    
+    // Store product_type in req for later use
+    req.product_type = product_type;
+    
+    // Now create the appropriate upload middleware based on product_type and parse the file
+    const upload = createUploadMiddleware(product_type);
+    upload.single("file")(req, res, next);
+  });
 };
 
 // Cover/Preview image upload middleware
@@ -630,7 +651,8 @@ export const updateDigitalDownloadStatus = TryCatchFunction(async (req, res) => 
 export const uploadDigitalDownloadFile = TryCatchFunction(async (req, res) => {
   const tutor = req.tutor;
   const tutorId = tutor.id;
-  const { product_type } = req.body;
+  // product_type should already be parsed by the middleware and stored in req.product_type
+  const product_type = req.product_type || req.body?.product_type;
 
   if (!req.file) {
     throw new ErrorClass("File is required", 400);
@@ -770,7 +792,8 @@ export const uploadDigitalDownloadCover = TryCatchFunction(async (req, res) => {
 export const uploadDigitalDownloadPreview = TryCatchFunction(async (req, res) => {
   const tutor = req.tutor;
   const tutorId = tutor.id;
-  const { product_type } = req.body;
+  // product_type should already be parsed by the middleware and stored in req.product_type
+  const product_type = req.product_type || req.body?.product_type;
 
   if (!req.file) {
     throw new ErrorClass("Preview file is required", 400);
