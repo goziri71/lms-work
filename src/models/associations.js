@@ -39,6 +39,8 @@ import {
   WspCommission,
   EBooks,
   EBookPurchase,
+  DigitalDownloads,
+  DigitalDownloadPurchase,
 } from "./marketplace/index.js";
 
 export const setupAssociations = () => {
@@ -547,5 +549,69 @@ export const setupAssociations = () => {
     constraints: false,
     scope: { owner_type: "organization" },
     as: "ebookTransactions",
+  });
+
+  // ============================================
+  // DIGITAL DOWNLOADS ASSOCIATIONS
+  // ============================================
+
+  // Sole Tutor -> Digital Downloads (One-to-Many)
+  SoleTutor.hasMany(DigitalDownloads, {
+    foreignKey: "owner_id",
+    constraints: false,
+    as: "digitalDownloads",
+  });
+  DigitalDownloads.belongsTo(SoleTutor, {
+    foreignKey: "owner_id",
+    constraints: false,
+    as: "soleTutor",
+  });
+
+  // Organization -> Digital Downloads (One-to-Many)
+  Organization.hasMany(DigitalDownloads, {
+    foreignKey: "owner_id",
+    constraints: false,
+    as: "digitalDownloads",
+  });
+  DigitalDownloads.belongsTo(Organization, {
+    foreignKey: "owner_id",
+    constraints: false,
+    as: "organization",
+  });
+
+  // Students -> Digital Download Purchases (One-to-Many)
+  Students.hasMany(DigitalDownloadPurchase, {
+    foreignKey: "student_id",
+    as: "digitalDownloadPurchases",
+  });
+  DigitalDownloadPurchase.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Digital Downloads -> Digital Download Purchases (One-to-Many)
+  DigitalDownloads.hasMany(DigitalDownloadPurchase, {
+    foreignKey: "digital_download_id",
+    as: "purchases",
+  });
+  DigitalDownloadPurchase.belongsTo(DigitalDownloads, {
+    foreignKey: "digital_download_id",
+    as: "digitalDownload",
+  });
+
+  // Sole Tutor -> Digital Download Purchases (One-to-Many)
+  SoleTutor.hasMany(DigitalDownloadPurchase, {
+    foreignKey: "owner_id",
+    constraints: false,
+    scope: { owner_type: "sole_tutor" },
+    as: "digitalDownloadTransactions",
+  });
+
+  // Organization -> Digital Download Purchases (One-to-Many)
+  Organization.hasMany(DigitalDownloadPurchase, {
+    foreignKey: "owner_id",
+    constraints: false,
+    scope: { owner_type: "organization" },
+    as: "digitalDownloadTransactions",
   });
 };

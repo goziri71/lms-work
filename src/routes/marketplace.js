@@ -85,6 +85,32 @@ import {
 } from "../controllers/marketplace/ebookBrowsing.js";
 import { purchaseEBook } from "../controllers/marketplace/ebookPurchase.js";
 import { getEBookSignedUrl } from "../controllers/marketplace/ebookAccess.js";
+// Digital Downloads Controllers
+import {
+  getMyDigitalDownloads as getTutorDigitalDownloads,
+  getDigitalDownloadById as getTutorDigitalDownloadById,
+  createDigitalDownload,
+  updateDigitalDownload,
+  deleteDigitalDownload,
+  updateDigitalDownloadStatus,
+  uploadDigitalDownloadFile,
+  uploadDigitalDownloadCover,
+  uploadDigitalDownloadPreview,
+  uploadDigitalDownloadFileMiddleware,
+  uploadCoverImageMiddleware as uploadDigitalDownloadCoverMiddleware,
+  uploadPreviewFileMiddleware,
+} from "../controllers/marketplace/tutorDigitalDownloadManagement.js";
+import {
+  browseDigitalDownloads,
+  getDigitalDownloadById as getStudentDigitalDownloadById,
+  getMyDigitalDownloads as getStudentDigitalDownloads,
+} from "../controllers/marketplace/digitalDownloadBrowsing.js";
+import { purchaseDigitalDownload } from "../controllers/marketplace/digitalDownloadPurchase.js";
+import {
+  getDigitalDownloadUrl,
+  getDigitalDownloadStreamUrl,
+  getDigitalDownloadPreviewUrl,
+} from "../controllers/marketplace/digitalDownloadAccess.js";
 
 const router = express.Router();
 
@@ -143,11 +169,33 @@ router.get("/courses", authorize, browseMarketplaceCourses);
 
 // E-Book Browsing & Purchase (Student)
 // IMPORTANT: More specific routes must come before parameterized routes
+// E-Books (Legacy - kept for backward compatibility)
 router.get("/ebooks", authorize, browseEBooks);
 router.get("/ebooks/my-ebooks", authorize, getStudentEBooks);
 router.post("/ebooks/purchase", authorize, purchaseEBook);
 router.post("/ebooks/:id/signed-url", authorize, getEBookSignedUrl);
 router.get("/ebooks/:id", authorize, getStudentEBookById);
+
+// Digital Downloads (New - supports all product types)
+router.get("/digital-downloads", authorize, browseDigitalDownloads);
+router.get(
+  "/digital-downloads/my-downloads",
+  authorize,
+  getStudentDigitalDownloads
+);
+router.post("/digital-downloads/purchase", authorize, purchaseDigitalDownload);
+router.post(
+  "/digital-downloads/:id/download-url",
+  authorize,
+  getDigitalDownloadUrl
+);
+router.post(
+  "/digital-downloads/:id/stream-url",
+  authorize,
+  getDigitalDownloadStreamUrl
+);
+router.get("/digital-downloads/:id/preview-url", getDigitalDownloadPreviewUrl);
+router.get("/digital-downloads/:id", authorize, getStudentDigitalDownloadById);
 
 // ============================================
 // TUTOR DASHBOARD ROUTES (Tutor Authentication Required)
@@ -211,7 +259,7 @@ router.post(
   uploadUnitVideo
 );
 
-// E-Book Management (Tutor)
+// E-Book Management (Tutor) - Legacy (kept for backward compatibility)
 router.get("/tutor/ebooks", tutorAuthorize, getTutorEBooks);
 router.get("/tutor/ebooks/:id", tutorAuthorize, getTutorEBookById);
 router.post("/tutor/ebooks", tutorAuthorize, createEBook);
@@ -229,6 +277,52 @@ router.post(
   tutorAuthorize,
   uploadCoverImageMiddleware,
   uploadEBookCover
+);
+
+// Digital Downloads Management (Tutor) - New (supports all product types)
+router.get(
+  "/tutor/digital-downloads",
+  tutorAuthorize,
+  getTutorDigitalDownloads
+);
+router.get(
+  "/tutor/digital-downloads/:id",
+  tutorAuthorize,
+  getTutorDigitalDownloadById
+);
+router.post("/tutor/digital-downloads", tutorAuthorize, createDigitalDownload);
+router.put(
+  "/tutor/digital-downloads/:id",
+  tutorAuthorize,
+  updateDigitalDownload
+);
+router.delete(
+  "/tutor/digital-downloads/:id",
+  tutorAuthorize,
+  deleteDigitalDownload
+);
+router.patch(
+  "/tutor/digital-downloads/:id/status",
+  tutorAuthorize,
+  updateDigitalDownloadStatus
+);
+router.post(
+  "/tutor/digital-downloads/upload-file",
+  tutorAuthorize,
+  uploadDigitalDownloadFileMiddleware,
+  uploadDigitalDownloadFile
+);
+router.post(
+  "/tutor/digital-downloads/upload-cover",
+  tutorAuthorize,
+  uploadDigitalDownloadCoverMiddleware,
+  uploadDigitalDownloadCover
+);
+router.post(
+  "/tutor/digital-downloads/upload-preview",
+  tutorAuthorize,
+  uploadPreviewFileMiddleware,
+  uploadDigitalDownloadPreview
 );
 
 // ============================================
