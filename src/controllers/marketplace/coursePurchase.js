@@ -84,6 +84,23 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("You already own this course. Marketplace courses provide lifetime access.", 400);
   }
 
+  // Check enrollment limit (only for marketplace purchases)
+  if (course.enrollment_limit !== null && course.enrollment_limit !== undefined) {
+    const currentEnrollments = await CourseReg.count({
+      where: {
+        course_id: course_id,
+        registration_status: "marketplace_purchased",
+      },
+    });
+
+    if (currentEnrollments >= course.enrollment_limit) {
+      throw new ErrorClass(
+        `This course has reached its enrollment limit of ${course.enrollment_limit} students.`,
+        400
+      );
+    }
+  }
+
   // All transactions use wallet balance (Flutterwave only funds wallet)
   // Check wallet balance (with automatic migration of old balances)
   // Wallet balance is always in student's currency

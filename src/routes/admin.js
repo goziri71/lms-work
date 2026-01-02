@@ -61,6 +61,7 @@ import {
   updateCoursePrice,
   deleteCourse,
   getCourseStats,
+  uploadCourseImageMiddleware,
 } from "../controllers/admin/superAdmin/courseManagement.js";
 import {
   setCoursePrice,
@@ -308,9 +309,9 @@ router.delete(
 // COURSE CRUD OPERATIONS (Must come AFTER specific routes)
 // ============================================
 router.get("/courses/:id", requireSuperAdmin, getCourseById);
-router.post("/courses", requireSuperAdmin, createCourse);
+router.post("/courses", requireSuperAdmin, uploadCourseImageMiddleware, createCourse);
 router.put("/courses/:id/price", requireSuperAdmin, updateCoursePrice); // Must come before /courses/:id
-router.put("/courses/:id", requireSuperAdmin, updateCourse);
+router.put("/courses/:id", requireSuperAdmin, uploadCourseImageMiddleware, updateCourse);
 router.delete("/courses/:id", requireSuperAdmin, deleteCourse);
 
 // ============================================

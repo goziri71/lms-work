@@ -7,6 +7,51 @@ import { CourseReg } from "../../../models/course_reg.js";
 import { ErrorClass } from "../../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../../utils/tryCatch/index.js";
 import { logAdminActivity } from "../../../middlewares/adminAuthorize.js";
+import multer from "multer";
+import { supabase } from "../../../utils/supabase.js";
+
+// Configure multer for course image uploads
+const uploadCourseImage = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB max
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new ErrorClass("Only JPEG, PNG, and WebP images are allowed", 400), false);
+    }
+  },
+});
+
+// Middleware export
+export const uploadCourseImageMiddleware = uploadCourseImage.single("image");
+
+// Helper function to normalize category
+const normalizeCategory = (category) => {
+  if (!category) return null;
+  
+  const categoryMap = {
+    "business": "Business",
+    "tech": "Tech",
+    "art": "Art",
+    "logistics": "Logistics",
+    "ebooks": "Ebooks",
+    "podcast": "Podcast",
+    "videos": "Videos",
+    "music": "Music",
+    "articles": "Articles",
+    "code": "Code",
+    "2d/3d files": "2D/3D Files",
+    "2d files": "2D/3D Files",
+    "3d files": "2D/3D Files",
+  };
+  
+  const normalized = category.trim().toLowerCase();
+  return categoryMap[normalized] || null;
+};
 
 /**
  * Get all courses with pagination and filters
@@ -191,13 +236,111 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     currency = "NGN",
     is_marketplace = false,
     marketplace_status,
+    description,
+    course_outline,
+    duration_days,
+    category,
+    enrollment_limit,
+    access_duration_days,
+    image_url,
   } = req.body;
 
+  // Required fields validation
   if (!title || !course_code || !program_id || !staff_id) {
     throw new ErrorClass(
       "Title, course code, program ID, and staff ID are required",
       400
     );
+  }
+
+  // For marketplace courses, require additional fields
+  if (is_marketplace) {
+    if (!description) {
+      throw new ErrorClass("Description is required for marketplace courses", 400);
+    }
+    if (!course_outline) {
+      throw new ErrorClass("Course outline/benefits is required for marketplace courses", 400);
+    }
+    if (!category) {
+      throw new ErrorClass("Category is required for marketplace courses", 400);
+    }
+  }
+
+  // Validate category if provided
+  let normalizedCategory = null;
+  if (category) {
+    normalizedCategory = normalizeCategory(category);
+    if (!normalizedCategory) {
+      throw new ErrorClass(
+        "Invalid category. Must be one of: Business, Tech, Art, Logistics, Ebooks, Podcast, Videos, Music, Articles, Code, 2D/3D Files",
+        400
+      );
+    }
+  }
+
+  // Validate enrollment_limit if provided
+  if (enrollment_limit !== undefined && enrollment_limit !== null) {
+    const limitNum = parseInt(enrollment_limit);
+    if (isNaN(limitNum) || limitNum <= 0) {
+      throw new ErrorClass("Enrollment limit must be a positive number", 400);
+    }
+  }
+
+  // Validate access_duration_days if provided
+  if (access_duration_days !== undefined && access_duration_days !== null) {
+    const durationNum = parseInt(access_duration_days);
+    if (isNaN(durationNum) || durationNum <= 0) {
+      throw new ErrorClass("Access duration must be a positive number of days", 400);
+    }
+  }
+
+  // Validate duration_days if provided
+  if (duration_days !== undefined && duration_days !== null) {
+    const durationNum = parseInt(duration_days);
+    if (isNaN(durationNum) || durationNum <= 0) {
+      throw new ErrorClass("Duration must be a positive number of days", 400);
+    }
+  }
+
+  // Auto-set pricing_type based on price
+  const priceNum = price ? parseFloat(price) : 0;
+  const pricingType = priceNum === 0 ? "free" : "one_time";
+
+  // Handle image upload if file is provided
+  let finalImageUrl = image_url || null;
+  if (req.file) {
+    const bucket = process.env.COURSES_BUCKET || "courses";
+    const timestamp = Date.now();
+    const sanitizedFileName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const objectPath = `admin/courses/images/${timestamp}_${sanitizedFileName}`;
+
+    // Upload to Supabase
+    const { error: uploadError } = await supabase.storage
+      .from(bucket)
+      .upload(objectPath, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw new ErrorClass(`Image upload failed: ${uploadError.message}`, 500);
+    }
+
+    // Generate signed URL for private bucket (expires in 1 year)
+    const { data: signedUrlData, error: urlError } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(objectPath, 31536000); // 1 year expiration
+
+    if (urlError) {
+      // Fallback to public URL if signed URL fails (for public buckets)
+      const { data: urlData } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(objectPath);
+      finalImageUrl = urlData.publicUrl;
+    } else {
+      // Use signed URL for private bucket
+      finalImageUrl = signedUrlData.signedUrl;
+    }
   }
 
   // Verify program exists
@@ -259,6 +402,7 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     staff_id,
     course_unit: course_unit || null,
     price: price || null,
+    pricing_type: pricingType,
     course_type: course_type || null,
     course_level: course_level || null,
     semester: semester || null,
@@ -266,6 +410,13 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     currency: currency || "NGN",
     is_marketplace: is_marketplace || false,
     marketplace_status: is_marketplace ? (marketplace_status || "draft") : null,
+    description: description ? description.trim() : null,
+    course_outline: course_outline ? course_outline.trim() : null,
+    duration_days: duration_days ? parseInt(duration_days) : null,
+    image_url: finalImageUrl,
+    category: normalizedCategory,
+    enrollment_limit: enrollment_limit ? parseInt(enrollment_limit) : null,
+    access_duration_days: access_duration_days ? parseInt(access_duration_days) : null,
     date: new Date(),
   });
 
@@ -383,6 +534,13 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
     currency,
     is_marketplace,
     marketplace_status,
+    description,
+    course_outline,
+    duration_days,
+    category,
+    enrollment_limit,
+    access_duration_days,
+    image_url,
   } = req.body;
 
   const course = await Courses.findByPk(id);
@@ -477,6 +635,86 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
     }
   }
 
+  // Validate category if provided
+  let normalizedCategory = course.category;
+  if (category !== undefined && category !== null) {
+    normalizedCategory = normalizeCategory(category);
+    if (!normalizedCategory) {
+      throw new ErrorClass(
+        "Invalid category. Must be one of: Business, Tech, Art, Logistics, Ebooks, Podcast, Videos, Music, Articles, Code, 2D/3D Files",
+        400
+      );
+    }
+  }
+
+  // Validate enrollment_limit if provided
+  if (enrollment_limit !== undefined && enrollment_limit !== null) {
+    const limitNum = parseInt(enrollment_limit);
+    if (isNaN(limitNum) || limitNum <= 0) {
+      throw new ErrorClass("Enrollment limit must be a positive number", 400);
+    }
+  }
+
+  // Validate access_duration_days if provided
+  if (access_duration_days !== undefined && access_duration_days !== null) {
+    const durationNum = parseInt(access_duration_days);
+    if (isNaN(durationNum) || durationNum <= 0) {
+      throw new ErrorClass("Access duration must be a positive number of days", 400);
+    }
+  }
+
+  // Validate duration_days if provided
+  if (duration_days !== undefined && duration_days !== null) {
+    const durationNum = parseInt(duration_days);
+    if (isNaN(durationNum) || durationNum <= 0) {
+      throw new ErrorClass("Duration must be a positive number of days", 400);
+    }
+  }
+
+  // Handle image upload if file is provided
+  let finalImageUrl = image_url !== undefined ? image_url : course.image_url;
+  if (req.file) {
+    const bucket = process.env.COURSES_BUCKET || "courses";
+    const timestamp = Date.now();
+    const sanitizedFileName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const objectPath = `admin/courses/images/${timestamp}_${sanitizedFileName}`;
+
+    // Upload to Supabase
+    const { error: uploadError } = await supabase.storage
+      .from(bucket)
+      .upload(objectPath, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw new ErrorClass(`Image upload failed: ${uploadError.message}`, 500);
+    }
+
+    // Generate signed URL for private bucket (expires in 1 year)
+    const { data: signedUrlData, error: urlError } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(objectPath, 31536000); // 1 year expiration
+
+    if (urlError) {
+      // Fallback to public URL if signed URL fails (for public buckets)
+      const { data: urlData } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(objectPath);
+      finalImageUrl = urlData.publicUrl;
+    } else {
+      // Use signed URL for private bucket
+      finalImageUrl = signedUrlData.signedUrl;
+    }
+  }
+
+  // Auto-update pricing_type based on price
+  let pricingType = course.pricing_type;
+  if (price !== undefined) {
+    const priceNum = price ? parseFloat(price) : 0;
+    pricingType = priceNum === 0 ? "free" : "one_time";
+  }
+
   // Update course
   if (title) course.title = title.trim();
   if (course_code) course.course_code = course_code.trim().toUpperCase();
@@ -484,12 +722,22 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
   if (faculty_id !== undefined) course.faculty_id = faculty_id;
   if (staff_id !== undefined) course.staff_id = staff_id;
   if (course_unit !== undefined) course.course_unit = course_unit;
-  if (price !== undefined) course.price = price;
+  if (price !== undefined) {
+    course.price = price;
+    course.pricing_type = pricingType; // Auto-update pricing_type
+  }
   if (course_type !== undefined) course.course_type = course_type;
   if (course_level !== undefined) course.course_level = course_level;
   if (semester !== undefined) course.semester = semester;
   if (exam_fee !== undefined) course.exam_fee = exam_fee;
   if (currency !== undefined) course.currency = currency;
+  if (description !== undefined) course.description = description ? description.trim() : null;
+  if (course_outline !== undefined) course.course_outline = course_outline ? course_outline.trim() : null;
+  if (duration_days !== undefined) course.duration_days = duration_days ? parseInt(duration_days) : null;
+  if (image_url !== undefined || req.file) course.image_url = finalImageUrl;
+  if (category !== undefined) course.category = normalizedCategory;
+  if (enrollment_limit !== undefined) course.enrollment_limit = enrollment_limit ? parseInt(enrollment_limit) : null;
+  if (access_duration_days !== undefined) course.access_duration_days = access_duration_days ? parseInt(access_duration_days) : null;
 
   await course.save();
 

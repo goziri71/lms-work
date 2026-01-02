@@ -83,6 +83,21 @@ export async function checkCourseFeesPayment(
       return { paid: false, reason: "Not enrolled in this marketplace course" };
     }
 
+    // Check access duration limit (only for marketplace courses)
+    if (course.access_duration_days !== null && course.access_duration_days !== undefined) {
+      const enrollmentDate = new Date(marketplaceEnrollment.date);
+      const expiryDate = new Date(enrollmentDate);
+      expiryDate.setDate(expiryDate.getDate() + course.access_duration_days);
+      const now = new Date();
+
+      if (now > expiryDate) {
+        return {
+          paid: false,
+          reason: `Course access expired on ${expiryDate.toISOString().split("T")[0]}. Access duration was ${course.access_duration_days} days from enrollment.`,
+        };
+      }
+    }
+
     const coursePrice = parseFloat(course.price) || 0;
 
     // If price is 0, it's a free promo/marketing course

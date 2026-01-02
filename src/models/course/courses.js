@@ -87,6 +87,47 @@ export const Courses = db.define(
       allowNull: true,
       comment: "Marketplace listing status (only for marketplace courses)",
     },
+    description: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: "Course description/overview",
+    },
+    pricing_type: {
+      type: DataTypes.ENUM("one_time", "free"),
+      allowNull: false,
+      defaultValue: "one_time",
+      comment: "Pricing type: one_time or free",
+    },
+    course_outline: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: "Course benefits/outline",
+    },
+    duration_days: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: "Course duration in days",
+    },
+    image_url: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: "Course cover image URL",
+    },
+    category: {
+      type: DataTypes.ENUM("Business", "Tech", "Art", "Logistics", "Ebooks", "Podcast", "Videos", "Music", "Articles", "Code", "2D/3D Files"),
+      allowNull: true,
+      comment: "Course category",
+    },
+    enrollment_limit: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: "Maximum number of enrollments (marketplace only)",
+    },
+    access_duration_days: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: "Access duration in days from enrollment date (marketplace only)",
+    },
     date: {
       type: DataTypes.DATE, // timestamp without time zone
       allowNull: false,

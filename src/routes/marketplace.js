@@ -30,6 +30,7 @@ import {
   updateCourse,
   deleteCourse,
   updateCourseStatus,
+  uploadCourseImageMiddleware,
 } from "../controllers/marketplace/tutorCourseManagement.js";
 import {
   getEarningsSummary,
@@ -162,8 +163,18 @@ router.put("/tutor/profile", tutorAuthorize, updateProfile);
 // Course Management
 router.get("/tutor/courses", tutorAuthorize, getMyCourses);
 router.get("/tutor/courses/:id", tutorAuthorize, getCourseById);
-router.post("/tutor/courses", tutorAuthorize, createCourse);
-router.put("/tutor/courses/:id", tutorAuthorize, updateCourse);
+router.post(
+  "/tutor/courses",
+  tutorAuthorize,
+  uploadCourseImageMiddleware,
+  createCourse
+);
+router.put(
+  "/tutor/courses/:id",
+  tutorAuthorize,
+  uploadCourseImageMiddleware,
+  updateCourse
+);
 router.delete("/tutor/courses/:id", tutorAuthorize, deleteCourse);
 router.patch("/tutor/courses/:id/status", tutorAuthorize, updateCourseStatus);
 
