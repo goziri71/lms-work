@@ -96,5 +96,7 @@ export const Courses = db.define(
     tableName: "courses", // Specify exact table name
     timestamps: false, // Disable createdAt/updatedAt
     freezeTableName: true, // Prevent pluralization
+    paranoid: true, // Enable soft deletes using deleted_at
+    deletedAt: "deleted_at", // Specify the column name for soft deletes
   }
 );

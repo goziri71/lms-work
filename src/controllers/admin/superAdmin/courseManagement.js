@@ -3,6 +3,7 @@ import { Courses } from "../../../models/course/courses.js";
 import { Program } from "../../../models/program/program.js";
 import { Faculty } from "../../../models/faculty/faculty.js";
 import { Staff } from "../../../models/auth/staff.js";
+import { CourseReg } from "../../../models/course_reg.js";
 import { ErrorClass } from "../../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../../utils/tryCatch/index.js";
 import { logAdminActivity } from "../../../middlewares/adminAuthorize.js";
@@ -525,16 +526,35 @@ export const deleteCourse = TryCatchFunction(async (req, res) => {
   const { id } = req.params;
   const { hardDelete = false } = req.query;
 
-  const course = await Courses.findByPk(id);
+  // Use paranoid: false to find course even if it's soft-deleted
+  const course = await Courses.findByPk(id, { paranoid: false });
   if (!course) {
     throw new ErrorClass("Course not found", 404);
   }
 
-  // TODO: Check if course has enrollments, modules, exams, etc.
-  // For now, allow deletion but log warning
+  // Check if course is already deleted
+  if (course.deleted_at) {
+    throw new ErrorClass("Course is already deleted", 400);
+  }
+
+  // Check if course has enrollments
+  const enrollmentCount = await CourseReg.count({
+    where: {
+      course_id: id,
+      registration_status: { [Op.in]: ["registered", "marketplace_purchased"] },
+    },
+  });
+
+  if (enrollmentCount > 0) {
+    throw new ErrorClass(
+      `Cannot delete course with ${enrollmentCount} active enrollment(s). Unpublish the course instead.`,
+      400
+    );
+  }
 
   if (hardDelete === "true") {
-    await course.destroy();
+    // Hard delete - permanently remove from database
+    await course.destroy({ force: true });
     await logAdminActivity(req.user.id, "deleted_course", "course", id, {
       course_title: course.title,
       course_code: course.course_code,
@@ -546,25 +566,17 @@ export const deleteCourse = TryCatchFunction(async (req, res) => {
       message: "Course deleted permanently",
     });
   } else {
-    // Soft delete - set program_id to null or mark as inactive
-    // Since there's no status field, we'll set program_id to null
-    const oldProgramId = course.program_id;
-    course.program_id = null;
-    await course.save();
-
+    // Soft delete - sets deleted_at timestamp
+    await course.destroy();
     await logAdminActivity(req.user.id, "deleted_course", "course", id, {
       course_title: course.title,
       course_code: course.course_code,
-      old_program_id: oldProgramId,
       soft_delete: true,
     });
 
     res.status(200).json({
       success: true,
-      message: "Course removed from program (soft delete)",
-      data: {
-        course,
-      },
+      message: "Course deleted successfully (soft delete). It can be restored if needed.",
     });
   }
 });
