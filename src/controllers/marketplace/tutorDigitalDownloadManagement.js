@@ -139,12 +139,15 @@ const createUploadMiddleware = (productType) => {
 };
 
 // Generic file upload middleware (accepts product_type from request)
-// First parse product_type field, then handle file upload based on product_type
+// Parse both product_type and file together, then validate
 export const uploadDigitalDownloadFileMiddleware = (req, res, next) => {
-  // First, parse only the product_type field (not the file yet)
-  const parseProductType = multer().fields([{ name: 'product_type', maxCount: 1 }]);
+  // Parse both fields together using multer
+  const parseAll = multer().fields([
+    { name: 'product_type', maxCount: 1 },
+    { name: 'file', maxCount: 1 }
+  ]);
   
-  parseProductType(req, res, (err) => {
+  parseAll(req, res, (err) => {
     if (err) {
       return next(new ErrorClass(`Form parsing error: ${err.message}`, 400));
     }
@@ -162,12 +165,38 @@ export const uploadDigitalDownloadFileMiddleware = (req, res, next) => {
       ));
     }
     
-    // Store product_type in req for later use
-    req.product_type = product_type;
+    // Check if file was provided
+    if (!req.files || !req.files.file || req.files.file.length === 0) {
+      return next(new ErrorClass("File is required", 400));
+    }
     
-    // Now create the appropriate upload middleware based on product_type and parse the file
-    const upload = createUploadMiddleware(product_type);
-    upload.single("file")(req, res, next);
+    const file = Array.isArray(req.files.file) ? req.files.file[0] : req.files.file;
+    
+    // Validate file type and size based on product_type
+    const config = getProductTypeConfig(product_type);
+    
+    // Check file type
+    if (!config.fileTypes.includes(file.mimetype)) {
+      return next(new ErrorClass(
+        `Invalid file type for ${config.name}. Allowed types: ${config.fileTypes.join(", ")}`,
+        400
+      ));
+    }
+    
+    // Check file size
+    if (file.size > config.maxSize) {
+      const maxSizeMB = (config.maxSize / (1024 * 1024)).toFixed(2);
+      return next(new ErrorClass(
+        `File size exceeds maximum of ${maxSizeMB}MB for ${config.name}`,
+        400
+      ));
+    }
+    
+    // Store product_type and file in req for controller to use
+    req.product_type = product_type;
+    req.file = file;
+    
+    next();
   });
 };
 
@@ -191,34 +220,62 @@ export const uploadCoverImageMiddleware = uploadCoverImage.single("cover_image")
 
 // Preview file upload middleware (for videos/audio - trailer/preview)
 const uploadPreviewFile = (req, res, next) => {
-  const { product_type } = req.body;
+  // Parse both product_type and preview_file together
+  const parseAll = multer().fields([
+    { name: 'product_type', maxCount: 1 },
+    { name: 'preview_file', maxCount: 1 }
+  ]);
   
-  if (!product_type || !PRODUCT_TYPES[product_type]) {
-    return next(new ErrorClass("Invalid product_type", 400));
-  }
-  
-  const config = getProductTypeConfig(product_type);
-  
-  // Only allow preview for streaming products
-  if (!config.streamingEnabled) {
-    return next(new ErrorClass("Preview files are only allowed for streaming products (video, podcast, music)", 400));
-  }
-  
-  const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: {
-      fileSize: Math.min(config.maxSize, 100 * 1024 * 1024), // Max 100MB for preview
-    },
-    fileFilter: (req, file, cb) => {
-      if (config.fileTypes.includes(file.mimetype)) {
-        cb(null, true);
-      } else {
-        cb(new ErrorClass(`Invalid preview file type for ${config.name}`, 400), false);
-      }
-    },
+  parseAll(req, res, (err) => {
+    if (err) {
+      return next(new ErrorClass(`Form parsing error: ${err.message}`, 400));
+    }
+    
+    // Extract product_type from parsed body (could be string or array)
+    let product_type = req.body?.product_type;
+    if (Array.isArray(product_type)) {
+      product_type = product_type[0];
+    }
+    
+    if (!product_type || !PRODUCT_TYPES[product_type]) {
+      return next(new ErrorClass(
+        `Invalid or missing product_type. Must be one of: ${Object.keys(PRODUCT_TYPES).join(", ")}`,
+        400
+      ));
+    }
+    
+    const config = getProductTypeConfig(product_type);
+    
+    // Only allow preview for streaming products
+    if (!config.streamingEnabled) {
+      return next(new ErrorClass("Preview files are only allowed for streaming products (video, podcast, music)", 400));
+    }
+    
+    // Check if preview_file was provided
+    if (!req.files || !req.files.preview_file || req.files.preview_file.length === 0) {
+      return next(new ErrorClass("Preview file is required", 400));
+    }
+    
+    const previewFile = Array.isArray(req.files.preview_file) ? req.files.preview_file[0] : req.files.preview_file;
+    
+    // Validate file type
+    if (!config.fileTypes.includes(previewFile.mimetype)) {
+      return next(new ErrorClass(`Invalid preview file type for ${config.name}`, 400));
+    }
+    
+    // Validate file size (max 100MB for preview)
+    const maxPreviewSize = Math.min(config.maxSize, 100 * 1024 * 1024);
+    if (previewFile.size > maxPreviewSize) {
+      const maxSizeMB = (maxPreviewSize / (1024 * 1024)).toFixed(2);
+      return next(new ErrorClass(`Preview file size exceeds maximum of ${maxSizeMB}MB`, 400));
+    }
+    
+    // Store product_type and file in req for controller to use
+    req.product_type = product_type;
+    req.file = previewFile;
+    
+    next();
   });
-  
-  upload.single("preview_file")(req, res, next);
 };
 
 export const uploadPreviewFileMiddleware = uploadPreviewFile;
@@ -651,10 +708,11 @@ export const updateDigitalDownloadStatus = TryCatchFunction(async (req, res) => 
 export const uploadDigitalDownloadFile = TryCatchFunction(async (req, res) => {
   const tutor = req.tutor;
   const tutorId = tutor.id;
-  // product_type should already be parsed by the middleware and stored in req.product_type
-  const product_type = req.product_type || req.body?.product_type;
+  // product_type and file should already be parsed and validated by the middleware
+  const product_type = req.product_type;
+  const file = req.file;
 
-  if (!req.file) {
+  if (!file) {
     throw new ErrorClass("File is required", 400);
   }
 
@@ -668,8 +726,8 @@ export const uploadDigitalDownloadFile = TryCatchFunction(async (req, res) => {
   const config = getProductTypeConfig(product_type);
   const bucket = process.env.DIGITAL_DOWNLOADS_BUCKET || "digital-downloads";
   const timestamp = Date.now();
-  const sanitizedFileName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
-  const fileExt = getFileExtension(req.file.mimetype);
+  const sanitizedFileName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
+  const fileExt = getFileExtension(file.mimetype);
   
   // Organize by product type
   const folderMap = {
@@ -722,7 +780,7 @@ export const uploadDigitalDownloadFile = TryCatchFunction(async (req, res) => {
       file_url: fileUrl,
       file_path: objectPath,
       file_type: config.defaultFileType,
-      file_size: req.file.size,
+      file_size: file.size,
       product_type: product_type,
     },
   });
@@ -814,14 +872,14 @@ export const uploadDigitalDownloadPreview = TryCatchFunction(async (req, res) =>
 
   const bucket = process.env.DIGITAL_DOWNLOADS_BUCKET || "digital-downloads";
   const timestamp = Date.now();
-  const sanitizedFileName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
+  const sanitizedFileName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
   const objectPath = `tutors/${tutorId}/previews/${timestamp}_${sanitizedFileName}`;
 
   // Upload to Supabase
   const { error: uploadError } = await supabase.storage
     .from(bucket)
-    .upload(objectPath, req.file.buffer, {
-      contentType: req.file.mimetype,
+    .upload(objectPath, file.buffer, {
+      contentType: file.mimetype,
       upsert: false,
     });
 
