@@ -492,4 +492,15 @@ router.get(
 // ============================================
 router.get("/dashboard/stats", requireSuperAdmin, getDashboardStats);
 
+// ============================================
+// COACHING SETTINGS MANAGEMENT
+// ============================================
+import {
+  getSettings as getCoachingSettings,
+  updateSettings as updateCoachingSettings,
+} from "../controllers/admin/coachingSettings.js";
+
+router.get("/coaching/settings", getCoachingSettings);
+router.put("/coaching/settings", requireSuperAdmin, updateCoachingSettings);
+
 export default router;

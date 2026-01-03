@@ -371,4 +371,61 @@ router.post(
   resetOrganizationUserPassword
 );
 
+// ============================================
+// SUBSCRIPTION MANAGEMENT
+// ============================================
+import {
+  getSubscription,
+  subscribe,
+  getSubscriptionLimits,
+} from "../controllers/marketplace/tutorSubscription.js";
+
+router.get("/tutor/subscription", tutorAuthorize, getSubscription);
+router.post("/tutor/subscription", tutorAuthorize, subscribe);
+router.get("/tutor/subscription/limits", tutorAuthorize, getSubscriptionLimits);
+
+// ============================================
+// COACHING HOURS MANAGEMENT
+// ============================================
+import {
+  getHoursBalance,
+  purchaseHours,
+  getPurchaseHistory,
+} from "../controllers/marketplace/coachingHours.js";
+
+router.get("/tutor/coaching/hours-balance", tutorAuthorize, getHoursBalance);
+router.post("/tutor/coaching/purchase-hours", tutorAuthorize, purchaseHours);
+router.get(
+  "/tutor/coaching/purchase-history",
+  tutorAuthorize,
+  getPurchaseHistory
+);
+
+// ============================================
+// COACHING SESSIONS MANAGEMENT
+// ============================================
+import {
+  createSession,
+  listSessions,
+  getSession,
+  inviteStudents,
+  startSession,
+  endSession,
+  getJoinToken,
+  cancelSession,
+} from "../controllers/marketplace/coachingSession.js";
+
+router.post("/tutor/coaching/sessions", tutorAuthorize, createSession);
+router.get("/tutor/coaching/sessions", tutorAuthorize, listSessions);
+router.get("/tutor/coaching/sessions/:id", tutorAuthorize, getSession);
+router.post(
+  "/tutor/coaching/sessions/:id/invite",
+  tutorAuthorize,
+  inviteStudents
+);
+router.post("/tutor/coaching/sessions/:id/start", tutorAuthorize, startSession);
+router.post("/tutor/coaching/sessions/:id/end", tutorAuthorize, endSession);
+router.post("/tutor/coaching/sessions/:id/token", tutorAuthorize, getJoinToken);
+router.delete("/tutor/coaching/sessions/:id", tutorAuthorize, cancelSession);
+
 export default router;

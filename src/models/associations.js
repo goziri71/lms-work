@@ -41,6 +41,12 @@ import {
   EBookPurchase,
   DigitalDownloads,
   DigitalDownloadPurchase,
+  TutorSubscription,
+  CoachingSession,
+  CoachingParticipant,
+  CoachingHoursBalance,
+  CoachingHoursPurchase,
+  CoachingSettings,
 } from "./marketplace/index.js";
 
 export const setupAssociations = () => {
@@ -613,5 +619,80 @@ export const setupAssociations = () => {
     constraints: false,
     scope: { owner_type: "organization" },
     as: "digitalDownloadTransactions",
+  });
+
+  // ============================================
+  // COACHING & SUBSCRIPTION ASSOCIATIONS
+  // ============================================
+
+  // Tutor Subscriptions
+  SoleTutor.hasMany(TutorSubscription, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "sole_tutor" },
+    as: "subscriptions",
+  });
+
+  Organization.hasMany(TutorSubscription, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "organization" },
+    as: "subscriptions",
+  });
+
+  // Coaching Sessions
+  SoleTutor.hasMany(CoachingSession, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "sole_tutor" },
+    as: "coachingSessions",
+  });
+
+  Organization.hasMany(CoachingSession, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "organization" },
+    as: "coachingSessions",
+  });
+
+  // Coaching Session Participants
+  CoachingSession.hasMany(CoachingParticipant, {
+    foreignKey: "session_id",
+    as: "participants",
+  });
+
+  CoachingParticipant.belongsTo(CoachingSession, {
+    foreignKey: "session_id",
+    as: "session",
+  });
+
+  // Coaching Hours Balance
+  SoleTutor.hasOne(CoachingHoursBalance, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "sole_tutor" },
+    as: "coachingHoursBalance",
+  });
+
+  Organization.hasOne(CoachingHoursBalance, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "organization" },
+    as: "coachingHoursBalance",
+  });
+
+  // Coaching Hours Purchases
+  SoleTutor.hasMany(CoachingHoursPurchase, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "sole_tutor" },
+    as: "coachingHoursPurchases",
+  });
+
+  Organization.hasMany(CoachingHoursPurchase, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "organization" },
+    as: "coachingHoursPurchases",
   });
 };
