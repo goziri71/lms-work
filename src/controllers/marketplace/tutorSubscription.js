@@ -37,13 +37,21 @@ function getTutorInfo(req) {
 export const getSubscription = TryCatchFunction(async (req, res) => {
   const { tutorId, tutorType } = getTutorInfo(req);
 
-  const subscription = await TutorSubscription.findOne({
-    where: {
-      tutor_id: tutorId,
-      tutor_type: tutorType,
-      status: "active",
-    },
-  });
+  let subscription;
+  try {
+    subscription = await TutorSubscription.findOne({
+      where: {
+        tutor_id: tutorId,
+        tutor_type: tutorType,
+        status: "active",
+      },
+    });
+  } catch (error) {
+    if (error.name === 'SequelizeDatabaseError' && (error.message.includes('does not exist') || (error.message.includes('relation') && error.message.includes('does not exist')))) {
+      throw new ErrorClass("Subscription tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js", 500);
+    }
+    throw error;
+  }
 
   if (!subscription) {
     // Return default free tier
@@ -100,13 +108,21 @@ export const subscribe = TryCatchFunction(async (req, res) => {
   const tierInfo = SUBSCRIPTION_TIERS[subscription_tier];
 
   // Check if there's an active subscription
-  const existingSubscription = await TutorSubscription.findOne({
-    where: {
-      tutor_id: tutorId,
-      tutor_type: tutorType,
-      status: "active",
-    },
-  });
+  let existingSubscription;
+  try {
+    existingSubscription = await TutorSubscription.findOne({
+      where: {
+        tutor_id: tutorId,
+        tutor_type: tutorType,
+        status: "active",
+      },
+    });
+  } catch (error) {
+    if (error.name === 'SequelizeDatabaseError' && (error.message.includes('does not exist') || (error.message.includes('relation') && error.message.includes('does not exist')))) {
+      throw new ErrorClass("Subscription tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js", 500);
+    }
+    throw error;
+  }
 
   // TODO: Handle payment for subscription (wallet or external payment)
   // For now, we'll just create/update the subscription
@@ -152,13 +168,21 @@ export const subscribe = TryCatchFunction(async (req, res) => {
 export const getSubscriptionLimits = TryCatchFunction(async (req, res) => {
   const { tutorId, tutorType } = getTutorInfo(req);
 
-  const subscription = await TutorSubscription.findOne({
-    where: {
-      tutor_id: tutorId,
-      tutor_type: tutorType,
-      status: "active",
-    },
-  });
+  let subscription;
+  try {
+    subscription = await TutorSubscription.findOne({
+      where: {
+        tutor_id: tutorId,
+        tutor_type: tutorType,
+        status: "active",
+      },
+    });
+  } catch (error) {
+    if (error.name === 'SequelizeDatabaseError' && (error.message.includes('does not exist') || (error.message.includes('relation') && error.message.includes('does not exist')))) {
+      throw new ErrorClass("Subscription tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js", 500);
+    }
+    throw error;
+  }
 
   const tierInfo = subscription
     ? SUBSCRIPTION_TIERS[subscription.subscription_tier]
