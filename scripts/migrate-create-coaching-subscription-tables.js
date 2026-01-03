@@ -52,9 +52,15 @@ async function createCoachingSubscriptionTables() {
           unlimited_coaching BOOLEAN DEFAULT false,
           commission_rate DECIMAL(5, 2) DEFAULT 10.0,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          CONSTRAINT unique_active_subscription UNIQUE (tutor_id, tutor_type, status) WHERE status = 'active'
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+      `);
+      
+      // Create partial unique index for active subscriptions
+      await db.query(`
+        CREATE UNIQUE INDEX unique_active_subscription 
+        ON tutor_subscriptions (tutor_id, tutor_type) 
+        WHERE status = 'active';
       `);
       console.log("✅ Created 'tutor_subscriptions' table");
     } else {

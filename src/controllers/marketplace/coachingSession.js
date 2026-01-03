@@ -75,13 +75,31 @@ export const createSession = TryCatchFunction(async (req, res) => {
   const durationHours = durationMinutes / 60;
 
   // Get coaching settings
-  const settings = await CoachingSettings.findOne();
+  let settings;
+  try {
+    settings = await CoachingSettings.findOne();
+  } catch (error) {
+    if (error.name === 'SequelizeDatabaseError' && (error.message.includes('does not exist') || error.message.includes('relation') && error.message.includes('does not exist'))) {
+      throw new ErrorClass("Coaching tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js", 500);
+    }
+    throw error;
+  }
+  
   if (!settings) {
     throw new ErrorClass("Coaching settings not configured", 500);
   }
 
   // Check and deduct hours (if not unlimited)
-  const hoursCheck = await checkAndDeductHours(tutorId, tutorType, durationHours);
+  let hoursCheck;
+  try {
+    hoursCheck = await checkAndDeductHours(tutorId, tutorType, durationHours);
+  } catch (error) {
+    if (error.name === 'SequelizeDatabaseError' && (error.message.includes('does not exist') || error.message.includes('relation') && error.message.includes('does not exist'))) {
+      throw new ErrorClass("Coaching tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js", 500);
+    }
+    throw error;
+  }
+  
   if (!hoursCheck.allowed) {
     throw new ErrorClass(hoursCheck.reason, 400);
   }
@@ -269,10 +287,12 @@ export const listSessions = TryCatchFunction(async (req, res) => {
       {
         model: CoachingParticipant,
         as: "participants",
+        required: false,
         include: [
           {
             model: Students,
             as: "student",
+            required: false,
             attributes: ["id", "name", "email"],
           },
         ],
@@ -337,10 +357,12 @@ export const getSession = TryCatchFunction(async (req, res) => {
       {
         model: CoachingParticipant,
         as: "participants",
+        required: false,
         include: [
           {
             model: Students,
             as: "student",
+            required: false,
             attributes: ["id", "name", "email"],
           },
         ],
