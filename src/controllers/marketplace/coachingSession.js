@@ -219,7 +219,7 @@ async function sendSessionInvitations(session, students, tutorName, tutorEmail, 
       const htmlBody = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #333;">Coaching Session Invitation</h2>
-          <p>Hello ${student.name || student.email},</p>
+          <p>Hello ${student.fname && student.lname ? `${student.fname} ${student.mname || ""} ${student.lname}`.trim() : student.email},</p>
           <p>You have been invited to a coaching session by <strong>${tutorName}</strong>.</p>
           <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
             <h3 style="margin-top: 0;">Session Details</h3>
@@ -240,7 +240,7 @@ async function sendSessionInvitations(session, students, tutorName, tutorEmail, 
 
       await emailService.sendEmail({
         to: student.email,
-        name: student.name || student.email,
+        name: student.fname && student.lname ? `${student.fname} ${student.mname || ""} ${student.lname}`.trim() : student.email,
         subject: `Coaching Session Invitation: ${session.title}`,
         htmlBody,
       });
@@ -293,7 +293,7 @@ export const listSessions = TryCatchFunction(async (req, res) => {
             model: Students,
             as: "student",
             required: false,
-            attributes: ["id", "name", "email"],
+            attributes: ["id", "fname", "lname", "mname", "email"],
           },
         ],
       },
@@ -322,7 +322,11 @@ export const listSessions = TryCatchFunction(async (req, res) => {
         actual_end_time: s.actual_end_time,
         participants: s.participants?.map((p) => ({
           id: p.id,
-          student: p.student ? { id: p.student.id, name: p.student.name, email: p.student.email } : null,
+          student: p.student ? {
+            id: p.student.id,
+            name: `${p.student.fname || ""} ${p.student.mname || ""} ${p.student.lname || ""}`.trim() || p.student.email,
+            email: p.student.email,
+          } : null,
           invited_at: p.invited_at,
           joined_at: p.joined_at,
           left_at: p.left_at,
@@ -363,7 +367,7 @@ export const getSession = TryCatchFunction(async (req, res) => {
             model: Students,
             as: "student",
             required: false,
-            attributes: ["id", "name", "email"],
+            attributes: ["id", "fname", "lname", "mname", "email"],
           },
         ],
       },
@@ -393,7 +397,11 @@ export const getSession = TryCatchFunction(async (req, res) => {
       actual_end_time: session.actual_end_time,
       participants: session.participants?.map((p) => ({
         id: p.id,
-        student: p.student ? { id: p.student.id, name: p.student.name, email: p.student.email } : null,
+        student: p.student ? {
+          id: p.student.id,
+          name: `${p.student.fname || ""} ${p.student.mname || ""} ${p.student.lname || ""}`.trim() || p.student.email,
+          email: p.student.email,
+        } : null,
         invited_at: p.invited_at,
         joined_at: p.joined_at,
         left_at: p.left_at,
