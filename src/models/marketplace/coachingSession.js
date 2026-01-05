@@ -92,6 +92,56 @@ export const CoachingSession = db.define(
       type: DataTypes.BOOLEAN,
       defaultValue: false,
     },
+    pricing_type: {
+      type: DataTypes.ENUM("free", "paid"),
+      allowNull: false,
+      defaultValue: "free",
+      comment: "Pricing type: free or paid",
+    },
+    price: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      comment: "Price for paid sessions",
+    },
+    currency: {
+      type: DataTypes.STRING(10),
+      defaultValue: "NGN",
+      comment: "Currency for paid sessions",
+    },
+    category: {
+      type: DataTypes.ENUM(
+        "Business",
+        "Tech",
+        "Art",
+        "Logistics",
+        "Ebooks",
+        "Podcast",
+        "Videos",
+        "Music",
+        "Articles",
+        "Code",
+        "2D/3D Files"
+      ),
+      allowNull: true,
+      comment: "Session category",
+    },
+    image_url: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: "Session cover image URL",
+    },
+    tags: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      comment: "Session tags",
+    },
+    commission_rate: {
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: true,
+      defaultValue: 15.0,
+      comment:
+        "WPU commission rate for this session (separate from course commission)",
+    },
   },
   {
     tableName: "coaching_sessions",
@@ -111,4 +161,3 @@ export const CoachingSession = db.define(
     ],
   }
 );
-

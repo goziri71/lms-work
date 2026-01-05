@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { OrganizationUser } from "../../models/marketplace/organizationUser.js";
+import { TutorSubscription, SUBSCRIPTION_TIERS } from "../../models/marketplace/tutorSubscription.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { authService } from "../../service/authservice.js";
@@ -202,6 +203,60 @@ export const soleTutorLogin = TryCatchFunction(async (req, res) => {
   // Update last login
   await tutor.update({ last_login: new Date() });
 
+  // Get subscription tier
+  let subscriptionTier = "free";
+  let subscriptionInfo = null;
+  try {
+    const subscription = await TutorSubscription.findOne({
+      where: {
+        tutor_id: tutor.id,
+        tutor_type: "sole_tutor",
+        status: "active",
+      },
+    });
+    
+    if (subscription) {
+      subscriptionTier = subscription.subscription_tier;
+      const tierInfo = SUBSCRIPTION_TIERS[subscriptionTier] || SUBSCRIPTION_TIERS.free;
+      subscriptionInfo = {
+        tier: subscriptionTier,
+        tier_name: tierInfo.name,
+        status: subscription.status,
+        unlimited_coaching: subscription.unlimited_coaching,
+        courses_limit: subscription.courses_limit,
+        communities_limit: subscription.communities_limit,
+        digital_downloads_limit: subscription.digital_downloads_limit,
+        memberships_limit: subscription.memberships_limit,
+      };
+    } else {
+      // Default free tier
+      const freeTier = SUBSCRIPTION_TIERS.free;
+      subscriptionInfo = {
+        tier: "free",
+        tier_name: freeTier.name,
+        status: "active",
+        unlimited_coaching: freeTier.unlimited_coaching,
+        courses_limit: freeTier.courses_limit,
+        communities_limit: freeTier.communities_limit,
+        digital_downloads_limit: freeTier.digital_downloads_limit,
+        memberships_limit: freeTier.memberships_limit,
+      };
+    }
+  } catch (error) {
+    // If subscription table doesn't exist, use default free tier
+    const freeTier = SUBSCRIPTION_TIERS.free;
+    subscriptionInfo = {
+      tier: "free",
+      tier_name: freeTier.name,
+      status: "active",
+      unlimited_coaching: freeTier.unlimited_coaching,
+      courses_limit: freeTier.courses_limit,
+      communities_limit: freeTier.communities_limit,
+      digital_downloads_limit: freeTier.digital_downloads_limit,
+      memberships_limit: freeTier.memberships_limit,
+    };
+  }
+
   // Generate JWT token
   const accessToken = await authService.generateAccessToken({
     id: tutor.id,
@@ -225,6 +280,7 @@ export const soleTutorLogin = TryCatchFunction(async (req, res) => {
         wallet_balance: tutor.wallet_balance,
         rating: tutor.rating,
       },
+      subscription: subscriptionInfo,
       accessToken,
       userType: "sole_tutor",
       expiresIn: 14400, // 4 hours
@@ -285,6 +341,58 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
   // Update last login
   await organization.update({ last_login: new Date() });
 
+  // Get subscription tier
+  let subscriptionInfo = null;
+  try {
+    const subscription = await TutorSubscription.findOne({
+      where: {
+        tutor_id: organization.id,
+        tutor_type: "organization",
+        status: "active",
+      },
+    });
+    
+    if (subscription) {
+      const tierInfo = SUBSCRIPTION_TIERS[subscription.subscription_tier] || SUBSCRIPTION_TIERS.free;
+      subscriptionInfo = {
+        tier: subscription.subscription_tier,
+        tier_name: tierInfo.name,
+        status: subscription.status,
+        unlimited_coaching: subscription.unlimited_coaching,
+        courses_limit: subscription.courses_limit,
+        communities_limit: subscription.communities_limit,
+        digital_downloads_limit: subscription.digital_downloads_limit,
+        memberships_limit: subscription.memberships_limit,
+      };
+    } else {
+      // Default free tier
+      const freeTier = SUBSCRIPTION_TIERS.free;
+      subscriptionInfo = {
+        tier: "free",
+        tier_name: freeTier.name,
+        status: "active",
+        unlimited_coaching: freeTier.unlimited_coaching,
+        courses_limit: freeTier.courses_limit,
+        communities_limit: freeTier.communities_limit,
+        digital_downloads_limit: freeTier.digital_downloads_limit,
+        memberships_limit: freeTier.memberships_limit,
+      };
+    }
+  } catch (error) {
+    // If subscription table doesn't exist, use default free tier
+    const freeTier = SUBSCRIPTION_TIERS.free;
+    subscriptionInfo = {
+      tier: "free",
+      tier_name: freeTier.name,
+      status: "active",
+      unlimited_coaching: freeTier.unlimited_coaching,
+      courses_limit: freeTier.courses_limit,
+      communities_limit: freeTier.communities_limit,
+      digital_downloads_limit: freeTier.digital_downloads_limit,
+      memberships_limit: freeTier.memberships_limit,
+    };
+  }
+
   // Generate JWT token
   const accessToken = await authService.generateAccessToken({
     id: organization.id,
@@ -306,6 +414,7 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
         wallet_balance: organization.wallet_balance,
         rating: organization.rating,
       },
+      subscription: subscriptionInfo,
       accessToken,
       userType: "organization",
       expiresIn: 14400, // 4 hours
@@ -374,6 +483,58 @@ export const organizationUserLogin = TryCatchFunction(async (req, res) => {
   // Update last login
   await orgUser.update({ last_login: new Date() });
 
+  // Get subscription tier (for the organization)
+  let subscriptionInfo = null;
+  try {
+    const subscription = await TutorSubscription.findOne({
+      where: {
+        tutor_id: orgUser.organization_id,
+        tutor_type: "organization",
+        status: "active",
+      },
+    });
+    
+    if (subscription) {
+      const tierInfo = SUBSCRIPTION_TIERS[subscription.subscription_tier] || SUBSCRIPTION_TIERS.free;
+      subscriptionInfo = {
+        tier: subscription.subscription_tier,
+        tier_name: tierInfo.name,
+        status: subscription.status,
+        unlimited_coaching: subscription.unlimited_coaching,
+        courses_limit: subscription.courses_limit,
+        communities_limit: subscription.communities_limit,
+        digital_downloads_limit: subscription.digital_downloads_limit,
+        memberships_limit: subscription.memberships_limit,
+      };
+    } else {
+      // Default free tier
+      const freeTier = SUBSCRIPTION_TIERS.free;
+      subscriptionInfo = {
+        tier: "free",
+        tier_name: freeTier.name,
+        status: "active",
+        unlimited_coaching: freeTier.unlimited_coaching,
+        courses_limit: freeTier.courses_limit,
+        communities_limit: freeTier.communities_limit,
+        digital_downloads_limit: freeTier.digital_downloads_limit,
+        memberships_limit: freeTier.memberships_limit,
+      };
+    }
+  } catch (error) {
+    // If subscription table doesn't exist, use default free tier
+    const freeTier = SUBSCRIPTION_TIERS.free;
+    subscriptionInfo = {
+      tier: "free",
+      tier_name: freeTier.name,
+      status: "active",
+      unlimited_coaching: freeTier.unlimited_coaching,
+      courses_limit: freeTier.courses_limit,
+      communities_limit: freeTier.communities_limit,
+      digital_downloads_limit: freeTier.digital_downloads_limit,
+      memberships_limit: freeTier.memberships_limit,
+    };
+  }
+
   // Generate JWT token
   const accessToken = await authService.generateAccessToken({
     id: orgUser.id,
@@ -400,6 +561,7 @@ export const organizationUserLogin = TryCatchFunction(async (req, res) => {
           name: orgUser.organization.name,
         },
       },
+      subscription: subscriptionInfo,
       accessToken,
       userType: "organization_user",
       expiresIn: 14400, // 4 hours
@@ -458,6 +620,58 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
     // Update last login
     await tutor.update({ last_login: new Date() });
 
+    // Get subscription tier
+    let subscriptionInfo = null;
+    try {
+      const subscription = await TutorSubscription.findOne({
+        where: {
+          tutor_id: tutor.id,
+          tutor_type: "sole_tutor",
+          status: "active",
+        },
+      });
+      
+      if (subscription) {
+        const tierInfo = SUBSCRIPTION_TIERS[subscription.subscription_tier] || SUBSCRIPTION_TIERS.free;
+        subscriptionInfo = {
+          tier: subscription.subscription_tier,
+          tier_name: tierInfo.name,
+          status: subscription.status,
+          unlimited_coaching: subscription.unlimited_coaching,
+          courses_limit: subscription.courses_limit,
+          communities_limit: subscription.communities_limit,
+          digital_downloads_limit: subscription.digital_downloads_limit,
+          memberships_limit: subscription.memberships_limit,
+        };
+      } else {
+        // Default free tier
+        const freeTier = SUBSCRIPTION_TIERS.free;
+        subscriptionInfo = {
+          tier: "free",
+          tier_name: freeTier.name,
+          status: "active",
+          unlimited_coaching: freeTier.unlimited_coaching,
+          courses_limit: freeTier.courses_limit,
+          communities_limit: freeTier.communities_limit,
+          digital_downloads_limit: freeTier.digital_downloads_limit,
+          memberships_limit: freeTier.memberships_limit,
+        };
+      }
+    } catch (error) {
+      // If subscription table doesn't exist, use default free tier
+      const freeTier = SUBSCRIPTION_TIERS.free;
+      subscriptionInfo = {
+        tier: "free",
+        tier_name: freeTier.name,
+        status: "active",
+        unlimited_coaching: freeTier.unlimited_coaching,
+        courses_limit: freeTier.courses_limit,
+        communities_limit: freeTier.communities_limit,
+        digital_downloads_limit: freeTier.digital_downloads_limit,
+        memberships_limit: freeTier.memberships_limit,
+      };
+    }
+
     // Generate JWT token
     const accessToken = await authService.generateAccessToken({
       id: tutor.id,
@@ -481,6 +695,7 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
           wallet_balance: tutor.wallet_balance,
           rating: tutor.rating,
         },
+        subscription: subscriptionInfo,
         accessToken,
         userType: "sole_tutor",
         expiresIn: 14400, // 4 hours
@@ -529,6 +744,58 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
     // Update last login
     await organization.update({ last_login: new Date() });
 
+    // Get subscription tier
+    let subscriptionInfo = null;
+    try {
+      const subscription = await TutorSubscription.findOne({
+        where: {
+          tutor_id: organization.id,
+          tutor_type: "organization",
+          status: "active",
+        },
+      });
+      
+      if (subscription) {
+        const tierInfo = SUBSCRIPTION_TIERS[subscription.subscription_tier] || SUBSCRIPTION_TIERS.free;
+        subscriptionInfo = {
+          tier: subscription.subscription_tier,
+          tier_name: tierInfo.name,
+          status: subscription.status,
+          unlimited_coaching: subscription.unlimited_coaching,
+          courses_limit: subscription.courses_limit,
+          communities_limit: subscription.communities_limit,
+          digital_downloads_limit: subscription.digital_downloads_limit,
+          memberships_limit: subscription.memberships_limit,
+        };
+      } else {
+        // Default free tier
+        const freeTier = SUBSCRIPTION_TIERS.free;
+        subscriptionInfo = {
+          tier: "free",
+          tier_name: freeTier.name,
+          status: "active",
+          unlimited_coaching: freeTier.unlimited_coaching,
+          courses_limit: freeTier.courses_limit,
+          communities_limit: freeTier.communities_limit,
+          digital_downloads_limit: freeTier.digital_downloads_limit,
+          memberships_limit: freeTier.memberships_limit,
+        };
+      }
+    } catch (error) {
+      // If subscription table doesn't exist, use default free tier
+      const freeTier = SUBSCRIPTION_TIERS.free;
+      subscriptionInfo = {
+        tier: "free",
+        tier_name: freeTier.name,
+        status: "active",
+        unlimited_coaching: freeTier.unlimited_coaching,
+        courses_limit: freeTier.courses_limit,
+        communities_limit: freeTier.communities_limit,
+        digital_downloads_limit: freeTier.digital_downloads_limit,
+        memberships_limit: freeTier.memberships_limit,
+      };
+    }
+
     // Generate JWT token
     const accessToken = await authService.generateAccessToken({
       id: organization.id,
@@ -550,6 +817,7 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
           wallet_balance: organization.wallet_balance,
           rating: organization.rating,
         },
+        subscription: subscriptionInfo,
         accessToken,
         userType: "organization",
         expiresIn: 14400, // 4 hours

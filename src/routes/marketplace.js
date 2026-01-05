@@ -18,6 +18,7 @@ import { browseMarketplaceCourses } from "../controllers/marketplace/browseMarke
 import { getAllTutors } from "../controllers/marketplace/getAllTutors.js";
 import { getAllPrograms } from "../controllers/marketplace/getAllPrograms.js";
 import { authorize } from "../middlewares/authorize.js";
+import { optionalAuthorize } from "../middlewares/optionalAuthorize.js";
 import {
   tutorAuthorize,
   requireOrganization,
@@ -427,5 +428,32 @@ router.post("/tutor/coaching/sessions/:id/start", tutorAuthorize, startSession);
 router.post("/tutor/coaching/sessions/:id/end", tutorAuthorize, endSession);
 router.post("/tutor/coaching/sessions/:id/token", tutorAuthorize, getJoinToken);
 router.delete("/tutor/coaching/sessions/:id", tutorAuthorize, cancelSession);
+
+// ============================================
+// STUDENT COACHING SESSION ENDPOINTS
+// ============================================
+import {
+  browseSessions,
+  getSessionDetails,
+  getMySessions,
+} from "../controllers/marketplace/coachingSessionBrowsing.js";
+import { purchaseSessionAccess } from "../controllers/marketplace/coachingSessionPurchase.js";
+import { getStudentJoinToken } from "../controllers/marketplace/coachingSession.js";
+
+// Browse sessions - optional auth (public can browse, authenticated students see purchase status)
+router.get("/coaching/sessions", optionalAuthorize, browseSessions);
+router.get("/coaching/sessions/:id", optionalAuthorize, getSessionDetails);
+// Purchase and join - require student authentication
+router.post(
+  "/coaching/sessions/:id/purchase",
+  authorize,
+  purchaseSessionAccess
+);
+router.post(
+  "/coaching/sessions/:id/join-token",
+  authorize,
+  getStudentJoinToken
+);
+router.get("/coaching/my-sessions", authorize, getMySessions);
 
 export default router;

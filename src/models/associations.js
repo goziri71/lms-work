@@ -44,6 +44,7 @@ import {
   TutorSubscription,
   CoachingSession,
   CoachingParticipant,
+  CoachingSessionPurchase,
   CoachingHoursBalance,
   CoachingHoursPurchase,
   CoachingSettings,
@@ -655,6 +656,21 @@ export const setupAssociations = () => {
     as: "coachingSessions",
   });
 
+  // Coaching Session Ownership (for browsing)
+  CoachingSession.belongsTo(SoleTutor, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "sole_tutor" },
+    as: "soleTutorOwner",
+  });
+
+  CoachingSession.belongsTo(Organization, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "organization" },
+    as: "organizationOwner",
+  });
+
   // Coaching Session Participants
   CoachingSession.hasMany(CoachingParticipant, {
     foreignKey: "session_id",
@@ -664,6 +680,22 @@ export const setupAssociations = () => {
   CoachingParticipant.belongsTo(CoachingSession, {
     foreignKey: "session_id",
     as: "session",
+  });
+
+  // Coaching Session Purchases
+  CoachingSession.hasMany(CoachingSessionPurchase, {
+    foreignKey: "session_id",
+    as: "purchases",
+  });
+
+  CoachingSessionPurchase.belongsTo(CoachingSession, {
+    foreignKey: "session_id",
+    as: "coachingSession",
+  });
+
+  CoachingSessionPurchase.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
   });
 
   // Coaching Hours Balance

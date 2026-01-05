@@ -32,7 +32,8 @@ function getTutorInfo(req) {
   } else if (userType === "organization_user") {
     tutorId = req.tutor.organization_id;
     tutorType = "organization";
-    tutorName = req.tutor.organization?.name || `${req.tutor.fname} ${req.tutor.lname}`;
+    tutorName =
+      req.tutor.organization?.name || `${req.tutor.fname} ${req.tutor.lname}`;
     tutorEmail = req.tutor.email;
   } else {
     throw new ErrorClass("Invalid user type", 403);
@@ -48,7 +49,20 @@ function getTutorInfo(req) {
  */
 export const createSession = TryCatchFunction(async (req, res) => {
   const { tutorId, tutorType, tutorName, tutorEmail } = getTutorInfo(req);
-  const { title, description, start_time, end_time, student_ids } = req.body;
+  const {
+    title,
+    description,
+    start_time,
+    end_time,
+    student_ids,
+    pricing_type = "free",
+    price,
+    currency = "NGN",
+    category,
+    image_url,
+    tags,
+    commission_rate,
+  } = req.body;
 
   if (!title || !start_time || !end_time) {
     throw new ErrorClass("Title, start_time, and end_time are required", 400);
@@ -69,6 +83,53 @@ export const createSession = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("start_time cannot be in the past", 400);
   }
 
+  // Validate pricing fields
+  if (pricing_type === "paid") {
+    if (!price || price <= 0) {
+      throw new ErrorClass(
+        "Price is required and must be greater than 0 for paid sessions",
+        400
+      );
+    }
+  }
+
+  // Validate category if provided
+  const validCategories = [
+    "Business",
+    "Tech",
+    "Art",
+    "Logistics",
+    "Ebooks",
+    "Podcast",
+    "Videos",
+    "Music",
+    "Articles",
+    "Code",
+    "2D/3D Files",
+  ];
+  if (category && !validCategories.includes(category)) {
+    throw new ErrorClass(
+      `Invalid category. Must be one of: ${validCategories.join(", ")}`,
+      400
+    );
+  }
+
+  // Validate commission_rate if provided
+  let finalCommissionRate = commission_rate;
+  if (commission_rate !== undefined && commission_rate !== null) {
+    const rate = parseFloat(commission_rate);
+    if (isNaN(rate) || rate < 0 || rate > 100) {
+      throw new ErrorClass(
+        "Commission rate must be a number between 0 and 100",
+        400
+      );
+    }
+    finalCommissionRate = rate;
+  } else {
+    // Default commission rate for coaching sessions (separate from course commission)
+    finalCommissionRate = 15.0;
+  }
+
   // Calculate duration in minutes
   const durationMs = endTime.getTime() - startTime.getTime();
   const durationMinutes = Math.round(durationMs / (1000 * 60));
@@ -79,12 +140,20 @@ export const createSession = TryCatchFunction(async (req, res) => {
   try {
     settings = await CoachingSettings.findOne();
   } catch (error) {
-    if (error.name === 'SequelizeDatabaseError' && (error.message.includes('does not exist') || error.message.includes('relation') && error.message.includes('does not exist'))) {
-      throw new ErrorClass("Coaching tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js", 500);
+    if (
+      error.name === "SequelizeDatabaseError" &&
+      (error.message.includes("does not exist") ||
+        (error.message.includes("relation") &&
+          error.message.includes("does not exist")))
+    ) {
+      throw new ErrorClass(
+        "Coaching tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js",
+        500
+      );
     }
     throw error;
   }
-  
+
   if (!settings) {
     throw new ErrorClass("Coaching settings not configured", 500);
   }
@@ -94,12 +163,20 @@ export const createSession = TryCatchFunction(async (req, res) => {
   try {
     hoursCheck = await checkAndDeductHours(tutorId, tutorType, durationHours);
   } catch (error) {
-    if (error.name === 'SequelizeDatabaseError' && (error.message.includes('does not exist') || error.message.includes('relation') && error.message.includes('does not exist'))) {
-      throw new ErrorClass("Coaching tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js", 500);
+    if (
+      error.name === "SequelizeDatabaseError" &&
+      (error.message.includes("does not exist") ||
+        (error.message.includes("relation") &&
+          error.message.includes("does not exist")))
+    ) {
+      throw new ErrorClass(
+        "Coaching tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js",
+        500
+      );
     }
     throw error;
   }
-  
+
   if (!hoursCheck.allowed) {
     throw new ErrorClass(hoursCheck.reason, 400);
   }
@@ -113,7 +190,10 @@ export const createSession = TryCatchFunction(async (req, res) => {
 
     // Create Stream.io call
     if (!Config.streamApiKey || !Config.streamSecret) {
-      throw new ErrorClass("Video calls are currently disabled. Please contact administrator.", 503);
+      throw new ErrorClass(
+        "Video calls are currently disabled. Please contact administrator.",
+        503
+      );
     }
 
     await streamVideoService.getOrCreateCall("default", streamCallId, {
@@ -141,6 +221,19 @@ export const createSession = TryCatchFunction(async (req, res) => {
         hours_reserved: durationHours,
         hours_used: 0.0,
         student_count: student_ids?.length || 0,
+        pricing_type: pricing_type || "free",
+        price: pricing_type === "paid" ? price : null,
+        currency: pricing_type === "paid" ? currency : null,
+        category: category || null,
+        image_url: image_url || null,
+        tags: tags
+          ? Array.isArray(tags)
+            ? tags
+            : typeof tags === "string"
+            ? JSON.parse(tags)
+            : tags
+          : null,
+        commission_rate: finalCommissionRate,
       },
       { transaction }
     );
@@ -176,7 +269,15 @@ export const createSession = TryCatchFunction(async (req, res) => {
       );
 
       // Send email invitations
-      await sendSessionInvitations(session, students, tutorName, tutorEmail, viewLink, startTime, endTime);
+      await sendSessionInvitations(
+        session,
+        students,
+        tutorName,
+        tutorEmail,
+        viewLink,
+        startTime,
+        endTime
+      );
     }
 
     await transaction.commit();
@@ -187,6 +288,7 @@ export const createSession = TryCatchFunction(async (req, res) => {
       data: {
         id: session.id,
         title: session.title,
+        description: session.description,
         start_time: session.start_time,
         end_time: session.end_time,
         duration_minutes: session.duration_minutes,
@@ -195,6 +297,15 @@ export const createSession = TryCatchFunction(async (req, res) => {
         status: session.status,
         hours_reserved: parseFloat(session.hours_reserved),
         student_count: session.student_count,
+        pricing_type: session.pricing_type,
+        price: session.price ? parseFloat(session.price) : null,
+        currency: session.currency,
+        category: session.category,
+        image_url: session.image_url,
+        tags: session.tags,
+        commission_rate: session.commission_rate
+          ? parseFloat(session.commission_rate)
+          : null,
       },
     });
   } catch (error) {
@@ -210,7 +321,15 @@ export const createSession = TryCatchFunction(async (req, res) => {
 /**
  * Send email invitations to students
  */
-async function sendSessionInvitations(session, students, tutorName, tutorEmail, viewLink, startTime, endTime) {
+async function sendSessionInvitations(
+  session,
+  students,
+  tutorName,
+  tutorEmail,
+  viewLink,
+  startTime,
+  endTime
+) {
   const startTimeStr = new Date(startTime).toLocaleString();
   const endTimeStr = new Date(endTime).toLocaleString();
 
@@ -219,12 +338,22 @@ async function sendSessionInvitations(session, students, tutorName, tutorEmail, 
       const htmlBody = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #333;">Coaching Session Invitation</h2>
-          <p>Hello ${student.fname && student.lname ? `${student.fname} ${student.mname || ""} ${student.lname}`.trim() : student.email},</p>
+          <p>Hello ${
+            student.fname && student.lname
+              ? `${student.fname} ${student.mname || ""} ${
+                  student.lname
+                }`.trim()
+              : student.email
+          },</p>
           <p>You have been invited to a coaching session by <strong>${tutorName}</strong>.</p>
           <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
             <h3 style="margin-top: 0;">Session Details</h3>
             <p><strong>Title:</strong> ${session.title}</p>
-            ${session.description ? `<p><strong>Description:</strong> ${session.description}</p>` : ""}
+            ${
+              session.description
+                ? `<p><strong>Description:</strong> ${session.description}</p>`
+                : ""
+            }
             <p><strong>Start Time:</strong> ${startTimeStr}</p>
             <p><strong>End Time:</strong> ${endTimeStr}</p>
             <p><strong>Tutor:</strong> ${tutorName}</p>
@@ -240,7 +369,10 @@ async function sendSessionInvitations(session, students, tutorName, tutorEmail, 
 
       await emailService.sendEmail({
         to: student.email,
-        name: student.fname && student.lname ? `${student.fname} ${student.mname || ""} ${student.lname}`.trim() : student.email,
+        name:
+          student.fname && student.lname
+            ? `${student.fname} ${student.mname || ""} ${student.lname}`.trim()
+            : student.email,
         subject: `Coaching Session Invitation: ${session.title}`,
         htmlBody,
       });
@@ -256,7 +388,10 @@ async function sendSessionInvitations(session, students, tutorName, tutorEmail, 
         }
       );
     } catch (error) {
-      console.error(`Failed to send invitation email to ${student.email}:`, error);
+      console.error(
+        `Failed to send invitation email to ${student.email}:`,
+        error
+      );
       // Continue with other students even if one fails
     }
   }
@@ -320,13 +455,27 @@ export const listSessions = TryCatchFunction(async (req, res) => {
         student_count: s.student_count,
         actual_start_time: s.actual_start_time,
         actual_end_time: s.actual_end_time,
+        pricing_type: s.pricing_type,
+        price: s.price ? parseFloat(s.price) : null,
+        currency: s.currency,
+        category: s.category,
+        image_url: s.image_url,
+        tags: s.tags,
+        commission_rate: s.commission_rate
+          ? parseFloat(s.commission_rate)
+          : null,
         participants: s.participants?.map((p) => ({
           id: p.id,
-          student: p.student ? {
-            id: p.student.id,
-            name: `${p.student.fname || ""} ${p.student.mname || ""} ${p.student.lname || ""}`.trim() || p.student.email,
-            email: p.student.email,
-          } : null,
+          student: p.student
+            ? {
+                id: p.student.id,
+                name:
+                  `${p.student.fname || ""} ${p.student.mname || ""} ${
+                    p.student.lname || ""
+                  }`.trim() || p.student.email,
+                email: p.student.email,
+              }
+            : null,
           invited_at: p.invited_at,
           joined_at: p.joined_at,
           left_at: p.left_at,
@@ -395,13 +544,27 @@ export const getSession = TryCatchFunction(async (req, res) => {
       student_count: session.student_count,
       actual_start_time: session.actual_start_time,
       actual_end_time: session.actual_end_time,
+      pricing_type: session.pricing_type,
+      price: session.price ? parseFloat(session.price) : null,
+      currency: session.currency,
+      category: session.category,
+      image_url: session.image_url,
+      tags: session.tags,
+      commission_rate: session.commission_rate
+        ? parseFloat(session.commission_rate)
+        : null,
       participants: session.participants?.map((p) => ({
         id: p.id,
-        student: p.student ? {
-          id: p.student.id,
-          name: `${p.student.fname || ""} ${p.student.mname || ""} ${p.student.lname || ""}`.trim() || p.student.email,
-          email: p.student.email,
-        } : null,
+        student: p.student
+          ? {
+              id: p.student.id,
+              name:
+                `${p.student.fname || ""} ${p.student.mname || ""} ${
+                  p.student.lname || ""
+                }`.trim() || p.student.email,
+              email: p.student.email,
+            }
+          : null,
         invited_at: p.invited_at,
         joined_at: p.joined_at,
         left_at: p.left_at,
@@ -439,7 +602,10 @@ export const inviteStudents = TryCatchFunction(async (req, res) => {
   }
 
   if (session.status === "ended" || session.status === "cancelled") {
-    throw new ErrorClass("Cannot invite students to a completed or cancelled session", 400);
+    throw new ErrorClass(
+      "Cannot invite students to a completed or cancelled session",
+      400
+    );
   }
 
   // Validate student IDs
@@ -466,7 +632,9 @@ export const inviteStudents = TryCatchFunction(async (req, res) => {
   });
 
   const existingStudentIds = existingParticipants.map((p) => p.student_id);
-  const newStudentIds = student_ids.filter((id) => !existingStudentIds.includes(id));
+  const newStudentIds = student_ids.filter(
+    (id) => !existingStudentIds.includes(id)
+  );
 
   if (newStudentIds.length === 0) {
     throw new ErrorClass("All students are already invited", 400);
@@ -535,7 +703,10 @@ export const startSession = TryCatchFunction(async (req, res) => {
   }
 
   if (session.status !== "scheduled") {
-    throw new ErrorClass(`Cannot start session with status: ${session.status}`, 400);
+    throw new ErrorClass(
+      `Cannot start session with status: ${session.status}`,
+      400
+    );
   }
 
   const now = new Date();
@@ -583,7 +754,10 @@ export const endSession = TryCatchFunction(async (req, res) => {
   }
 
   if (session.status !== "active") {
-    throw new ErrorClass(`Cannot end session with status: ${session.status}`, 400);
+    throw new ErrorClass(
+      `Cannot end session with status: ${session.status}`,
+      400
+    );
   }
 
   const now = new Date();
@@ -674,6 +848,73 @@ export const getJoinToken = TryCatchFunction(async (req, res) => {
 });
 
 /**
+ * Get join token for session (Student)
+ * POST /api/marketplace/coaching/sessions/:id/join-token
+ * Auth: Student only
+ */
+export const getStudentJoinToken = TryCatchFunction(async (req, res) => {
+  const { id } = req.params;
+  const studentId = req.user?.id;
+
+  if (req.user?.userType !== "student") {
+    throw new ErrorClass("Only students can join coaching sessions", 403);
+  }
+
+  const session = await CoachingSession.findByPk(id);
+  if (!session) {
+    throw new ErrorClass("Session not found", 404);
+  }
+
+  // Check if session is paid
+  if (session.pricing_type === "paid") {
+    // Check if student has purchased access
+    const { hasPurchasedAccess } = await import("./coachingSessionPurchase.js");
+    const hasAccess = await hasPurchasedAccess(id, studentId);
+
+    if (!hasAccess) {
+      throw new ErrorClass(
+        "You must purchase access to join this paid session. Please purchase access first.",
+        403
+      );
+    }
+  } else {
+    // For free sessions, check if student is invited
+    const participant = await CoachingParticipant.findOne({
+      where: {
+        session_id: id,
+        student_id: studentId,
+      },
+    });
+
+    if (!participant) {
+      throw new ErrorClass("You are not invited to this session", 403);
+    }
+  }
+
+  if (!session.stream_call_id) {
+    throw new ErrorClass("Stream call ID not found", 500);
+  }
+
+  if (!Config.streamApiKey || !Config.streamSecret) {
+    throw new ErrorClass("Video calls are currently disabled", 503);
+  }
+
+  // Generate token (1 hour TTL)
+  const token = streamVideoService.generateUserToken(studentId, 3600);
+
+  res.json({
+    success: true,
+    data: {
+      apiKey: Config.streamApiKey,
+      token,
+      streamCallId: session.stream_call_id,
+      userId: String(studentId),
+      role: "participant",
+    },
+  });
+});
+
+/**
  * Cancel a coaching session
  * DELETE /api/marketplace/tutor/coaching/sessions/:id
  */
@@ -729,4 +970,3 @@ export const cancelSession = TryCatchFunction(async (req, res) => {
     },
   });
 });
-
