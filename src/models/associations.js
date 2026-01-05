@@ -48,6 +48,8 @@ import {
   CoachingHoursBalance,
   CoachingHoursPurchase,
   CoachingSettings,
+  TutorBankAccount,
+  TutorPayout,
 } from "./marketplace/index.js";
 
 export const setupAssociations = () => {
@@ -726,5 +728,40 @@ export const setupAssociations = () => {
     constraints: false,
     scope: { tutor_type: "organization" },
     as: "coachingHoursPurchases",
+  });
+
+  // Tutor Bank Accounts
+  SoleTutor.hasMany(TutorBankAccount, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "sole_tutor" },
+    as: "bankAccounts",
+  });
+
+  Organization.hasMany(TutorBankAccount, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "organization" },
+    as: "bankAccounts",
+  });
+
+  // Tutor Payouts
+  SoleTutor.hasMany(TutorPayout, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "sole_tutor" },
+    as: "payouts",
+  });
+
+  Organization.hasMany(TutorPayout, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "organization" },
+    as: "payouts",
+  });
+
+  TutorPayout.belongsTo(TutorBankAccount, {
+    foreignKey: "bank_account_id",
+    as: "bankAccount",
   });
 };

@@ -17,4 +17,7 @@ export { CoachingSessionPurchase } from "./coachingSessionPurchase.js";
 export { CoachingHoursBalance } from "./coachingHoursBalance.js";
 export { CoachingHoursPurchase } from "./coachingHoursPurchase.js";
 export { CoachingSettings } from "./coachingSettings.js";
+// Payout and Bank Account exports
+export { TutorBankAccount } from "./tutorBankAccount.js";
+export { TutorPayout } from "./tutorPayout.js";
 

@@ -283,3 +283,279 @@ export const getTransactionCurrency = (transaction) => {
 export const getTransactionReference = (transaction) => {
   return transaction.tx_ref || transaction.txRef || transaction.id?.toString();
 };
+
+/**
+ * Get list of banks for a country
+ * @param {string} country - Country code (e.g., 'NG', 'GH', 'KE')
+ * @returns {Promise<Array>} List of banks
+ */
+export const getBanks = async (country = "NG") => {
+  if (!FLUTTERWAVE_SECRET_KEY) {
+    throw new ErrorClass(
+      "Flutterwave secret key not configured",
+      500
+    );
+  }
+
+  try {
+    const response = await axios.get(
+      `${FLUTTERWAVE_BASE_URL}/banks/${country}`,
+      {
+        headers: {
+          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 10000,
+      }
+    );
+
+    if (response.data.status === "success" && response.data.data) {
+      return {
+        success: true,
+        banks: response.data.data,
+      };
+    }
+
+    return {
+      success: false,
+      message: response.data.message || "Failed to fetch banks",
+    };
+  } catch (error) {
+    console.error("Flutterwave getBanks error:", error.message);
+    throw new ErrorClass(
+      `Failed to fetch banks: ${error.message}`,
+      error.response?.status || 500
+    );
+  }
+};
+
+/**
+ * Verify bank account details
+ * @param {string} accountNumber - Bank account number
+ * @param {string} bankCode - Bank code (from getBanks)
+ * @param {string} country - Country code (e.g., 'NG')
+ * @returns {Promise<Object>} Account verification result
+ */
+export const verifyBankAccount = async (accountNumber, bankCode, country = "NG") => {
+  if (!FLUTTERWAVE_SECRET_KEY) {
+    throw new ErrorClass(
+      "Flutterwave secret key not configured",
+      500
+    );
+  }
+
+  try {
+    const response = await axios.post(
+      `${FLUTTERWAVE_BASE_URL}/accounts/resolve`,
+      {
+        account_number: accountNumber,
+        account_bank: bankCode,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 10000,
+      }
+    );
+
+    if (response.data.status === "success" && response.data.data) {
+      return {
+        success: true,
+        account: {
+          accountNumber: response.data.data.account_number,
+          accountName: response.data.data.account_name,
+          bankCode: bankCode,
+        },
+      };
+    }
+
+    return {
+      success: false,
+      message: response.data.message || "Account verification failed",
+    };
+  } catch (error) {
+    console.error("Flutterwave verifyBankAccount error:", error.message);
+    
+    if (error.response?.status === 400) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Invalid account details",
+      };
+    }
+
+    throw new ErrorClass(
+      `Failed to verify bank account: ${error.message}`,
+      error.response?.status || 500
+    );
+  }
+};
+
+/**
+ * Initiate bank transfer (payout)
+ * @param {Object} transferData - Transfer details
+ * @param {string} transferData.accountBank - Bank code
+ * @param {string} transferData.accountNumber - Account number
+ * @param {number} transferData.amount - Transfer amount
+ * @param {string} transferData.currency - Currency code (e.g., 'NGN')
+ * @param {string} transferData.narration - Transfer narration
+ * @param {string} transferData.reference - Unique reference
+ * @param {string} transferData.beneficiaryName - Beneficiary name
+ * @param {string} transferData.sourceCurrency - Optional: Source currency for FX conversion
+ * @returns {Promise<Object>} Transfer result
+ */
+export const initiateTransfer = async (transferData) => {
+  if (!FLUTTERWAVE_SECRET_KEY) {
+    throw new ErrorClass(
+      "Flutterwave secret key not configured",
+      500
+    );
+  }
+
+  const {
+    accountBank,
+    accountNumber,
+    amount,
+    currency,
+    narration,
+    reference,
+    beneficiaryName,
+    sourceCurrency = null,
+  } = transferData;
+
+  // Validate required fields
+  if (!accountBank || !accountNumber || !amount || !currency || !reference) {
+    throw new ErrorClass(
+      "Missing required transfer fields: accountBank, accountNumber, amount, currency, reference",
+      400
+    );
+  }
+
+  try {
+    // Prepare transfer payload
+    const payload = {
+      account_bank: accountBank,
+      account_number: accountNumber,
+      amount: parseFloat(amount),
+      narration: narration || `Payout to ${beneficiaryName || accountNumber}`,
+      currency: currency.toUpperCase(),
+      reference: reference,
+      beneficiary_name: beneficiaryName || accountNumber,
+    };
+
+    // If source currency is different, Flutterwave will handle FX conversion
+    if (sourceCurrency && sourceCurrency.toUpperCase() !== currency.toUpperCase()) {
+      // Note: Flutterwave handles FX conversion automatically if you have multi-currency wallet
+      // The amount should be in destination currency
+    }
+
+    const response = await axios.post(
+      `${FLUTTERWAVE_BASE_URL}/transfers`,
+      payload,
+      {
+        headers: {
+          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000, // 30 second timeout for transfers
+      }
+    );
+
+    if (response.data.status === "success" && response.data.data) {
+      return {
+        success: true,
+        transfer: {
+          id: response.data.data.id,
+          reference: response.data.data.reference,
+          status: response.data.data.status,
+          amount: parseFloat(response.data.data.amount),
+          currency: response.data.data.currency,
+          fee: parseFloat(response.data.data.fee || 0),
+          createdAt: response.data.data.created_at,
+        },
+      };
+    }
+
+    return {
+      success: false,
+      message: response.data.message || "Transfer initiation failed",
+    };
+  } catch (error) {
+    console.error("Flutterwave initiateTransfer error:", error.message);
+    
+    if (error.response?.status === 400) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Invalid transfer details",
+      };
+    }
+
+    throw new ErrorClass(
+      `Failed to initiate transfer: ${error.message}`,
+      error.response?.status || 500
+    );
+  }
+};
+
+/**
+ * Get transfer status
+ * @param {string|number} transferId - Transfer ID or reference
+ * @returns {Promise<Object>} Transfer status
+ */
+export const getTransferStatus = async (transferId) => {
+  if (!FLUTTERWAVE_SECRET_KEY) {
+    throw new ErrorClass(
+      "Flutterwave secret key not configured",
+      500
+    );
+  }
+
+  try {
+    const response = await axios.get(
+      `${FLUTTERWAVE_BASE_URL}/transfers/${transferId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 10000,
+      }
+    );
+
+    if (response.data.status === "success" && response.data.data) {
+      return {
+        success: true,
+        transfer: {
+          id: response.data.data.id,
+          reference: response.data.data.reference,
+          status: response.data.data.status,
+          amount: parseFloat(response.data.data.amount),
+          currency: response.data.data.currency,
+          fee: parseFloat(response.data.data.fee || 0),
+          createdAt: response.data.data.created_at,
+          completeMessage: response.data.data.complete_message,
+        },
+      };
+    }
+
+    return {
+      success: false,
+      message: response.data.message || "Transfer not found",
+    };
+  } catch (error) {
+    console.error("Flutterwave getTransferStatus error:", error.message);
+    
+    if (error.response?.status === 404) {
+      return {
+        success: false,
+        message: "Transfer not found",
+      };
+    }
+
+    throw new ErrorClass(
+      `Failed to get transfer status: ${error.message}`,
+      error.response?.status || 500
+    );
+  }
+};

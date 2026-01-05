@@ -50,6 +50,12 @@ export const Organization = db.define(
       type: DataTypes.STRING(100),
       allowNull: true,
     },
+    currency: {
+      type: DataTypes.STRING(10),
+      allowNull: true,
+      defaultValue: "NGN",
+      comment: "Currency code (e.g., 'NGN', 'USD', 'GHS')",
+    },
     registration_number: {
       type: DataTypes.STRING(100),
       allowNull: true,

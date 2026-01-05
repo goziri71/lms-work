@@ -1,0 +1,383 @@
+import { TryCatchFunction } from "../../utils/tryCatch/index.js";
+import { ErrorClass } from "../../utils/errorClass/index.js";
+import { TutorBankAccount } from "../../models/marketplace/tutorBankAccount.js";
+import { SoleTutor } from "../../models/marketplace/soleTutor.js";
+import { Organization } from "../../models/marketplace/organization.js";
+import { getBanks, verifyBankAccount } from "../../services/flutterwaveService.js";
+import { getCurrencyFromCountry } from "../../services/currencyService.js";
+import { Op } from "sequelize";
+import { db } from "../../database/database.js";
+
+/**
+ * Helper to get tutor ID and type from request
+ */
+function getTutorInfo(req) {
+  const userType = req.user.userType;
+  let tutorId, tutorType;
+
+  if (userType === "sole_tutor") {
+    tutorId = req.tutor.id;
+    tutorType = "sole_tutor";
+  } else if (userType === "organization" || userType === "organization_user") {
+    tutorId = req.tutor.id;
+    tutorType = "organization";
+  } else {
+    throw new ErrorClass("Unauthorized: Tutor access required", 403);
+  }
+
+  return { tutorId, tutorType };
+}
+
+/**
+ * Get list of banks for a country
+ * GET /api/marketplace/tutor/bank-accounts/banks?country=NG
+ */
+export const getBanksList = TryCatchFunction(async (req, res) => {
+  const { country = "NG" } = req.query;
+
+  if (!country) {
+    throw new ErrorClass("Country code is required", 400);
+  }
+
+  const result = await getBanks(country.toUpperCase());
+
+  if (!result.success) {
+    throw new ErrorClass(result.message || "Failed to fetch banks", 500);
+  }
+
+  res.json({
+    success: true,
+    data: {
+      banks: result.banks || [],
+      country: country.toUpperCase(),
+    },
+  });
+});
+
+/**
+ * Add bank account
+ * POST /api/marketplace/tutor/bank-accounts
+ */
+export const addBankAccount = TryCatchFunction(async (req, res) => {
+  const { tutorId, tutorType } = getTutorInfo(req);
+  const {
+    account_name,
+    account_number,
+    bank_code,
+    bank_name,
+    country,
+    verify = true,
+  } = req.body;
+
+  // Validate required fields
+  if (!account_name || !account_number || !bank_code || !bank_name || !country) {
+    throw new ErrorClass(
+      "account_name, account_number, bank_code, bank_name, and country are required",
+      400
+    );
+  }
+
+  // Get currency from country
+  const currency = getCurrencyFromCountry(country);
+
+  // Verify account if requested
+  let isVerified = false;
+  let verificationResponse = null;
+  let verificationDate = null;
+
+  if (verify) {
+    try {
+      const verification = await verifyBankAccount(
+        account_number,
+        bank_code,
+        country.toUpperCase()
+      );
+
+      if (verification.success) {
+        isVerified = true;
+        verificationResponse = verification.account;
+        verificationDate = new Date();
+
+        // Update account name from verification if provided
+        if (verification.account.accountName) {
+          // Use verified name if it matches or is close
+          // Otherwise keep the provided name
+        }
+      } else {
+        // Account verification failed, but we can still save it
+        verificationResponse = { error: verification.message };
+      }
+    } catch (error) {
+      console.error("Bank account verification error:", error);
+      // Continue without verification
+    }
+  }
+
+  // Check if this will be the primary account (first account or explicitly set)
+  const existingAccounts = await TutorBankAccount.count({
+    where: {
+      tutor_id: tutorId,
+      tutor_type: tutorType,
+    },
+  });
+
+  const isPrimary = existingAccounts === 0; // First account is primary
+
+  // If setting as primary, unset other primary accounts
+  if (isPrimary) {
+    await TutorBankAccount.update(
+      { is_primary: false },
+      {
+        where: {
+          tutor_id: tutorId,
+          tutor_type: tutorType,
+          is_primary: true,
+        },
+      }
+    );
+  }
+
+  // Create bank account
+  const bankAccount = await TutorBankAccount.create({
+    tutor_id: tutorId,
+    tutor_type: tutorType,
+    account_name,
+    account_number,
+    bank_code,
+    bank_name,
+    country: country.toUpperCase(),
+    currency,
+    is_verified: isVerified,
+    is_primary: isPrimary,
+    verification_date: verificationDate,
+    verification_response: verificationResponse,
+  });
+
+  res.status(201).json({
+    success: true,
+    message: "Bank account added successfully",
+    data: {
+      id: bankAccount.id,
+      account_name: bankAccount.account_name,
+      account_number: bankAccount.account_number,
+      bank_name: bankAccount.bank_name,
+      country: bankAccount.country,
+      currency: bankAccount.currency,
+      is_verified: bankAccount.is_verified,
+      is_primary: bankAccount.is_primary,
+    },
+  });
+});
+
+/**
+ * List bank accounts
+ * GET /api/marketplace/tutor/bank-accounts
+ */
+export const listBankAccounts = TryCatchFunction(async (req, res) => {
+  const { tutorId, tutorType } = getTutorInfo(req);
+
+  const accounts = await TutorBankAccount.findAll({
+    where: {
+      tutor_id: tutorId,
+      tutor_type: tutorType,
+    },
+    order: [
+      ["is_primary", "DESC"],
+      ["created_at", "DESC"],
+    ],
+    attributes: [
+      "id",
+      "account_name",
+      "account_number",
+      "bank_code",
+      "bank_name",
+      "country",
+      "currency",
+      "is_verified",
+      "is_primary",
+      "verification_date",
+      "created_at",
+    ],
+  });
+
+  res.json({
+    success: true,
+    data: {
+      accounts: accounts.map((acc) => ({
+        id: acc.id,
+        account_name: acc.account_name,
+        account_number: acc.account_number.replace(/(.{4})(.*)/, "$1****"), // Mask account number
+        bank_name: acc.bank_name,
+        country: acc.country,
+        currency: acc.currency,
+        is_verified: acc.is_verified,
+        is_primary: acc.is_primary,
+        verification_date: acc.verification_date,
+        created_at: acc.created_at,
+      })),
+    },
+  });
+});
+
+/**
+ * Verify bank account
+ * POST /api/marketplace/tutor/bank-accounts/:id/verify
+ */
+export const verifyAccount = TryCatchFunction(async (req, res) => {
+  const { tutorId, tutorType } = getTutorInfo(req);
+  const { id } = req.params;
+
+  const account = await TutorBankAccount.findOne({
+    where: {
+      id,
+      tutor_id: tutorId,
+      tutor_type: tutorType,
+    },
+  });
+
+  if (!account) {
+    throw new ErrorClass("Bank account not found", 404);
+  }
+
+  // Verify with Flutterwave
+  const verification = await verifyBankAccount(
+    account.account_number,
+    account.bank_code,
+    account.country
+  );
+
+  if (verification.success) {
+    await account.update({
+      is_verified: true,
+      verification_date: new Date(),
+      verification_response: verification.account,
+    });
+
+    res.json({
+      success: true,
+      message: "Bank account verified successfully",
+      data: {
+        id: account.id,
+        is_verified: true,
+        account_name: verification.account.accountName,
+      },
+    });
+  } else {
+    await account.update({
+      is_verified: false,
+      verification_response: { error: verification.message },
+    });
+
+    throw new ErrorClass(
+      verification.message || "Account verification failed",
+      400
+    );
+  }
+});
+
+/**
+ * Set primary account
+ * PUT /api/marketplace/tutor/bank-accounts/:id/set-primary
+ */
+export const setPrimaryAccount = TryCatchFunction(async (req, res) => {
+  const { tutorId, tutorType } = getTutorInfo(req);
+  const { id } = req.params;
+
+  const account = await TutorBankAccount.findOne({
+    where: {
+      id,
+      tutor_id: tutorId,
+      tutor_type: tutorType,
+    },
+  });
+
+  if (!account) {
+    throw new ErrorClass("Bank account not found", 404);
+  }
+
+  // Unset all primary accounts
+  await TutorBankAccount.update(
+    { is_primary: false },
+    {
+      where: {
+        tutor_id: tutorId,
+        tutor_type: tutorType,
+      },
+    }
+  );
+
+  // Set this account as primary
+  await account.update({ is_primary: true });
+
+  res.json({
+    success: true,
+    message: "Primary account updated successfully",
+    data: {
+      id: account.id,
+      is_primary: true,
+    },
+  });
+});
+
+/**
+ * Delete bank account
+ * DELETE /api/marketplace/tutor/bank-accounts/:id
+ */
+export const deleteBankAccount = TryCatchFunction(async (req, res) => {
+  const { tutorId, tutorType } = getTutorInfo(req);
+  const { id } = req.params;
+
+  const account = await TutorBankAccount.findOne({
+    where: {
+      id,
+      tutor_id: tutorId,
+      tutor_type: tutorType,
+    },
+  });
+
+  if (!account) {
+    throw new ErrorClass("Bank account not found", 404);
+  }
+
+  // Check if there are pending payouts using this account
+  const { TutorPayout } = await import("../../models/marketplace/tutorPayout.js");
+  const pendingPayouts = await TutorPayout.count({
+    where: {
+      bank_account_id: id,
+      status: {
+        [Op.in]: ["pending", "processing"],
+      },
+    },
+  });
+
+  if (pendingPayouts > 0) {
+    throw new ErrorClass(
+      "Cannot delete bank account with pending payouts",
+      400
+    );
+  }
+
+  // If it's primary, set another account as primary if available
+  if (account.is_primary) {
+    const otherAccount = await TutorBankAccount.findOne({
+      where: {
+        tutor_id: tutorId,
+        tutor_type: tutorType,
+        id: { [Op.ne]: id },
+      },
+      order: [["created_at", "DESC"]],
+    });
+
+    if (otherAccount) {
+      await otherAccount.update({ is_primary: true });
+    }
+  }
+
+  await account.destroy();
+
+  res.json({
+    success: true,
+    message: "Bank account deleted successfully",
+  });
+});
+

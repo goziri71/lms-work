@@ -7,6 +7,7 @@ import { ErrorClass } from "../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { authService } from "../../service/authservice.js";
 import { emailService } from "../../services/emailService.js";
+import { detectUserCurrency, getCurrencyFromCountry } from "../../services/currencyService.js";
 
 /**
  * Sole Tutor Registration
@@ -200,8 +201,17 @@ export const soleTutorLogin = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Invalid email or password", 401);
   }
 
-  // Update last login
-  await tutor.update({ last_login: new Date() });
+  // Detect and update currency if not set
+  if (!tutor.currency && tutor.country) {
+    const detectedCurrency = getCurrencyFromCountry(tutor.country);
+    await tutor.update({
+      last_login: new Date(),
+      currency: detectedCurrency,
+    });
+    tutor.currency = detectedCurrency; // Update local object
+  } else {
+    await tutor.update({ last_login: new Date() });
+  }
 
   // Check and auto-expire subscriptions if needed
   try {
@@ -347,8 +357,17 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Invalid email or password", 401);
   }
 
-  // Update last login
-  await organization.update({ last_login: new Date() });
+  // Detect and update currency if not set
+  if (!organization.currency && organization.country) {
+    const detectedCurrency = getCurrencyFromCountry(organization.country);
+    await organization.update({
+      last_login: new Date(),
+      currency: detectedCurrency,
+    });
+    organization.currency = detectedCurrency; // Update local object
+  } else {
+    await organization.update({ last_login: new Date() });
+  }
 
   // Check and auto-expire subscriptions if needed
   try {
@@ -431,6 +450,8 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
         status: organization.status,
         wallet_balance: organization.wallet_balance,
         rating: organization.rating,
+        country: organization.country,
+        currency: organization.currency || getCurrencyFromCountry(organization.country || "USD"),
       },
       subscription: subscriptionInfo,
       accessToken,

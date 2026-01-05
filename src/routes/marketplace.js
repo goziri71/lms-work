@@ -462,4 +462,40 @@ router.post(
 );
 router.get("/coaching/my-sessions", authorize, getMySessions);
 
+// ============================================
+// TUTOR BANK ACCOUNT MANAGEMENT
+// ============================================
+import {
+  getBanksList,
+  addBankAccount,
+  listBankAccounts,
+  verifyAccount,
+  setPrimaryAccount,
+  deleteBankAccount,
+} from "../controllers/marketplace/tutorBankAccount.js";
+
+router.get("/tutor/bank-accounts/banks", tutorAuthorize, getBanksList);
+router.post("/tutor/bank-accounts", tutorAuthorize, addBankAccount);
+router.get("/tutor/bank-accounts", tutorAuthorize, listBankAccounts);
+router.post("/tutor/bank-accounts/:id/verify", tutorAuthorize, verifyAccount);
+router.put(
+  "/tutor/bank-accounts/:id/set-primary",
+  tutorAuthorize,
+  setPrimaryAccount
+);
+router.delete("/tutor/bank-accounts/:id", tutorAuthorize, deleteBankAccount);
+
+// ============================================
+// TUTOR PAYOUT MANAGEMENT
+// ============================================
+import {
+  requestPayout,
+  listPayouts,
+  getPayout,
+} from "../controllers/marketplace/tutorPayout.js";
+
+router.post("/tutor/payouts/request", tutorAuthorize, requestPayout);
+router.get("/tutor/payouts", tutorAuthorize, listPayouts);
+router.get("/tutor/payouts/:id", tutorAuthorize, getPayout);
+
 export default router;
