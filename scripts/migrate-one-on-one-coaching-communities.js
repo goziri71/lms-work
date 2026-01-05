@@ -111,8 +111,42 @@ async function migrateOneOnOneCoachingAndCommunities() {
       console.log("⚠️  coaching_scheduling_messages table already exists");
     }
 
-    // Step 3: Add community_member_limit to tutor_subscriptions
-    console.log("\n🔍 Step 3: Adding community_member_limit to tutor_subscriptions...");
+    // Step 3: Add currency field to sole_tutors and organizations (if not exists)
+    console.log("\n🔍 Step 3: Adding currency field to tutor tables...");
+    try {
+      await db.query(`
+        ALTER TABLE sole_tutors 
+        ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'NGN';
+      `);
+      console.log("✅ Added currency column to sole_tutors");
+    } catch (error) {
+      if (error.message.includes("already exists") || error.message.includes("duplicate")) {
+        console.log("⚠️  currency column may already exist in sole_tutors");
+      } else if (error.message.includes("does not exist")) {
+        console.log("⚠️  sole_tutors table does not exist, skipping");
+      } else {
+        throw error;
+      }
+    }
+
+    try {
+      await db.query(`
+        ALTER TABLE organizations 
+        ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'NGN';
+      `);
+      console.log("✅ Added currency column to organizations");
+    } catch (error) {
+      if (error.message.includes("already exists") || error.message.includes("duplicate")) {
+        console.log("⚠️  currency column may already exist in organizations");
+      } else if (error.message.includes("does not exist")) {
+        console.log("⚠️  organizations table does not exist, skipping");
+      } else {
+        throw error;
+      }
+    }
+
+    // Step 4: Add community_member_limit to tutor_subscriptions
+    console.log("\n🔍 Step 4: Adding community_member_limit to tutor_subscriptions...");
     try {
       await db.query(`
         ALTER TABLE tutor_subscriptions
@@ -127,8 +161,8 @@ async function migrateOneOnOneCoachingAndCommunities() {
       }
     }
 
-    // Step 4: Create communities table
-    console.log("\n🔍 Step 4: Creating communities table...");
+    // Step 5: Create communities table
+    console.log("\n🔍 Step 5: Creating communities table...");
     const [communitiesTableExists] = await db.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -189,8 +223,8 @@ async function migrateOneOnOneCoachingAndCommunities() {
       console.log("⚠️  communities table already exists");
     }
 
-    // Step 5: Create community_members table
-    console.log("\n🔍 Step 5: Creating community_members table...");
+    // Step 6: Create community_members table
+    console.log("\n🔍 Step 6: Creating community_members table...");
     const [membersTableExists] = await db.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -241,8 +275,8 @@ async function migrateOneOnOneCoachingAndCommunities() {
       console.log("⚠️  community_members table already exists");
     }
 
-    // Step 6: Create community_subscriptions table
-    console.log("\n🔍 Step 6: Creating community_subscriptions table...");
+    // Step 7: Create community_subscriptions table
+    console.log("\n🔍 Step 7: Creating community_subscriptions table...");
     const [subscriptionsTableExists] = await db.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -304,8 +338,8 @@ async function migrateOneOnOneCoachingAndCommunities() {
       console.log("⚠️  community_subscriptions table already exists");
     }
 
-    // Step 7: Create community_posts table
-    console.log("\n🔍 Step 7: Creating community_posts table...");
+    // Step 8: Create community_posts table
+    console.log("\n🔍 Step 8: Creating community_posts table...");
     const [postsTableExists] = await db.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -355,8 +389,8 @@ async function migrateOneOnOneCoachingAndCommunities() {
       console.log("⚠️  community_posts table already exists");
     }
 
-    // Step 8: Create community_comments table
-    console.log("\n🔍 Step 8: Creating community_comments table...");
+    // Step 9: Create community_comments table
+    console.log("\n🔍 Step 9: Creating community_comments table...");
     const [commentsTableExists] = await db.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -401,8 +435,8 @@ async function migrateOneOnOneCoachingAndCommunities() {
       console.log("⚠️  community_comments table already exists");
     }
 
-    // Step 9: Create community_files table
-    console.log("\n🔍 Step 9: Creating community_files table...");
+    // Step 10: Create community_files table
+    console.log("\n🔍 Step 10: Creating community_files table...");
     const [filesTableExists] = await db.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -446,8 +480,8 @@ async function migrateOneOnOneCoachingAndCommunities() {
       console.log("⚠️  community_files table already exists");
     }
 
-    // Step 10: Create community_purchases table
-    console.log("\n🔍 Step 10: Creating community_purchases table...");
+    // Step 11: Create community_purchases table
+    console.log("\n🔍 Step 11: Creating community_purchases table...");
     const [purchasesTableExists] = await db.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -495,8 +529,8 @@ async function migrateOneOnOneCoachingAndCommunities() {
       console.log("⚠️  community_purchases table already exists");
     }
 
-    // Step 11: Create community_audio_sessions table
-    console.log("\n🔍 Step 11: Creating community_audio_sessions table...");
+    // Step 12: Create community_audio_sessions table
+    console.log("\n🔍 Step 12: Creating community_audio_sessions table...");
     const [audioSessionsTableExists] = await db.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -551,6 +585,7 @@ async function migrateOneOnOneCoachingAndCommunities() {
     console.log("\n📋 Summary:");
     console.log("   - Added one-on-one coaching fields to coaching_sessions");
     console.log("   - Created coaching_scheduling_messages table");
+    console.log("   - Added currency field to sole_tutors and organizations");
     console.log("   - Added community_member_limit to tutor_subscriptions");
     console.log("   - Created all community-related tables");
     console.log("\n🎉 All tables are ready for use!");
