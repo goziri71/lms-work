@@ -99,6 +99,7 @@ export const SUBSCRIPTION_TIERS = {
     price: 0,
     courses_limit: 2,
     communities_limit: 0,
+    community_member_limit: 0,
     digital_downloads_limit: 0,
     memberships_limit: 0,
     unlimited_coaching: false,
@@ -109,6 +110,7 @@ export const SUBSCRIPTION_TIERS = {
     price: 39,
     courses_limit: 5,
     communities_limit: 1,
+    community_member_limit: 10,
     digital_downloads_limit: 0,
     memberships_limit: 0,
     unlimited_coaching: false,
@@ -119,6 +121,7 @@ export const SUBSCRIPTION_TIERS = {
     price: 99,
     courses_limit: 25,
     communities_limit: 1,
+    community_member_limit: 30,
     digital_downloads_limit: 10,
     memberships_limit: 0,
     unlimited_coaching: false,
@@ -129,6 +132,7 @@ export const SUBSCRIPTION_TIERS = {
     price: 249,
     courses_limit: 100,
     communities_limit: 3,
+    community_member_limit: 50,
     digital_downloads_limit: 20,
     memberships_limit: 5,
     unlimited_coaching: true,
@@ -139,6 +143,7 @@ export const SUBSCRIPTION_TIERS = {
     price: 499,
     courses_limit: null, // unlimited
     communities_limit: null, // unlimited
+    community_member_limit: 100,
     digital_downloads_limit: null, // unlimited
     memberships_limit: null, // unlimited
     unlimited_coaching: true,

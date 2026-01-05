@@ -50,6 +50,15 @@ import {
   CoachingSettings,
   TutorBankAccount,
   TutorPayout,
+  CoachingSchedulingMessage,
+  Community,
+  CommunityMember,
+  CommunitySubscription,
+  CommunityPost,
+  CommunityComment,
+  CommunityFile,
+  CommunityPurchase,
+  CommunityAudioSession,
 } from "./marketplace/index.js";
 
 export const setupAssociations = () => {
@@ -763,5 +772,127 @@ export const setupAssociations = () => {
   TutorPayout.belongsTo(TutorBankAccount, {
     foreignKey: "bank_account_id",
     as: "bankAccount",
+  });
+
+  // Coaching Scheduling Messages
+  CoachingSession.hasMany(CoachingSchedulingMessage, {
+    foreignKey: "session_id",
+    as: "schedulingMessages",
+  });
+  CoachingSchedulingMessage.belongsTo(CoachingSession, {
+    foreignKey: "session_id",
+    as: "session",
+  });
+
+  // Communities
+  SoleTutor.hasMany(Community, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "sole_tutor" },
+    as: "communities",
+  });
+  Organization.hasMany(Community, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "organization" },
+    as: "communities",
+  });
+
+  // Community Members
+  Community.hasMany(CommunityMember, {
+    foreignKey: "community_id",
+    as: "members",
+  });
+  CommunityMember.belongsTo(Community, {
+    foreignKey: "community_id",
+    as: "community",
+  });
+  CommunityMember.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Community Subscriptions
+  Community.hasMany(CommunitySubscription, {
+    foreignKey: "community_id",
+    as: "subscriptions",
+  });
+  CommunitySubscription.belongsTo(Community, {
+    foreignKey: "community_id",
+    as: "community",
+  });
+  CommunitySubscription.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Community Posts
+  Community.hasMany(CommunityPost, {
+    foreignKey: "community_id",
+    as: "posts",
+  });
+  CommunityPost.belongsTo(Community, {
+    foreignKey: "community_id",
+    as: "community",
+  });
+  CommunityPost.belongsTo(Students, {
+    foreignKey: "author_id",
+    as: "author",
+  });
+
+  // Community Comments
+  CommunityPost.hasMany(CommunityComment, {
+    foreignKey: "post_id",
+    as: "comments",
+  });
+  CommunityComment.belongsTo(CommunityPost, {
+    foreignKey: "post_id",
+    as: "post",
+  });
+  CommunityComment.belongsTo(Students, {
+    foreignKey: "author_id",
+    as: "author",
+  });
+  CommunityComment.belongsTo(CommunityComment, {
+    foreignKey: "parent_comment_id",
+    as: "parentComment",
+  });
+
+  // Community Files
+  Community.hasMany(CommunityFile, {
+    foreignKey: "community_id",
+    as: "files",
+  });
+  CommunityFile.belongsTo(Community, {
+    foreignKey: "community_id",
+    as: "community",
+  });
+  CommunityFile.belongsTo(Students, {
+    foreignKey: "uploaded_by",
+    as: "uploader",
+  });
+
+  // Community Purchases
+  Community.hasMany(CommunityPurchase, {
+    foreignKey: "community_id",
+    as: "purchases",
+  });
+  CommunityPurchase.belongsTo(Community, {
+    foreignKey: "community_id",
+    as: "community",
+  });
+  CommunityPurchase.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Community Audio Sessions
+  Community.hasMany(CommunityAudioSession, {
+    foreignKey: "community_id",
+    as: "audioSessions",
+  });
+  CommunityAudioSession.belongsTo(Community, {
+    foreignKey: "community_id",
+    as: "community",
   });
 };

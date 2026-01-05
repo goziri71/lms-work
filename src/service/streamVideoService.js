@@ -50,15 +50,15 @@ class StreamVideoService {
             default_device: "speaker",
           },
           video: {
-            camera_default_on: true,
-            enabled: true,
+            camera_default_on: false,
+            enabled: options.audioOnly ? false : true, // Disable video for audio-only calls
             target_resolution: {
               width: 1280,
               height: 720,
             },
           },
           screensharing: {
-            enabled: true,
+            enabled: options.audioOnly ? false : true, // Disable screensharing for audio-only
           },
           recording: {
             mode: options.record ? "available" : "disabled",

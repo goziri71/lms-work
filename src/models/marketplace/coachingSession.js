@@ -142,6 +142,38 @@ export const CoachingSession = db.define(
       comment:
         "WPU commission rate for this session (separate from course commission)",
     },
+    session_type: {
+      type: DataTypes.ENUM("group", "one_on_one"),
+      allowNull: false,
+      defaultValue: "group",
+      comment: "Session type: group or one-on-one",
+    },
+    scheduling_status: {
+      type: DataTypes.ENUM(
+        "awaiting_purchase",
+        "awaiting_scheduling",
+        "scheduled",
+        "completed",
+        "cancelled"
+      ),
+      allowNull: true,
+      comment: "Scheduling status for one-on-one sessions",
+    },
+    agreed_start_time: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "Agreed start time for one-on-one sessions",
+    },
+    agreed_end_time: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "Agreed end time for one-on-one sessions",
+    },
+    scheduling_deadline: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "Deadline for scheduling agreement (optional)",
+    },
   },
   {
     tableName: "coaching_sessions",

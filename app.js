@@ -25,6 +25,7 @@ import { setupAssociations } from "./src/models/associations.js";
 import { setupExamAssociations } from "./src/models/exams/index.js";
 import { setupDiscussionsSocket } from "./src/realtime/discussions.js";
 import { setupDirectChatSocket } from "./src/realtime/directChat.js";
+import { setupCoachingMessagingSocket } from "./src/realtime/coachingMessaging.js";
 import { performanceMonitor } from "./src/middlewares/performanceMonitor.js";
 import { trackLoginIP } from "./src/middlewares/ipTracker.js";
 import { EmailLog } from "./src/models/email/emailLog.js";
@@ -179,6 +180,7 @@ connectDB().then(async (success) => {
 
     setupDiscussionsSocket(io);
     setupDirectChatSocket(io);
+    setupCoachingMessagingSocket(io);
     
     // Setup background jobs for subscriptions
     try {
@@ -231,6 +233,32 @@ connectDB().then(async (success) => {
       console.log("⏰ Subscription renewal background jobs started");
     } catch (error) {
       console.warn("⚠️ Could not setup subscription renewal jobs:", error.message);
+    }
+
+    // Community subscription expiration checker (runs daily)
+    try {
+      let lastCommunityCheck = new Date(0);
+      setInterval(async () => {
+        const now = new Date();
+        const hoursSinceLastCheck = (now - lastCommunityCheck) / (1000 * 60 * 60);
+        
+        // Run once per day (check hourly, execute only once)
+        if (hoursSinceLastCheck >= 24) {
+          console.log("🔄 Checking community subscription expirations...");
+          try {
+            const { checkAndProcessCommunitySubscriptions } = await import("./src/services/communitySubscriptionExpirationService.js");
+            await checkAndProcessCommunitySubscriptions();
+            console.log("✅ Community subscription check completed");
+          } catch (error) {
+            console.error("❌ Error checking community subscriptions:", error);
+          }
+          lastCommunityCheck = new Date();
+        }
+      }, 60 * 60 * 1000); // Check hourly
+      
+      console.log("⏰ Community subscription expiration checker started");
+    } catch (error) {
+      console.warn("⚠️ Could not setup community subscription checker:", error.message);
     }
     
     server.listen(PORT, () => {

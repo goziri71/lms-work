@@ -20,4 +20,15 @@ export { CoachingSettings } from "./coachingSettings.js";
 // Payout and Bank Account exports
 export { TutorBankAccount } from "./tutorBankAccount.js";
 export { TutorPayout } from "./tutorPayout.js";
+// One-on-One Coaching exports
+export { CoachingSchedulingMessage } from "./coachingSchedulingMessage.js";
+// Community exports
+export { Community } from "./community.js";
+export { CommunityMember } from "./communityMember.js";
+export { CommunitySubscription } from "./communitySubscription.js";
+export { CommunityPost } from "./communityPost.js";
+export { CommunityComment } from "./communityComment.js";
+export { CommunityFile } from "./communityFile.js";
+export { CommunityPurchase } from "./communityPurchase.js";
+export { CommunityAudioSession } from "./communityAudioSession.js";
 

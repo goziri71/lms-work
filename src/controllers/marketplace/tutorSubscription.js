@@ -497,7 +497,17 @@ export async function checkSubscriptionLimit(tutorId, tutorType, resourceType) {
         },
       });
       break;
-    // TODO: Add communities and memberships when implemented
+    case "community":
+      limit = tierInfo.communities_limit;
+      const { Community } = await import("../../models/marketplace/index.js");
+      currentCount = await Community.count({
+        where: {
+          tutor_id: tutorId,
+          tutor_type: tutorType === "sole_tutor" ? "sole_tutor" : "organization",
+        },
+      });
+      break;
+    // TODO: Add memberships when implemented
     default:
       return { allowed: true, reason: null };
   }

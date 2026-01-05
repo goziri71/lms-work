@@ -462,6 +462,181 @@ router.post(
 );
 router.get("/coaching/my-sessions", authorize, getMySessions);
 
+// COACHING MESSAGING (One-on-One Scheduling)
+import {
+  getSessionMessages,
+  markMessagesAsRead,
+} from "../controllers/marketplace/coachingMessaging.js";
+
+router.get(
+  "/coaching/sessions/:sessionId/messages",
+  authorize,
+  getSessionMessages
+);
+router.put(
+  "/coaching/sessions/:sessionId/messages/read",
+  authorize,
+  markMessagesAsRead
+);
+
+// COMMUNITY MANAGEMENT
+import {
+  createCommunity,
+  getMyCommunities,
+  getCommunity,
+  updateCommunity,
+  deleteCommunity,
+  uploadCommunityImageMiddleware,
+} from "../controllers/marketplace/communityManagement.js";
+
+router.post(
+  "/tutor/communities",
+  tutorAuthorize,
+  uploadCommunityImageMiddleware,
+  createCommunity
+);
+router.get("/tutor/communities", tutorAuthorize, getMyCommunities);
+router.get("/tutor/communities/:id", tutorAuthorize, getCommunity);
+router.put(
+  "/tutor/communities/:id",
+  tutorAuthorize,
+  uploadCommunityImageMiddleware,
+  updateCommunity
+);
+router.delete("/tutor/communities/:id", tutorAuthorize, deleteCommunity);
+
+// COMMUNITY SUBSCRIPTION PURCHASE
+import { purchaseCommunitySubscription } from "../controllers/marketplace/communitySubscriptionPurchase.js";
+
+router.post(
+  "/communities/:id/subscribe",
+  authorize,
+  purchaseCommunitySubscription
+);
+
+// COMMUNITY CONTENT (Posts, Comments, Files)
+import {
+  createPost,
+  getPosts,
+  getPost,
+  updatePost,
+  deletePost,
+  createComment,
+  getComments,
+  uploadFile,
+  getFiles,
+  deleteFile,
+  uploadCommunityFileMiddleware,
+} from "../controllers/marketplace/communityContent.js";
+
+router.post("/communities/:id/posts", authorize, createPost);
+router.get("/communities/:id/posts", optionalAuthorize, getPosts);
+router.get("/communities/:id/posts/:postId", optionalAuthorize, getPost);
+router.put("/communities/:id/posts/:postId", authorize, updatePost);
+router.delete("/communities/:id/posts/:postId", authorize, deletePost);
+router.post(
+  "/communities/:id/posts/:postId/comments",
+  authorize,
+  createComment
+);
+router.get(
+  "/communities/:id/posts/:postId/comments",
+  optionalAuthorize,
+  getComments
+);
+router.post(
+  "/communities/:id/files",
+  authorize,
+  uploadCommunityFileMiddleware,
+  uploadFile
+);
+router.get("/communities/:id/files", authorize, getFiles);
+router.delete("/communities/:id/files/:fileId", authorize, deleteFile);
+
+// COMMUNITY AUDIO SESSIONS
+import {
+  createAudioSession,
+  getAudioSessions,
+  getAudioSession,
+  startAudioSession,
+  endAudioSession,
+  getJoinToken as getCommunityAudioJoinToken,
+  cancelAudioSession,
+} from "../controllers/marketplace/communityAudioSessions.js";
+
+router.post(
+  "/tutor/communities/:id/audio-sessions",
+  tutorAuthorize,
+  createAudioSession
+);
+router.get(
+  "/communities/:id/audio-sessions",
+  optionalAuthorize,
+  getAudioSessions
+);
+router.get(
+  "/communities/:id/audio-sessions/:sessionId",
+  optionalAuthorize,
+  getAudioSession
+);
+router.post(
+  "/tutor/communities/:id/audio-sessions/:sessionId/start",
+  tutorAuthorize,
+  startAudioSession
+);
+router.post(
+  "/tutor/communities/:id/audio-sessions/:sessionId/end",
+  tutorAuthorize,
+  endAudioSession
+);
+router.post(
+  "/communities/:id/audio-sessions/:sessionId/join-token",
+  authorize,
+  getCommunityAudioJoinToken
+);
+router.delete(
+  "/tutor/communities/:id/audio-sessions/:sessionId",
+  tutorAuthorize,
+  cancelAudioSession
+);
+
+// COMMUNITY MEMBER MANAGEMENT
+import {
+  getMembers,
+  getMember,
+  updateMemberRole,
+  blockMember,
+  unblockMember,
+  removeMember,
+} from "../controllers/marketplace/communityMemberManagement.js";
+
+router.get("/tutor/communities/:id/members", tutorAuthorize, getMembers);
+router.get(
+  "/tutor/communities/:id/members/:memberId",
+  tutorAuthorize,
+  getMember
+);
+router.put(
+  "/tutor/communities/:id/members/:memberId/role",
+  tutorAuthorize,
+  updateMemberRole
+);
+router.put(
+  "/tutor/communities/:id/members/:memberId/block",
+  tutorAuthorize,
+  blockMember
+);
+router.put(
+  "/tutor/communities/:id/members/:memberId/unblock",
+  tutorAuthorize,
+  unblockMember
+);
+router.delete(
+  "/tutor/communities/:id/members/:memberId",
+  tutorAuthorize,
+  removeMember
+);
+
 // ============================================
 // TUTOR BANK ACCOUNT MANAGEMENT
 // ============================================
