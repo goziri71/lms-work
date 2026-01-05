@@ -2,6 +2,7 @@ import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
+import { authService } from "../../service/authservice.js";
 
 /**
  * Get tutor profile
@@ -179,6 +180,114 @@ export const updateProfile = TryCatchFunction(async (req, res) => {
     message: "Profile updated successfully",
     data: {
       profile: profileData,
+    },
+  });
+});
+
+/**
+ * Change password
+ * PUT /api/marketplace/tutor/change-password
+ */
+export const changePassword = TryCatchFunction(async (req, res) => {
+  const tutor = req.tutor;
+  const { current_password, new_password, confirm_password } = req.body;
+
+  if (!current_password || !new_password || !confirm_password) {
+    throw new ErrorClass("Current password, new password, and confirmation are required", 400);
+  }
+
+  if (new_password !== confirm_password) {
+    throw new ErrorClass("New password and confirmation do not match", 400);
+  }
+
+  if (new_password.length < 8) {
+    throw new ErrorClass("New password must be at least 8 characters long", 400);
+  }
+
+  // Verify current password
+  const isPasswordValid = authService.comparePassword(current_password, tutor.password);
+  if (!isPasswordValid) {
+    throw new ErrorClass("Current password is incorrect", 401);
+  }
+
+  // Hash new password
+  const hashedPassword = authService.hashPassword(new_password);
+
+  // Update password
+  await tutor.update({ password: hashedPassword });
+
+  res.status(200).json({
+    success: true,
+    message: "Password changed successfully",
+  });
+});
+
+/**
+ * Get tutor settings
+ * GET /api/marketplace/tutor/settings
+ */
+export const getSettings = TryCatchFunction(async (req, res) => {
+  const tutor = req.tutor;
+
+  // Return settings that exist in the database
+  const settings = {
+    email: tutor.email,
+    timezone: tutor.timezone || "UTC",
+    currency: tutor.currency || "NGN",
+  };
+
+  res.status(200).json({
+    success: true,
+    message: "Settings retrieved successfully",
+    data: {
+      settings,
+    },
+  });
+});
+
+/**
+ * Update tutor settings
+ * PUT /api/marketplace/tutor/settings
+ */
+export const updateSettings = TryCatchFunction(async (req, res) => {
+  const tutor = req.tutor;
+
+  const { timezone, currency } = req.body;
+
+  const updateData = {};
+
+  if (timezone !== undefined) {
+    updateData.timezone = timezone?.trim() || "UTC";
+  }
+  if (currency !== undefined) {
+    const currencyUpper = currency?.trim().toUpperCase() || "NGN";
+    // Validate currency code (basic check)
+    if (currencyUpper.length > 10) {
+      throw new ErrorClass("Invalid currency code", 400);
+    }
+    updateData.currency = currencyUpper;
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    throw new ErrorClass("No settings provided to update", 400);
+  }
+
+  await tutor.update(updateData);
+
+  // Reload to get updated data
+  await tutor.reload();
+
+  const settings = {
+    email: tutor.email,
+    timezone: tutor.timezone || "UTC",
+    currency: tutor.currency || "NGN",
+  };
+
+  res.status(200).json({
+    success: true,
+    message: "Settings updated successfully",
+    data: {
+      settings,
     },
   });
 });

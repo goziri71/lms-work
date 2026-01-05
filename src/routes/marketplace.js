@@ -41,6 +41,9 @@ import {
 import {
   getProfile,
   updateProfile,
+  changePassword,
+  getSettings,
+  updateSettings,
 } from "../controllers/marketplace/tutorProfile.js";
 import {
   getOrganizationUsers,
@@ -208,6 +211,11 @@ router.get("/tutor/dashboard", tutorAuthorize, getDashboard);
 // Profile Management
 router.get("/tutor/profile", tutorAuthorize, getProfile);
 router.put("/tutor/profile", tutorAuthorize, updateProfile);
+router.put("/tutor/change-password", tutorAuthorize, changePassword);
+
+// Settings Management
+router.get("/tutor/settings", tutorAuthorize, getSettings);
+router.put("/tutor/settings", tutorAuthorize, updateSettings);
 
 // Course Management
 router.get("/tutor/courses", tutorAuthorize, getMyCourses);

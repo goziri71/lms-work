@@ -6,6 +6,7 @@ import { Program } from "../../models/program/program.js";
 import { Faculty } from "../../models/faculty/faculty.js";
 import { Staff } from "../../models/auth/staff.js";
 import { Op, Sequelize } from "sequelize";
+import { Sequelize as SequelizeLib } from "sequelize";
 import { db } from "../../database/database.js";
 import multer from "multer";
 import { supabase } from "../../utils/supabase.js";
@@ -395,14 +396,22 @@ export const createCourse = TryCatchFunction(async (req, res) => {
   try {
     // Check if course code already exists for this tutor (scoped to tutor's courses only)
     // Using transaction to ensure this check and insert are atomic
+    // Use case-insensitive comparison and exclude soft-deleted courses
+    const trimmedCode = course_code.trim().toUpperCase();
     const existingCourse = await Courses.findOne({
       where: {
-        course_code: course_code.trim(),
-        owner_type: ownerType,
-        owner_id: ownerId,
-        is_marketplace: true, // Only check marketplace courses
+        [Op.and]: [
+          Sequelize.where(
+            Sequelize.fn('UPPER', Sequelize.col('course_code')),
+            trimmedCode
+          ),
+          { owner_type: ownerType },
+          { owner_id: ownerId },
+          { is_marketplace: true }, // Only check marketplace courses
+        ],
       },
       transaction,
+      paranoid: true, // Exclude soft-deleted courses (only check active courses)
     });
 
     if (existingCourse) {
@@ -691,19 +700,31 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
   }
 
   // Check course code uniqueness if changed (scoped to tutor's courses only)
-  if (course_code && course_code !== course.course_code) {
-    const existingCourse = await Courses.findOne({
-      where: {
-        course_code: course_code.trim(),
-        owner_type: ownerType,
-        owner_id: ownerId,
-        is_marketplace: true, // Only check marketplace courses
-        id: { [Op.ne]: id },
-      },
-    });
+  // Use case-insensitive comparison and exclude soft-deleted courses
+  if (course_code) {
+    const trimmedCode = course_code.trim().toUpperCase();
+    const currentCode = course.course_code?.toUpperCase();
+    
+    if (trimmedCode !== currentCode) {
+      const existingCourse = await Courses.findOne({
+        where: {
+          [Op.and]: [
+            Sequelize.where(
+              Sequelize.fn('UPPER', Sequelize.col('course_code')),
+              trimmedCode
+            ),
+            { owner_type: ownerType },
+            { owner_id: ownerId },
+            { is_marketplace: true },
+            { id: { [Op.ne]: parseInt(id) } }, // Exclude current course
+          ],
+        },
+        paranoid: true, // Exclude soft-deleted courses (only check active courses)
+      });
 
-    if (existingCourse) {
-      throw new ErrorClass("Course code already exists for your account", 409);
+      if (existingCourse) {
+        throw new ErrorClass("Course code already exists for your account", 409);
+      }
     }
   }
 
