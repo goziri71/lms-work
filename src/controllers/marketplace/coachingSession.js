@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import multer from "multer";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { CoachingSession } from "../../models/marketplace/coachingSession.js";
@@ -11,6 +12,30 @@ import { emailService } from "../../services/emailService.js";
 import { checkAndDeductHours, refundHours } from "./coachingHours.js";
 import { db } from "../../database/database.js";
 import { Op } from "sequelize";
+import { supabase } from "../../utils/supabase.js";
+
+// Configure multer for coaching session image uploads
+const uploadCoachingImage = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB max
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(
+        new ErrorClass("Only JPEG, PNG, and WebP images are allowed", 400),
+        false
+      );
+    }
+  },
+});
+
+// Middleware export
+export const uploadCoachingImageMiddleware =
+  uploadCoachingImage.single("image");
 
 /**
  * Helper to get tutor ID and type from request
@@ -205,6 +230,50 @@ export const createSession = TryCatchFunction(async (req, res) => {
     // Generate view link (public link for students)
     const viewLink = `${Config.frontendUrl}/coaching/session/${streamCallId}`;
 
+    // Handle image upload if file is provided
+    let finalImageUrl = image_url || null;
+    if (req.file) {
+      const bucket = process.env.COACHING_BUCKET || "coaching-sessions";
+      const timestamp = Date.now();
+      const sanitizedFileName = req.file.originalname.replace(
+        /[^a-zA-Z0-9.-]/g,
+        "_"
+      );
+      const ext = req.file.mimetype?.split("/")[1] || "jpg";
+      const objectPath = `tutors/${tutorId}/sessions/${timestamp}_${sanitizedFileName}`;
+
+      // Upload to Supabase
+      const { error: uploadError } = await supabase.storage
+        .from(bucket)
+        .upload(objectPath, req.file.buffer, {
+          contentType: req.file.mimetype,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        throw new ErrorClass(
+          `Image upload failed: ${uploadError.message}`,
+          500
+        );
+      }
+
+      // Generate signed URL for private bucket (expires in 1 year)
+      const { data: signedUrlData, error: urlError } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(objectPath, 31536000); // 1 year expiration
+
+      if (urlError) {
+        // Fallback to public URL if signed URL fails (for public buckets)
+        const { data: urlData } = supabase.storage
+          .from(bucket)
+          .getPublicUrl(objectPath);
+        finalImageUrl = urlData.publicUrl;
+      } else {
+        // Use signed URL for private bucket
+        finalImageUrl = signedUrlData.signedUrl;
+      }
+    }
+
     // Create session record
     const session = await CoachingSession.create(
       {
@@ -225,7 +294,7 @@ export const createSession = TryCatchFunction(async (req, res) => {
         price: pricing_type === "paid" ? price : null,
         currency: pricing_type === "paid" ? currency : null,
         category: category || null,
-        image_url: image_url || null,
+        image_url: finalImageUrl,
         tags: tags
           ? Array.isArray(tags)
             ? tags

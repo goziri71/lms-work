@@ -414,9 +414,15 @@ import {
   endSession,
   getJoinToken,
   cancelSession,
+  uploadCoachingImageMiddleware,
 } from "../controllers/marketplace/coachingSession.js";
 
-router.post("/tutor/coaching/sessions", tutorAuthorize, createSession);
+router.post(
+  "/tutor/coaching/sessions",
+  tutorAuthorize,
+  uploadCoachingImageMiddleware,
+  createSession
+);
 router.get("/tutor/coaching/sessions", tutorAuthorize, listSessions);
 router.get("/tutor/coaching/sessions/:id", tutorAuthorize, getSession);
 router.post(
