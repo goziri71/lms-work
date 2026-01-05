@@ -179,6 +179,60 @@ connectDB().then(async (success) => {
 
     setupDiscussionsSocket(io);
     setupDirectChatSocket(io);
+    
+    // Setup background jobs for subscriptions
+    try {
+      const { processAutoRenewals, expireSubscriptions } = await import("./src/services/subscriptionRenewalService.js");
+      
+      // Helper to check if it's time to run daily job (2 AM)
+      const shouldRunDailyJob = () => {
+        const now = new Date();
+        const hour = now.getHours();
+        const minute = now.getMinutes();
+        return hour === 2 && minute === 0;
+      };
+      
+      let lastDailyRun = new Date();
+      lastDailyRun.setHours(0, 0, 0, 0); // Reset to start of day
+      
+      // Check every hour if it's time to run daily jobs
+      setInterval(async () => {
+        const now = new Date();
+        const hoursSinceLastRun = (now - lastDailyRun) / (1000 * 60 * 60);
+        
+        // Run if it's been at least 24 hours since last run and it's around 2-3 AM
+        if (hoursSinceLastRun >= 24 && now.getHours() >= 2 && now.getHours() < 4) {
+          console.log("🔄 Processing subscription auto-renewals...");
+          try {
+            const results = await processAutoRenewals();
+            console.log(`✅ Auto-renewal completed: ${results.successful} successful, ${results.failed} failed`);
+            if (results.errors.length > 0) {
+              console.error("❌ Renewal errors:", results.errors);
+            }
+          } catch (error) {
+            console.error("❌ Error processing auto-renewals:", error);
+          }
+          
+          // Wait a bit before expiring subscriptions
+          setTimeout(async () => {
+            console.log("⏰ Expiring subscriptions...");
+            try {
+              const results = await expireSubscriptions();
+              console.log(`✅ Expired ${results.expired} subscriptions`);
+            } catch (error) {
+              console.error("❌ Error expiring subscriptions:", error);
+            }
+          }, 60000); // Wait 1 minute after renewals
+          
+          lastDailyRun = new Date();
+        }
+      }, 60 * 60 * 1000); // Check every hour
+      
+      console.log("⏰ Subscription renewal background jobs started");
+    } catch (error) {
+      console.warn("⚠️ Could not setup subscription renewal jobs:", error.message);
+    }
+    
     server.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log("📊 Connected to both LMS and Library databases");

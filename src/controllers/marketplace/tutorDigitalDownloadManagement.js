@@ -468,7 +468,44 @@ export const createDigitalDownload = TryCatchFunction(async (req, res) => {
   const config = getProductTypeConfig(product_type);
 
   const ownerType = userType === "sole_tutor" ? "sole_tutor" : "organization";
-  const ownerId = tutorId;
+  let ownerId = tutorId;
+
+  // Check subscription limits and expiration
+  try {
+    const { checkSubscriptionLimit, validateSubscriptionStatus } = await import("./tutorSubscription.js");
+    
+    // Determine tutor type and ID
+    let tutorType;
+    if (userType === "sole_tutor") {
+      tutorType = "sole_tutor";
+    } else if (userType === "organization" || userType === "organization_user") {
+      tutorType = "organization";
+      if (userType === "organization_user") {
+        ownerId = tutor.organization_id;
+      }
+    } else {
+      throw new ErrorClass("Invalid user type", 403);
+    }
+
+    // Check subscription status (expiration)
+    const statusCheck = await validateSubscriptionStatus(ownerId, tutorType);
+    if (!statusCheck.allowed) {
+      throw new ErrorClass(statusCheck.reason, 403);
+    }
+
+    // Check subscription limit for digital downloads
+    const limitCheck = await checkSubscriptionLimit(ownerId, tutorType, "digital_download");
+    if (!limitCheck.allowed) {
+      throw new ErrorClass(limitCheck.reason, 403);
+    }
+  } catch (error) {
+    // If it's already an ErrorClass, rethrow it
+    if (error instanceof ErrorClass) {
+      throw error;
+    }
+    // If subscription tables don't exist, log warning but continue
+    console.warn("Subscription check failed:", error.message);
+  }
 
   // Create digital download
   const download = await DigitalDownloads.create({

@@ -3,6 +3,8 @@ import { ErrorClass } from "../../utils/errorClass/index.js";
 import { TutorSubscription, SUBSCRIPTION_TIERS } from "../../models/marketplace/tutorSubscription.js";
 import { Courses } from "../../models/course/courses.js";
 import { DigitalDownloads } from "../../models/marketplace/digitalDownloads.js";
+import { SoleTutor } from "../../models/marketplace/soleTutor.js";
+import { Organization } from "../../models/marketplace/organization.js";
 import { db } from "../../database/database.js";
 import { Op } from "sequelize";
 
@@ -37,6 +39,9 @@ function getTutorInfo(req) {
 export const getSubscription = TryCatchFunction(async (req, res) => {
   const { tutorId, tutorType } = getTutorInfo(req);
 
+  // Check and auto-expire if needed
+  await checkSubscriptionExpiration(tutorId, tutorType);
+
   let subscription;
   try {
     subscription = await TutorSubscription.findOne({
@@ -67,6 +72,31 @@ export const getSubscription = TryCatchFunction(async (req, res) => {
         auto_renew: false,
       },
     });
+  }
+
+  // Check if subscription has expired (double-check)
+  if (subscription.end_date) {
+    const now = new Date();
+    const endDate = new Date(subscription.end_date);
+    if (now > endDate) {
+      // Auto-expire
+      await subscription.update({ status: "expired" });
+      // Return free tier
+      const freeTier = SUBSCRIPTION_TIERS.free;
+      return res.json({
+        success: true,
+        data: {
+          subscription_tier: "free",
+          status: "expired",
+          previous_tier: subscription.subscription_tier,
+          message: "Your subscription has expired. Please renew to continue using premium features.",
+          ...freeTier,
+          start_date: null,
+          end_date: null,
+          auto_renew: false,
+        },
+      });
+    }
   }
 
   const tierInfo = SUBSCRIPTION_TIERS[subscription.subscription_tier] || SUBSCRIPTION_TIERS.free;
@@ -124,41 +154,121 @@ export const subscribe = TryCatchFunction(async (req, res) => {
     throw error;
   }
 
-  // TODO: Handle payment for subscription (wallet or external payment)
-  // For now, we'll just create/update the subscription
+  // Handle payment for subscription (wallet payment required)
+  const subscriptionPrice = tierInfo.price;
+  const currency = "NGN"; // Default currency for subscriptions
 
-  const subscriptionData = {
-    tutor_id: tutorId,
-    tutor_type: tutorType,
-    subscription_tier,
-    status: "active",
-    courses_limit: tierInfo.courses_limit,
-    communities_limit: tierInfo.communities_limit,
-    digital_downloads_limit: tierInfo.digital_downloads_limit,
-    memberships_limit: tierInfo.memberships_limit,
-    unlimited_coaching: tierInfo.unlimited_coaching,
-    commission_rate: tierInfo.commission_rate,
-    start_date: new Date(),
-    // For monthly subscriptions, set end_date to 30 days from now
-    end_date: tierInfo.price > 0 ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null,
-    auto_renew: true,
-  };
+  // Free tier doesn't require payment
+  if (subscriptionPrice > 0) {
+    // Get tutor wallet balance
+    let tutor;
+    if (tutorType === "sole_tutor") {
+      tutor = await SoleTutor.findByPk(tutorId);
+    } else {
+      tutor = await Organization.findByPk(tutorId);
+    }
 
-  let subscription;
-  if (existingSubscription) {
-    // Update existing subscription
-    await existingSubscription.update(subscriptionData);
-    subscription = existingSubscription;
+    if (!tutor) {
+      throw new ErrorClass("Tutor not found", 404);
+    }
+
+    const walletBalance = parseFloat(tutor.wallet_balance || 0);
+
+    // Check if wallet has sufficient balance
+    if (walletBalance < subscriptionPrice) {
+      throw new ErrorClass(
+        `Insufficient wallet balance. Required: ${subscriptionPrice} ${currency}, Available: ${walletBalance} ${currency}. Please fund your wallet first.`,
+        400
+      );
+    }
+
+    // Use transaction to ensure atomicity
+    const transaction = await db.transaction();
+
+    try {
+      // Deduct from wallet
+      const newBalance = walletBalance - subscriptionPrice;
+      await tutor.update({ wallet_balance: newBalance }, { transaction });
+
+      // Create subscription record
+      const subscriptionData = {
+        tutor_id: tutorId,
+        tutor_type: tutorType,
+        subscription_tier,
+        status: "active",
+        courses_limit: tierInfo.courses_limit,
+        communities_limit: tierInfo.communities_limit,
+        digital_downloads_limit: tierInfo.digital_downloads_limit,
+        memberships_limit: tierInfo.memberships_limit,
+        unlimited_coaching: tierInfo.unlimited_coaching,
+        commission_rate: tierInfo.commission_rate,
+        start_date: new Date(),
+        // For monthly subscriptions, set end_date to 30 days from now
+        end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        auto_renew: true,
+      };
+
+      let subscription;
+      if (existingSubscription) {
+        // Update existing subscription
+        await existingSubscription.update(subscriptionData, { transaction });
+        subscription = existingSubscription;
+      } else {
+        // Create new subscription
+        subscription = await TutorSubscription.create(subscriptionData, { transaction });
+      }
+
+      await transaction.commit();
+
+      res.json({
+        success: true,
+        message: "Subscription activated successfully",
+        data: {
+          ...subscription.toJSON(),
+          payment_amount: subscriptionPrice,
+          currency,
+          new_wallet_balance: newBalance,
+        },
+      });
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
   } else {
-    // Create new subscription
-    subscription = await TutorSubscription.create(subscriptionData);
-  }
+    // Free tier - no payment required, but track start date for 30-day limit
+    const subscriptionData = {
+      tutor_id: tutorId,
+      tutor_type: tutorType,
+      subscription_tier: "free",
+      status: "active",
+      courses_limit: tierInfo.courses_limit,
+      communities_limit: tierInfo.communities_limit,
+      digital_downloads_limit: tierInfo.digital_downloads_limit,
+      memberships_limit: tierInfo.memberships_limit,
+      unlimited_coaching: tierInfo.unlimited_coaching,
+      commission_rate: tierInfo.commission_rate,
+      start_date: new Date(),
+      // Free tier expires after 30 days
+      end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      auto_renew: false,
+    };
 
-  res.json({
-    success: true,
-    message: "Subscription updated successfully",
-    data: subscription,
-  });
+    let subscription;
+    if (existingSubscription) {
+      // Update existing subscription
+      await existingSubscription.update(subscriptionData);
+      subscription = existingSubscription;
+    } else {
+      // Create new subscription
+      subscription = await TutorSubscription.create(subscriptionData);
+    }
+
+    res.json({
+      success: true,
+      message: "Free tier subscription activated",
+      data: subscription,
+    });
+  }
 });
 
 /**
@@ -244,10 +354,116 @@ export const getSubscriptionLimits = TryCatchFunction(async (req, res) => {
 });
 
 /**
+ * Check if subscription is expired
+ * Internal helper function
+ */
+export async function checkSubscriptionExpiration(tutorId, tutorType) {
+  const subscription = await TutorSubscription.findOne({
+    where: {
+      tutor_id: tutorId,
+      tutor_type: tutorType,
+      status: { [Op.in]: ["active", "pending"] },
+    },
+  });
+
+  if (!subscription) {
+    // No subscription = free tier (check if free tier expired)
+    return { expired: false, isFreeTier: true };
+  }
+
+  // Check if subscription has expired
+  if (subscription.end_date) {
+    const now = new Date();
+    const endDate = new Date(subscription.end_date);
+
+    if (now > endDate) {
+      // Subscription expired - auto-expire it
+      await subscription.update({ status: "expired" });
+      return {
+        expired: true,
+        isFreeTier: subscription.subscription_tier === "free",
+        reason: "Your subscription has expired. Please renew to continue using premium features.",
+      };
+    }
+  }
+
+  return { expired: false, isFreeTier: subscription.subscription_tier === "free", subscription };
+}
+
+/**
+ * Validate subscription status before resource creation
+ * Internal helper function
+ */
+export async function validateSubscriptionStatus(tutorId, tutorType) {
+  const expirationCheck = await checkSubscriptionExpiration(tutorId, tutorType);
+
+  if (expirationCheck.expired) {
+    return {
+      allowed: false,
+      reason: expirationCheck.reason || "Your subscription has expired. Please renew to continue.",
+    };
+  }
+
+  // Check if subscription exists and is active
+  const subscription = await TutorSubscription.findOne({
+    where: {
+      tutor_id: tutorId,
+      tutor_type: tutorType,
+      status: "active",
+    },
+  });
+
+  if (!subscription) {
+    // No active subscription = free tier
+    // Check if free tier has expired (30-day limit)
+    // For free tier, we need to check if they've been on free tier for more than 30 days
+    // Since there's no subscription record, we can't track this easily
+    // So we allow it (free tier is always available, but with limits)
+    return { allowed: true, reason: null, isFreeTier: true };
+  }
+
+  // Check if subscription is still valid
+  if (subscription.end_date) {
+    const now = new Date();
+    const endDate = new Date(subscription.end_date);
+
+    if (now > endDate) {
+      // Should have been caught by checkSubscriptionExpiration, but double-check
+      await subscription.update({ status: "expired" });
+      return {
+        allowed: false,
+        reason: "Your subscription has expired. Please renew to continue.",
+      };
+    }
+  }
+
+  // For free tier, check if 30 days have passed
+  if (subscription.subscription_tier === "free" && subscription.end_date) {
+    const now = new Date();
+    const endDate = new Date(subscription.end_date);
+    if (now > endDate) {
+      await subscription.update({ status: "expired" });
+      return {
+        allowed: false,
+        reason: "Your free tier subscription has expired (30-day limit). Please upgrade to a paid subscription to continue creating resources.",
+      };
+    }
+  }
+
+  return { allowed: true, reason: null, subscription };
+}
+
+/**
  * Check if tutor can perform an action (e.g., create course)
  * Internal helper function
  */
 export async function checkSubscriptionLimit(tutorId, tutorType, resourceType) {
+  // First check if subscription is expired
+  const statusCheck = await validateSubscriptionStatus(tutorId, tutorType);
+  if (!statusCheck.allowed) {
+    return statusCheck;
+  }
+
   const subscription = await TutorSubscription.findOne({
     where: {
       tutor_id: tutorId,

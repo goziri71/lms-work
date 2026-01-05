@@ -309,6 +309,43 @@ export const createCourse = TryCatchFunction(async (req, res) => {
   const priceNum = price ? parseFloat(price) : 0;
   const pricingType = priceNum === 0 ? "free" : "one_time";
 
+  // Check subscription limits and expiration
+  try {
+    const { checkSubscriptionLimit, validateSubscriptionStatus } = await import("./tutorSubscription.js");
+    
+    // Determine tutor type
+    let tutorType;
+    if (userType === "sole_tutor") {
+      tutorType = "sole_tutor";
+    } else if (userType === "organization" || userType === "organization_user") {
+      tutorType = "organization";
+      if (userType === "organization_user") {
+        tutorId = tutor.organization_id;
+      }
+    } else {
+      throw new ErrorClass("Invalid user type", 403);
+    }
+
+    // Check subscription status (expiration)
+    const statusCheck = await validateSubscriptionStatus(tutorId, tutorType);
+    if (!statusCheck.allowed) {
+      throw new ErrorClass(statusCheck.reason, 403);
+    }
+
+    // Check subscription limit for courses
+    const limitCheck = await checkSubscriptionLimit(tutorId, tutorType, "course");
+    if (!limitCheck.allowed) {
+      throw new ErrorClass(limitCheck.reason, 403);
+    }
+  } catch (error) {
+    // If it's already an ErrorClass, rethrow it
+    if (error instanceof ErrorClass) {
+      throw error;
+    }
+    // If subscription tables don't exist, log warning but continue
+    console.warn("Subscription check failed:", error.message);
+  }
+
   // Handle image upload if file is provided
   let finalImageUrl = image_url || null;
   if (req.file) {

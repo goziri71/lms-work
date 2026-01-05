@@ -203,6 +203,15 @@ export const soleTutorLogin = TryCatchFunction(async (req, res) => {
   // Update last login
   await tutor.update({ last_login: new Date() });
 
+  // Check and auto-expire subscriptions if needed
+  try {
+    const { checkSubscriptionExpiration } = await import("./tutorSubscription.js");
+    await checkSubscriptionExpiration(tutor.id, "sole_tutor");
+  } catch (error) {
+    // If subscription tables don't exist, continue without checking
+    console.warn("Subscription expiration check failed:", error.message);
+  }
+
   // Get subscription tier
   let subscriptionTier = "free";
   let subscriptionInfo = null;
@@ -340,6 +349,15 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
 
   // Update last login
   await organization.update({ last_login: new Date() });
+
+  // Check and auto-expire subscriptions if needed
+  try {
+    const { checkSubscriptionExpiration } = await import("./tutorSubscription.js");
+    await checkSubscriptionExpiration(organization.id, "organization");
+  } catch (error) {
+    // If subscription tables don't exist, continue without checking
+    console.warn("Subscription expiration check failed:", error.message);
+  }
 
   // Get subscription tier
   let subscriptionInfo = null;
@@ -620,6 +638,15 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
     // Update last login
     await tutor.update({ last_login: new Date() });
 
+    // Check and auto-expire subscriptions if needed
+    try {
+      const { checkSubscriptionExpiration } = await import("./tutorSubscription.js");
+      await checkSubscriptionExpiration(tutor.id, "sole_tutor");
+    } catch (error) {
+      // If subscription tables don't exist, continue without checking
+      console.warn("Subscription expiration check failed:", error.message);
+    }
+
     // Get subscription tier
     let subscriptionInfo = null;
     try {
@@ -743,6 +770,15 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
 
     // Update last login
     await organization.update({ last_login: new Date() });
+
+    // Check and auto-expire subscriptions if needed
+    try {
+      const { checkSubscriptionExpiration } = await import("./tutorSubscription.js");
+      await checkSubscriptionExpiration(organization.id, "organization");
+    } catch (error) {
+      // If subscription tables don't exist, continue without checking
+      console.warn("Subscription expiration check failed:", error.message);
+    }
 
     // Get subscription tier
     let subscriptionInfo = null;
