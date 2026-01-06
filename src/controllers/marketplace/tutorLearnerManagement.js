@@ -8,6 +8,7 @@ import { ErrorClass } from "../../utils/errorClass/index.js";
 import { Students } from "../../models/auth/student.js";
 import { Courses } from "../../models/course/courses.js";
 import { CourseReg } from "../../models/course_reg.js";
+import { MarketplaceTransaction } from "../../models/marketplace/marketplaceTransaction.js";
 import { LearnerActivityLog } from "../../models/marketplace/learnerActivityLog.js";
 import { CourseProgress } from "../../models/marketplace/courseProgress.js";
 import { LearnerLoginHistory } from "../../models/marketplace/learnerLoginHistory.js";
@@ -79,12 +80,13 @@ export const getMyLearners = TryCatchFunction(async (req, res) => {
   const courseIds = tutorCourses.map((c) => c.id);
 
   // Get all students enrolled in these courses
+  // Check both CourseReg (enrollments) and MarketplaceTransaction (purchases)
   const enrollmentWhere = {
     course_id: { [Op.in]: courseIds },
     registration_status: "marketplace_purchased",
   };
 
-  // Get unique student IDs
+  // Get unique student IDs from CourseReg
   const enrollments = await CourseReg.findAll({
     where: enrollmentWhere,
     attributes: ["student_id"],
@@ -92,7 +94,23 @@ export const getMyLearners = TryCatchFunction(async (req, res) => {
     raw: true,
   });
 
-  const studentIds = enrollments.map((e) => e.student_id);
+  // Also get student IDs from MarketplaceTransaction (in case CourseReg wasn't created)
+  const transactions = await MarketplaceTransaction.findAll({
+    where: {
+      course_id: { [Op.in]: courseIds },
+      owner_id: tutorId,
+      owner_type: tutorType,
+      payment_status: "completed",
+    },
+    attributes: ["student_id"],
+    group: ["student_id"],
+    raw: true,
+  });
+
+  // Combine and get unique student IDs
+  const enrollmentStudentIds = enrollments.map((e) => e.student_id);
+  const transactionStudentIds = transactions.map((t) => t.student_id);
+  const studentIds = [...new Set([...enrollmentStudentIds, ...transactionStudentIds])];
 
   if (studentIds.length === 0) {
     return res.json({
@@ -137,11 +155,11 @@ export const getMyLearners = TryCatchFunction(async (req, res) => {
       "matric_number",
       "phone",
       "country",
-      "created_at",
+      "date",
     ],
     limit: parseInt(limit),
     offset,
-    order: [["created_at", "DESC"]],
+    order: [["date", "DESC"]],
     include: [
       {
         model: CourseProgress,
@@ -181,7 +199,7 @@ export const getMyLearners = TryCatchFunction(async (req, res) => {
       matric_number: student.matric_number,
       phone: student.phone,
       country: student.country,
-      joined_at: student.created_at,
+      joined_at: student.date,
       courses: student.courseProgress?.map((progress) => ({
         course_id: progress.course_id,
         course_title: progress.course?.title,
@@ -257,7 +275,7 @@ export const getLearnerDetails = TryCatchFunction(async (req, res) => {
       "phone",
       "country",
       "state_origin",
-      "created_at",
+      "date",
     ],
   });
 
@@ -326,7 +344,7 @@ export const getLearnerDetails = TryCatchFunction(async (req, res) => {
         phone: learner.phone,
         country: learner.country,
         state_origin: learner.state_origin,
-        joined_at: learner.created_at,
+        joined_at: learner.date,
       },
       course_progress: progress.map((p) => ({
         course_id: p.course_id,
