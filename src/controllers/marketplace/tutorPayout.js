@@ -2,6 +2,7 @@ import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { TutorPayout } from "../../models/marketplace/tutorPayout.js";
 import { TutorBankAccount } from "../../models/marketplace/tutorBankAccount.js";
+import { TutorWalletTransaction } from "../../models/marketplace/tutorWalletTransaction.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { initiateTransfer, getTransferStatus } from "../../services/flutterwaveService.js";
@@ -165,9 +166,28 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
     let conversionInfo = null;
 
     if (baseCurrency !== payoutCurrency) {
-      conversionInfo = await convertCurrency(payoutAmount, baseCurrency, payoutCurrency);
-      convertedAmount = conversionInfo.convertedAmount;
-      fxRate = conversionInfo.rate;
+      try {
+        conversionInfo = await convertCurrency(payoutAmount, baseCurrency, payoutCurrency);
+        // Check if conversion used fallback (indicates API failure)
+        if (conversionInfo.rateInfo?.fallback) {
+          await transaction.rollback();
+          throw new ErrorClass(
+            "Currency conversion service is temporarily unavailable. Please try again later.",
+            503
+          );
+        }
+        convertedAmount = conversionInfo.convertedAmount;
+        fxRate = conversionInfo.rate;
+      } catch (error) {
+        await transaction.rollback();
+        if (error instanceof ErrorClass) {
+          throw error;
+        }
+        throw new ErrorClass(
+          "Failed to convert currency. Please try again later.",
+          500
+        );
+      }
     }
 
     // Generate unique reference
@@ -199,6 +219,27 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
     const newBalance = walletBalance - payoutAmount;
     await tutor.update(
       { wallet_balance: newBalance },
+      { transaction }
+    );
+
+    // Create wallet transaction record for the deduction
+    await TutorWalletTransaction.create(
+      {
+        tutor_id: tutorId,
+        tutor_type: tutorType,
+        transaction_type: "debit",
+        amount: payoutAmount,
+        currency: baseCurrency,
+        service_name: "Payout Request",
+        transaction_reference: reference,
+        balance_before: walletBalance,
+        balance_after: newBalance,
+        status: "pending",
+        metadata: {
+          payout_id: payout.id,
+          payout_reference: reference,
+        },
+      },
       { transaction }
     );
 
@@ -248,24 +289,42 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
  * @param {number} payoutId - Payout ID
  */
 async function processPayoutTransfer(payoutId) {
-  const payout = await TutorPayout.findByPk(payoutId, {
-    include: [
-      {
-        model: TutorBankAccount,
-        as: "bankAccount",
-      },
-    ],
+  // Use transaction to ensure atomicity
+  const transaction = await db.transaction({
+    isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
   });
 
-  if (!payout || payout.status !== "pending") {
-    return;
-  }
-
   try {
-    // Update status to processing
-    await payout.update({ status: "processing" });
+    // Lock payout record to prevent concurrent processing
+    const payout = await TutorPayout.findByPk(payoutId, {
+      include: [
+        {
+          model: TutorBankAccount,
+          as: "bankAccount",
+        },
+      ],
+      lock: Sequelize.Transaction.LOCK.UPDATE,
+      transaction,
+    });
 
-    // Initiate Flutterwave transfer
+    if (!payout || payout.status !== "pending") {
+      await transaction.rollback();
+      return;
+    }
+
+    // Check if already refunded (prevent duplicate refunds)
+    if (payout.metadata?.refunded) {
+      await transaction.rollback();
+      console.log(`Payout ${payoutId} already refunded, skipping`);
+      return;
+    }
+
+    // Update status to processing
+    await payout.update({ status: "processing" }, { transaction });
+
+    await transaction.commit();
+
+    // Initiate Flutterwave transfer (outside transaction to avoid long locks)
     const transferResult = await initiateTransfer({
       accountBank: payout.bankAccount.bank_code,
       accountNumber: payout.bankAccount.account_number,
@@ -276,76 +335,211 @@ async function processPayoutTransfer(payoutId) {
       beneficiaryName: payout.bankAccount.account_name,
     });
 
-    if (transferResult.success) {
-      // Update payout with transfer details
-      await payout.update({
-        flutterwave_transfer_id: transferResult.transfer.id,
-        transfer_fee: transferResult.transfer.fee || 0,
-        net_amount: payout.converted_amount - (transferResult.transfer.fee || 0),
-        status: "successful",
-        processed_at: new Date(),
-        metadata: {
-          ...payout.metadata,
-          transfer: transferResult.transfer,
-        },
+    // Start new transaction for updates
+    const updateTransaction = await db.transaction({
+      isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
+    });
+
+    try {
+      // Re-lock payout
+      const lockedPayout = await TutorPayout.findByPk(payoutId, {
+        lock: Sequelize.Transaction.LOCK.UPDATE,
+        transaction: updateTransaction,
       });
 
-      // Update tutor's total_payouts
-      let tutor;
-      if (payout.tutor_type === "sole_tutor") {
-        tutor = await SoleTutor.findByPk(payout.tutor_id);
+      if (!lockedPayout) {
+        await updateTransaction.rollback();
+        return;
+      }
+
+      if (transferResult.success) {
+        // Update payout with transfer details
+        await lockedPayout.update(
+          {
+            flutterwave_transfer_id: transferResult.transfer.id,
+            transfer_fee: transferResult.transfer.fee || 0,
+            net_amount: payout.converted_amount - (transferResult.transfer.fee || 0),
+            status: "successful",
+            processed_at: new Date(),
+            completed_at: new Date(),
+            metadata: {
+              ...lockedPayout.metadata,
+              transfer: transferResult.transfer,
+            },
+          },
+          { transaction: updateTransaction }
+        );
+
+        // Update wallet transaction status
+        await TutorWalletTransaction.update(
+          {
+            status: "successful",
+            metadata: {
+              ...lockedPayout.metadata,
+              flutterwave_transfer_id: transferResult.transfer.id,
+            },
+          },
+          {
+            where: {
+              transaction_reference: lockedPayout.flutterwave_reference,
+              tutor_id: lockedPayout.tutor_id,
+              tutor_type: lockedPayout.tutor_type,
+            },
+            transaction: updateTransaction,
+          }
+        );
+
+        // Update tutor's total_payouts
+        let tutor;
+        if (lockedPayout.tutor_type === "sole_tutor") {
+          tutor = await SoleTutor.findByPk(lockedPayout.tutor_id, {
+            lock: Sequelize.Transaction.LOCK.UPDATE,
+            transaction: updateTransaction,
+          });
+        } else {
+          tutor = await Organization.findByPk(lockedPayout.tutor_id, {
+            lock: Sequelize.Transaction.LOCK.UPDATE,
+            transaction: updateTransaction,
+          });
+        }
+
+        if (tutor) {
+          const newTotalPayouts = parseFloat(tutor.total_payouts || 0) + lockedPayout.amount;
+          await tutor.update({ total_payouts: newTotalPayouts }, { transaction: updateTransaction });
+        }
+
+        await updateTransaction.commit();
       } else {
-        tutor = await Organization.findByPk(payout.tutor_id);
+        // Transfer failed - refund wallet
+        await refundPayout(lockedPayout, updateTransaction);
       }
-
-      if (tutor) {
-        const newTotalPayouts = parseFloat(tutor.total_payouts || 0) + payout.amount;
-        await tutor.update({ total_payouts: newTotalPayouts });
-      }
-    } else {
-      // Transfer failed
-      await payout.update({
-        status: "failed",
-        failure_reason: transferResult.message || "Transfer initiation failed",
-        processed_at: new Date(),
-      });
-
-      // Refund wallet balance
-      let tutor;
-      if (payout.tutor_type === "sole_tutor") {
-        tutor = await SoleTutor.findByPk(payout.tutor_id);
-      } else {
-        tutor = await Organization.findByPk(payout.tutor_id);
-      }
-
-      if (tutor) {
-        const newBalance = parseFloat(tutor.wallet_balance || 0) + payout.amount;
-        await tutor.update({ wallet_balance: newBalance });
-      }
+    } catch (error) {
+      await updateTransaction.rollback();
+      throw error;
     }
   } catch (error) {
     console.error(`Error processing payout ${payoutId}:`, error);
 
-    // Update payout status
-    await payout.update({
-      status: "failed",
-      failure_reason: error.message || "Transfer processing error",
-      processed_at: new Date(),
+    // Refund in separate transaction
+    const refundTransaction = await db.transaction({
+      isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
     });
 
-    // Refund wallet balance
-    let tutor;
-    if (payout.tutor_type === "sole_tutor") {
-      tutor = await SoleTutor.findByPk(payout.tutor_id);
-    } else {
-      tutor = await Organization.findByPk(payout.tutor_id);
-    }
+    try {
+      const payoutToRefund = await TutorPayout.findByPk(payoutId, {
+        lock: Sequelize.Transaction.LOCK.UPDATE,
+        transaction: refundTransaction,
+      });
 
-    if (tutor) {
-      const newBalance = parseFloat(tutor.wallet_balance || 0) + payout.amount;
-      await tutor.update({ wallet_balance: newBalance });
+      if (payoutToRefund && payoutToRefund.status !== "successful" && !payoutToRefund.metadata?.refunded) {
+        await refundPayout(payoutToRefund, refundTransaction);
+      } else {
+        await refundTransaction.rollback();
+      }
+    } catch (refundError) {
+      console.error(`Error refunding payout ${payoutId}:`, refundError);
+      await refundTransaction.rollback();
     }
   }
+}
+
+/**
+ * Refund payout to tutor wallet
+ * @param {Object} payout - Payout record
+ * @param {Object} transaction - Database transaction
+ */
+async function refundPayout(payout, transaction) {
+  // Check if already refunded
+  if (payout.metadata?.refunded) {
+    await transaction.rollback();
+    return;
+  }
+
+  // Update payout status
+  await payout.update(
+    {
+      status: "failed",
+      failure_reason: payout.failure_reason || "Transfer processing error",
+      processed_at: new Date(),
+      metadata: {
+        ...payout.metadata,
+        refunded: true,
+        refunded_at: new Date(),
+      },
+    },
+    { transaction }
+  );
+
+  // Get tutor with lock
+  let tutor;
+  if (payout.tutor_type === "sole_tutor") {
+    tutor = await SoleTutor.findByPk(payout.tutor_id, {
+      lock: Sequelize.Transaction.LOCK.UPDATE,
+      transaction,
+    });
+  } else {
+    tutor = await Organization.findByPk(payout.tutor_id, {
+      lock: Sequelize.Transaction.LOCK.UPDATE,
+      transaction,
+    });
+  }
+
+  if (!tutor) {
+    await transaction.rollback();
+    return;
+  }
+
+  // Refund wallet balance
+  const currentBalance = parseFloat(tutor.wallet_balance || 0);
+  const refundAmount = parseFloat(payout.amount);
+  const newBalance = currentBalance + refundAmount;
+
+  await tutor.update({ wallet_balance: newBalance }, { transaction });
+
+  // Update wallet transaction status
+  await TutorWalletTransaction.update(
+    {
+      status: "failed",
+      metadata: {
+        refunded: true,
+        refunded_at: new Date(),
+        failure_reason: payout.failure_reason,
+      },
+    },
+    {
+      where: {
+        transaction_reference: payout.flutterwave_reference,
+        tutor_id: payout.tutor_id,
+        tutor_type: payout.tutor_type,
+      },
+      transaction,
+    }
+  );
+
+  // Create refund transaction record
+  await TutorWalletTransaction.create(
+    {
+      tutor_id: payout.tutor_id,
+      tutor_type: payout.tutor_type,
+      transaction_type: "credit",
+      amount: refundAmount,
+      currency: payout.metadata?.base_currency || "NGN",
+      service_name: "Payout Refund",
+      transaction_reference: `REFUND-${payout.flutterwave_reference}`,
+      balance_before: currentBalance,
+      balance_after: newBalance,
+      status: "successful",
+      metadata: {
+        payout_id: payout.id,
+        payout_reference: payout.flutterwave_reference,
+        refund_reason: payout.failure_reason,
+      },
+    },
+    { transaction }
+  );
+
+  await transaction.commit();
+  console.log(`✅ Refunded payout ${payout.id}: ${refundAmount} to tutor ${payout.tutor_id}`);
 }
 
 /**
