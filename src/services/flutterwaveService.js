@@ -496,10 +496,22 @@ export const initiateTransfer = async (transferData) => {
       const errorMessage = error.response?.data?.message || 
                           error.response?.data?.data?.complete_message ||
                           "Invalid transfer details";
+      
+      // Check for specific Flutterwave errors
+      let userFriendlyMessage = errorMessage;
+      if (errorMessage.includes("IP Whitelisting") || errorMessage.includes("whitelist")) {
+        userFriendlyMessage = "Flutterwave IP whitelisting is required. Please contact support to whitelist the server IP address in your Flutterwave dashboard.";
+      } else if (errorMessage.includes("insufficient") || errorMessage.includes("balance")) {
+        userFriendlyMessage = "Insufficient balance in Flutterwave account. Please fund your Flutterwave account.";
+      } else if (errorMessage.includes("account") && errorMessage.includes("invalid")) {
+        userFriendlyMessage = "Invalid bank account details. Please verify your account number and bank code.";
+      }
+      
       return {
         success: false,
-        message: errorMessage,
+        message: userFriendlyMessage,
         errorDetails: error.response?.data,
+        originalMessage: errorMessage,
       };
     }
 

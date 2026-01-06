@@ -499,6 +499,8 @@ async function processPayoutTransfer(payoutId) {
       } else {
         // Transfer failed - update failure reason and refund wallet
         const failureReason = transferResult.message || "Transfer processing failed";
+        const originalMessage = transferResult.originalMessage || transferResult.message;
+        
         await lockedPayout.update(
           {
             status: "failed",
@@ -507,6 +509,7 @@ async function processPayoutTransfer(payoutId) {
             metadata: {
               ...lockedPayout.metadata,
               transfer_error: transferResult.errorDetails || transferResult.message,
+              original_error: originalMessage,
             },
           },
           { transaction: updateTransaction }
