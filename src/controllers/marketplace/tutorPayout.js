@@ -86,6 +86,18 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
     isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
   });
 
+  // Helper function to safely rollback (prevents double rollback errors)
+  const safeRollback = async () => {
+    if (transaction && !transaction.finished) {
+      try {
+        await transaction.rollback();
+      } catch (rollbackError) {
+        // Transaction already rolled back, ignore
+        // This prevents "Transaction cannot be rolled back because it has been finished" errors
+      }
+    }
+  };
+
   let tutor;
   try {
     // Lock tutor record for update to prevent race conditions
@@ -103,14 +115,14 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
     }
 
     if (!tutor) {
-      await transaction.rollback();
+      await safeRollback();
       throw new ErrorClass("Tutor not found", 404);
     }
 
     // Re-check wallet balance after locking (prevents race condition)
     const walletBalance = parseFloat(tutor.wallet_balance || 0);
     if (walletBalance < payoutAmount) {
-      await transaction.rollback();
+      await safeRollback();
       throw new ErrorClass(
         `Insufficient balance. Available: ${walletBalance}`,
         400
@@ -141,7 +153,7 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
     }
 
     if (!bankAccount) {
-      await transaction.rollback();
+      await safeRollback();
       throw new ErrorClass(
         "Bank account not found. Please add a bank account first.",
         404
@@ -149,7 +161,7 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
     }
 
     if (!bankAccount.is_verified) {
-      await transaction.rollback();
+      await safeRollback();
       throw new ErrorClass(
         "Bank account is not verified. Please verify your account first.",
         400
@@ -169,17 +181,24 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
       try {
         conversionInfo = await convertCurrency(payoutAmount, baseCurrency, payoutCurrency);
         // Check if conversion used fallback (indicates API failure)
-        if (conversionInfo.rateInfo?.fallback) {
-          await transaction.rollback();
+        // The fallback flag is in rateInfo.fallback
+        if (conversionInfo?.rateInfo?.fallback === true) {
+          // FX conversion failed, use fallback - but we should fail the request
+          // since we can't guarantee accurate conversion
+          await safeRollback();
           throw new ErrorClass(
-            "Currency conversion service is temporarily unavailable. Please try again later.",
+            "Currency conversion service is temporarily unavailable. Please try again later or use the same currency as your wallet.",
             503
           );
         }
         convertedAmount = conversionInfo.convertedAmount;
         fxRate = conversionInfo.rate;
       } catch (error) {
-        await transaction.rollback();
+        // Only rollback if not already an ErrorClass (which would have already rolled back)
+        if (!(error instanceof ErrorClass)) {
+          await safeRollback();
+        }
+        // Re-throw ErrorClass instances as-is
         if (error instanceof ErrorClass) {
           throw error;
         }
@@ -271,8 +290,10 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
       },
     });
   } catch (error) {
-    if (transaction && !transaction.finished) {
-      await transaction.rollback();
+    // Only rollback if transaction is still active
+    // ErrorClass instances would have already rolled back in their catch blocks
+    if (!(error instanceof ErrorClass)) {
+      await safeRollback();
     }
     // Re-throw ErrorClass instances as-is
     if (error instanceof ErrorClass) {
