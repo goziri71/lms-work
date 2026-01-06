@@ -84,6 +84,8 @@ export const addBankAccount = TryCatchFunction(async (req, res) => {
   let isVerified = false;
   let verificationResponse = null;
   let verificationDate = null;
+  let verifiedAccountName = account_name; // Default to provided name
+  let verifiedAccountNumber = account_number; // Default to provided number
 
   if (verify) {
     try {
@@ -93,23 +95,31 @@ export const addBankAccount = TryCatchFunction(async (req, res) => {
         country.toUpperCase()
       );
 
-      if (verification.success) {
-        isVerified = true;
+      if (verification.success && verification.account) {
+        // Update with verified account details from Flutterwave
+        if (verification.account.accountName) {
+          verifiedAccountName = verification.account.accountName;
+        }
+        if (verification.account.accountNumber) {
+          verifiedAccountNumber = verification.account.accountNumber;
+        }
+        
+        // Store verification response
         verificationResponse = verification.account;
         verificationDate = new Date();
-
-        // Update account name from verification if provided
-        if (verification.account.accountName) {
-          // Use verified name if it matches or is close
-          // Otherwise keep the provided name
-        }
+        
+        // Only mark as verified after we have the verified details
+        isVerified = true;
       } else {
         // Account verification failed, but we can still save it
         verificationResponse = { error: verification.message };
+        isVerified = false;
       }
     } catch (error) {
       console.error("Bank account verification error:", error);
-      // Continue without verification
+      verificationResponse = { error: error.message };
+      isVerified = false;
+      // Continue without verification - account will be saved as unverified
     }
   }
 
@@ -137,17 +147,17 @@ export const addBankAccount = TryCatchFunction(async (req, res) => {
     );
   }
 
-  // Create bank account
+  // Create bank account with verified details
   const bankAccount = await TutorBankAccount.create({
     tutor_id: tutorId,
     tutor_type: tutorType,
-    account_name,
-    account_number,
+    account_name: verifiedAccountName, // Use verified name from Flutterwave
+    account_number: verifiedAccountNumber, // Use verified number from Flutterwave
     bank_code,
     bank_name,
     country: country.toUpperCase(),
     currency,
-    is_verified: isVerified,
+    is_verified: isVerified, // Only true if verification succeeded
     is_primary: isPrimary,
     verification_date: verificationDate,
     verification_response: verificationResponse,
@@ -155,16 +165,22 @@ export const addBankAccount = TryCatchFunction(async (req, res) => {
 
   res.status(201).json({
     success: true,
-    message: "Bank account added successfully",
+    message: isVerified 
+      ? "Bank account added and verified successfully" 
+      : "Bank account added. Please verify the account details.",
     data: {
       id: bankAccount.id,
-      account_name: bankAccount.account_name,
-      account_number: bankAccount.account_number,
+      account_name: bankAccount.account_name, // This now contains the verified name from Flutterwave
+      account_number: bankAccount.account_number.replace(/(.{4})(.*)/, "$1****"), // Mask account number
       bank_name: bankAccount.bank_name,
       country: bankAccount.country,
       currency: bankAccount.currency,
       is_verified: bankAccount.is_verified,
       is_primary: bankAccount.is_primary,
+      verification_date: bankAccount.verification_date,
+      ...(verificationResponse && !isVerified && { 
+        verification_error: verificationResponse.error || "Account verification failed" 
+      }),
     },
   });
 });
@@ -246,9 +262,15 @@ export const verifyAccount = TryCatchFunction(async (req, res) => {
     account.country
   );
 
-  if (verification.success) {
+  if (verification.success && verification.account) {
+    // Update account with verified details from Flutterwave
+    const verifiedAccountName = verification.account.accountName || account.account_name;
+    const verifiedAccountNumber = verification.account.accountNumber || account.account_number;
+    
     await account.update({
-      is_verified: true,
+      account_name: verifiedAccountName, // Update with verified name
+      account_number: verifiedAccountNumber, // Update with verified number (in case of formatting)
+      is_verified: true, // Only set to true after updating with verified details
       verification_date: new Date(),
       verification_response: verification.account,
     });
@@ -258,8 +280,10 @@ export const verifyAccount = TryCatchFunction(async (req, res) => {
       message: "Bank account verified successfully",
       data: {
         id: account.id,
+        account_name: verifiedAccountName,
+        account_number: account.account_number.replace(/(.{4})(.*)/, "$1****"), // Mask account number
         is_verified: true,
-        account_name: verification.account.accountName,
+        verification_date: new Date(),
       },
     });
   } else {
@@ -269,7 +293,7 @@ export const verifyAccount = TryCatchFunction(async (req, res) => {
     });
 
     throw new ErrorClass(
-      verification.message || "Account verification failed",
+      verification.message || "Account verification failed. Please check your account number and bank code.",
       400
     );
   }
