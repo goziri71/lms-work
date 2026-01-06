@@ -140,7 +140,28 @@ export async function getExchangeRate(
     
     throw new Error("Invalid response from Flutterwave rates API");
   } catch (error) {
-    console.error("FX Conversion Error:", error.message);
+    // Log detailed error information for debugging
+    if (error.response) {
+      console.error("FX Conversion Error:", {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data,
+        url: error.config?.url,
+        message: error.message,
+      });
+      
+      // If 404, the endpoint might be wrong or API key doesn't have access
+      if (error.response.status === 404) {
+        console.error("⚠️  Flutterwave rates endpoint returned 404. Possible issues:");
+        console.error("   1. Endpoint URL might be incorrect");
+        console.error("   2. API key might not have access to this endpoint");
+        console.error("   3. Endpoint might require different authentication");
+        console.error(`   Attempted URL: ${error.config?.url}`);
+        console.error(`   API Key present: ${FLUTTERWAVE_SECRET_KEY ? "Yes" : "No"}`);
+      }
+    } else {
+      console.error("FX Conversion Error:", error.message);
+    }
     
     // Return fallback rate on error
     return getFallbackRate(source, destination, destinationAmount);
