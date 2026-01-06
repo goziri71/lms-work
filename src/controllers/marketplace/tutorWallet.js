@@ -3,7 +3,6 @@ import { ErrorClass } from "../../utils/errorClass/index.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { TutorWalletTransaction } from "../../models/marketplace/tutorWalletTransaction.js";
-import { PaymentTransaction } from "../../models/payment/paymentTransaction.js";
 import { Op } from "sequelize";
 import {
   verifyTransaction,
@@ -165,22 +164,6 @@ export const fundWallet = TryCatchFunction(async (req, res) => {
         metadata: {
           flutterwave_response: flutterwaveTransaction,
         },
-      },
-      { transaction }
-    );
-
-    // Create payment transaction record (for consistency with student payments)
-    await PaymentTransaction.create(
-      {
-        student_id: tutorId, // Using tutorId as student_id for compatibility (PaymentTransaction requires student_id)
-        transaction_reference: txRef,
-        flutterwave_transaction_id: flutterwaveTransaction.id?.toString(),
-        amount: transactionAmount,
-        currency: transactionCurrency,
-        status: "successful",
-        payment_type: "tutor_wallet_funding",
-        processed_at: new Date(),
-        flutterwave_response: flutterwaveTransaction,
       },
       { transaction }
     );
