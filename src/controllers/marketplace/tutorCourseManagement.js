@@ -86,7 +86,13 @@ export const getMyCourses = TryCatchFunction(async (req, res) => {
   if (search) {
     where[Op.or] = [
       { title: { [Op.iLike]: `%${search}%` } },
-      { course_code: { [Op.iLike]: `%${search}%` } },
+      // Only search course_code if it's not null
+      { 
+        course_code: { 
+          [Op.iLike]: `%${search}%`,
+          [Op.ne]: null 
+        } 
+      },
     ];
   }
 
@@ -253,8 +259,8 @@ export const createCourse = TryCatchFunction(async (req, res) => {
   } = req.body;
 
   // Validation - Required fields
-  if (!title || !course_code) {
-    throw new ErrorClass("Title and course code are required", 400);
+  if (!title) {
+    throw new ErrorClass("Title is required", 400);
   }
 
   if (!description) {
@@ -395,28 +401,31 @@ export const createCourse = TryCatchFunction(async (req, res) => {
 
   try {
     // Check if course code already exists for this tutor (scoped to tutor's courses only)
+    // Only check uniqueness if course_code is provided
     // Using transaction to ensure this check and insert are atomic
     // Use case-insensitive comparison and exclude soft-deleted courses
-    const trimmedCode = course_code.trim().toUpperCase();
-    const existingCourse = await Courses.findOne({
-      where: {
-        [Op.and]: [
-          Sequelize.where(
-            Sequelize.fn('UPPER', Sequelize.col('course_code')),
-            trimmedCode
-          ),
-          { owner_type: ownerType },
-          { owner_id: ownerId },
-          { is_marketplace: true }, // Only check marketplace courses
-        ],
-      },
-      transaction,
-      paranoid: true, // Exclude soft-deleted courses (only check active courses)
-    });
+    if (course_code && course_code.trim()) {
+      const trimmedCode = course_code.trim().toUpperCase();
+      const existingCourse = await Courses.findOne({
+        where: {
+          [Op.and]: [
+            Sequelize.where(
+              Sequelize.fn('UPPER', Sequelize.col('course_code')),
+              trimmedCode
+            ),
+            { owner_type: ownerType },
+            { owner_id: ownerId },
+            { is_marketplace: true }, // Only check marketplace courses
+          ],
+        },
+        transaction,
+        paranoid: true, // Exclude soft-deleted courses (only check active courses)
+      });
 
-    if (existingCourse) {
-      await transaction.rollback();
-      throw new ErrorClass("Course code already exists for your account", 409);
+      if (existingCourse) {
+        await transaction.rollback();
+        throw new ErrorClass("Course code already exists for your account", 409);
+      }
     }
 
     // Validate program_id if provided
@@ -487,7 +496,7 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     const course = await Courses.create(
       {
         title: title.trim(),
-        course_code: course_code.trim(),
+        course_code: course_code && course_code.trim() ? course_code.trim() : null,
         course_unit: course_unit || null,
         price: price ? String(price) : "0",
         pricing_type: pricingType,
@@ -701,10 +710,12 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
 
   // Check course code uniqueness if changed (scoped to tutor's courses only)
   // Use case-insensitive comparison and exclude soft-deleted courses
-  if (course_code) {
+  // Only check if course_code is provided and not empty
+  if (course_code !== undefined && course_code !== null && course_code.trim()) {
     const trimmedCode = course_code.trim().toUpperCase();
-    const currentCode = course.course_code?.toUpperCase();
+    const currentCode = course.course_code?.toUpperCase() || null;
     
+    // Only check uniqueness if the code is actually changing
     if (trimmedCode !== currentCode) {
       const existingCourse = await Courses.findOne({
         where: {
@@ -731,7 +742,10 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
   // Update course
   const updateData = {};
   if (title !== undefined) updateData.title = title.trim();
-  if (course_code !== undefined) updateData.course_code = course_code.trim();
+  if (course_code !== undefined) {
+    // Allow setting course_code to null/empty string to remove it
+    updateData.course_code = course_code && course_code.trim() ? course_code.trim() : null;
+  }
   if (course_unit !== undefined) updateData.course_unit = course_unit;
   if (price !== undefined) {
     updateData.price = String(price);

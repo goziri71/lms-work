@@ -56,7 +56,13 @@ export const browseMarketplaceCourses = TryCatchFunction(async (req, res) => {
   if (search) {
     courseWhere[Op.or] = [
       { title: { [Op.iLike]: `%${search}%` } },
-      { course_code: { [Op.iLike]: `%${search}%` } },
+      // Only search course_code if it's not null
+      { 
+        course_code: { 
+          [Op.iLike]: `%${search}%`,
+          [Op.ne]: null 
+        } 
+      },
     ];
   }
 
