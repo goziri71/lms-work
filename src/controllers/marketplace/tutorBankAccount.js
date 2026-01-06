@@ -300,6 +300,169 @@ export const verifyAccount = TryCatchFunction(async (req, res) => {
 });
 
 /**
+ * Update bank account
+ * PUT /api/marketplace/tutor/bank-accounts/:id
+ */
+export const updateBankAccount = TryCatchFunction(async (req, res) => {
+  const { tutorId, tutorType } = getTutorInfo(req);
+  const { id } = req.params;
+  const {
+    account_name,
+    account_number,
+    bank_code,
+    bank_name,
+    country,
+    verify = false,
+  } = req.body;
+
+  const account = await TutorBankAccount.findOne({
+    where: {
+      id,
+      tutor_id: tutorId,
+      tutor_type: tutorType,
+    },
+  });
+
+  if (!account) {
+    throw new ErrorClass("Bank account not found", 404);
+  }
+
+  // Check if there are pending/processing payouts using this account
+  const { TutorPayout } = await import("../../models/marketplace/tutorPayout.js");
+  const pendingPayouts = await TutorPayout.count({
+    where: {
+      bank_account_id: id,
+      status: {
+        [Op.in]: ["pending", "processing"],
+      },
+    },
+  });
+
+  if (pendingPayouts > 0) {
+    throw new ErrorClass(
+      "Cannot update bank account with pending or processing payouts. Please wait for these payouts to complete or cancel them first.",
+      400
+    );
+  }
+
+  // Prepare update data
+  const updateData = {};
+  let needsVerification = verify;
+
+  // Update account name if provided
+  if (account_name !== undefined) {
+    updateData.account_name = account_name.trim();
+  }
+
+  // Update account number if provided
+  if (account_number !== undefined) {
+    updateData.account_number = account_number.trim();
+    needsVerification = true; // Account number change requires re-verification
+  }
+
+  // Update bank code if provided
+  if (bank_code !== undefined) {
+    updateData.bank_code = bank_code.trim();
+    needsVerification = true; // Bank code change requires re-verification
+  }
+
+  // Update bank name if provided
+  if (bank_name !== undefined) {
+    updateData.bank_name = bank_name.trim();
+  }
+
+  // Update country if provided (this will also update currency)
+  if (country !== undefined) {
+    updateData.country = country.toUpperCase().trim();
+    updateData.currency = getCurrencyFromCountry(country);
+    needsVerification = true; // Country change requires re-verification
+  }
+
+  // Verify account if requested or if critical fields changed
+  let isVerified = account.is_verified;
+  let verificationResponse = account.verification_response;
+  let verificationDate = account.verification_date;
+  let verifiedAccountName = updateData.account_name || account.account_name;
+  let verifiedAccountNumber = updateData.account_number || account.account_number;
+
+  if (needsVerification) {
+    try {
+      const verification = await verifyBankAccount(
+        verifiedAccountNumber,
+        updateData.bank_code || account.bank_code,
+        updateData.country || account.country
+      );
+
+      if (verification.success && verification.account) {
+        // Update with verified account details from Flutterwave
+        if (verification.account.accountName) {
+          verifiedAccountName = verification.account.accountName;
+          updateData.account_name = verifiedAccountName;
+        }
+        if (verification.account.accountNumber) {
+          verifiedAccountNumber = verification.account.accountNumber;
+          updateData.account_number = verifiedAccountNumber;
+        }
+        
+        // Store verification response
+        verificationResponse = verification.account;
+        verificationDate = new Date();
+        
+        // Only mark as verified after we have the verified details
+        isVerified = true;
+        updateData.is_verified = true;
+        updateData.verification_date = verificationDate;
+        updateData.verification_response = verificationResponse;
+      } else {
+        // Account verification failed
+        verificationResponse = { error: verification.message };
+        isVerified = false;
+        updateData.is_verified = false;
+        updateData.verification_response = verificationResponse;
+        // Still allow update, but mark as unverified
+      }
+    } catch (error) {
+      console.error("Bank account verification error:", error);
+      verificationResponse = { error: error.message };
+      isVerified = false;
+      updateData.is_verified = false;
+      updateData.verification_response = verificationResponse;
+      // Continue with update, but mark as unverified
+    }
+  }
+
+  // Update the account
+  await account.update(updateData);
+
+  // Reload to get updated data
+  await account.reload();
+
+  res.json({
+    success: true,
+    message: needsVerification
+      ? (isVerified 
+          ? "Bank account updated and verified successfully" 
+          : "Bank account updated. Please verify the account details.")
+      : "Bank account updated successfully",
+    data: {
+      id: account.id,
+      account_name: account.account_name,
+      account_number: account.account_number.replace(/(.{4})(.*)/, "$1****"), // Mask account number
+      bank_name: account.bank_name,
+      bank_code: account.bank_code,
+      country: account.country,
+      currency: account.currency,
+      is_verified: account.is_verified,
+      is_primary: account.is_primary,
+      verification_date: account.verification_date,
+      ...(verificationResponse && !isVerified && needsVerification && { 
+        verification_error: verificationResponse.error || "Account verification failed" 
+      }),
+    },
+  });
+});
+
+/**
  * Set primary account
  * PUT /api/marketplace/tutor/bank-accounts/:id/set-primary
  */

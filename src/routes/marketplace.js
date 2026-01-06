@@ -680,6 +680,7 @@ import {
   addBankAccount,
   listBankAccounts,
   verifyAccount,
+  updateBankAccount,
   setPrimaryAccount,
   deleteBankAccount,
 } from "../controllers/marketplace/tutorBankAccount.js";
@@ -693,6 +694,7 @@ router.put(
   tutorAuthorize,
   setPrimaryAccount
 );
+router.put("/tutor/bank-accounts/:id", tutorAuthorize, updateBankAccount);
 router.delete("/tutor/bank-accounts/:id", tutorAuthorize, deleteBankAccount);
 
 // ============================================
