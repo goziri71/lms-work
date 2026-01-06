@@ -6,6 +6,7 @@ import { CoachingSettings } from "../../models/marketplace/coachingSettings.js";
 import { TutorSubscription, SUBSCRIPTION_TIERS } from "../../models/marketplace/tutorSubscription.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
+import { TutorWalletTransaction } from "../../models/marketplace/tutorWalletTransaction.js";
 import { db } from "../../database/database.js";
 import { Sequelize } from "sequelize";
 
@@ -210,6 +211,25 @@ export const purchaseHours = TryCatchFunction(async (req, res) => {
         payment_method: "wallet",
         currency: settings.currency,
         status: "completed",
+      },
+      { transaction }
+    );
+
+    // Create wallet transaction record
+    await TutorWalletTransaction.create(
+      {
+        tutor_id: tutorId,
+        tutor_type: tutorType,
+        transaction_type: "debit",
+        amount: totalAmount,
+        currency: settings.currency,
+        service_name: "Coaching Hours Purchase",
+        transaction_reference: transactionRef,
+        balance_before: walletBalance,
+        balance_after: newBalance,
+        related_id: purchase.id,
+        related_type: "coaching_hours",
+        status: "successful",
       },
       { transaction }
     );

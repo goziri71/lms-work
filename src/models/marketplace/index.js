@@ -31,4 +31,5 @@ export { CommunityComment } from "./communityComment.js";
 export { CommunityFile } from "./communityFile.js";
 export { CommunityPurchase } from "./communityPurchase.js";
 export { CommunityAudioSession } from "./communityAudioSession.js";
+export { TutorWalletTransaction } from "./tutorWalletTransaction.js";
 

@@ -59,6 +59,7 @@ import {
   CommunityFile,
   CommunityPurchase,
   CommunityAudioSession,
+  TutorWalletTransaction,
 } from "./marketplace/index.js";
 
 export const setupAssociations = () => {

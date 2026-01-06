@@ -5,6 +5,7 @@ import { Courses } from "../../models/course/courses.js";
 import { DigitalDownloads } from "../../models/marketplace/digitalDownloads.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
+import { TutorWalletTransaction } from "../../models/marketplace/tutorWalletTransaction.js";
 import { db } from "../../database/database.js";
 import { Op } from "sequelize";
 
@@ -217,6 +218,24 @@ export const subscribe = TryCatchFunction(async (req, res) => {
         // Create new subscription
         subscription = await TutorSubscription.create(subscriptionData, { transaction });
       }
+
+      // Create wallet transaction record
+      await TutorWalletTransaction.create(
+        {
+          tutor_id: tutorId,
+          tutor_type: tutorType,
+          transaction_type: "debit",
+          amount: subscriptionPrice,
+          currency: currency,
+          service_name: `Subscription Payment - ${tier}`,
+          balance_before: walletBalance,
+          balance_after: newBalance,
+          related_id: subscription.id,
+          related_type: "subscription",
+          status: "successful",
+        },
+        { transaction }
+      );
 
       await transaction.commit();
 

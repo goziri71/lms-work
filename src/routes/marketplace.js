@@ -39,6 +39,11 @@ import {
   getTransactionById,
 } from "../controllers/marketplace/tutorEarnings.js";
 import {
+  getWalletBalance,
+  fundWallet,
+  getWalletTransactions,
+} from "../controllers/marketplace/tutorWallet.js";
+import {
   getProfile,
   updateProfile,
   changePassword,
@@ -243,6 +248,11 @@ router.get(
   tutorAuthorize,
   getTransactionById
 );
+
+// Wallet Management
+router.get("/tutor/wallet/balance", tutorAuthorize, getWalletBalance);
+router.post("/tutor/wallet/fund", tutorAuthorize, fundWallet);
+router.get("/tutor/wallet/transactions", tutorAuthorize, getWalletTransactions);
 
 // Metadata (Faculties & Programs for course creation)
 router.get("/tutor/faculties", tutorAuthorize, getFaculties);
