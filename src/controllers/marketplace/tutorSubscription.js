@@ -156,24 +156,59 @@ export const subscribe = TryCatchFunction(async (req, res) => {
   }
 
   // Handle payment for subscription (wallet payment required)
-  const subscriptionPrice = tierInfo.price;
-  const currency = "NGN"; // Default currency for subscriptions
+  // Subscription prices are in USD, convert to tutor's local currency
+  const subscriptionPriceUSD = tierInfo.price;
+  
+  // Get tutor wallet balance and currency
+  let tutor;
+  if (tutorType === "sole_tutor") {
+    tutor = await SoleTutor.findByPk(tutorId);
+  } else {
+    tutor = await Organization.findByPk(tutorId);
+  }
+
+  if (!tutor) {
+    throw new ErrorClass("Tutor not found", 404);
+  }
+
+  const tutorCurrency = (tutor.currency || "NGN").toUpperCase();
+  const walletBalance = parseFloat(tutor.wallet_balance || 0);
+
+  // Convert USD price to tutor's local currency
+  let subscriptionPrice = subscriptionPriceUSD;
+  let currency = "USD";
+  
+  if (subscriptionPriceUSD > 0 && tutorCurrency !== "USD") {
+    // Import FX conversion service
+    const { convertCurrency } = await import("../../services/fxConversionService.js");
+    try {
+      const conversion = await convertCurrency(subscriptionPriceUSD, "USD", tutorCurrency);
+      subscriptionPrice = conversion.convertedAmount;
+      currency = tutorCurrency;
+    } catch (error) {
+      console.error("FX conversion error:", error);
+      // Fallback: Use a simple exchange rate if FX service fails
+      // Default rates (approximate, should be updated from FX service)
+      const defaultRates = {
+        NGN: 1500,
+        GHS: 12,
+        KES: 130,
+        ZAR: 18,
+        GBP: 0.8,
+        EUR: 0.92,
+      };
+      const rate = defaultRates[tutorCurrency] || 1;
+      subscriptionPrice = subscriptionPriceUSD * rate;
+      currency = tutorCurrency;
+    }
+  } else if (subscriptionPriceUSD > 0) {
+    currency = "USD";
+  } else {
+    currency = tutorCurrency; // For free tier, use tutor's currency
+  }
 
   // Free tier doesn't require payment
   if (subscriptionPrice > 0) {
-    // Get tutor wallet balance
-    let tutor;
-    if (tutorType === "sole_tutor") {
-      tutor = await SoleTutor.findByPk(tutorId);
-    } else {
-      tutor = await Organization.findByPk(tutorId);
-    }
-
-    if (!tutor) {
-      throw new ErrorClass("Tutor not found", 404);
-    }
-
-    const walletBalance = parseFloat(tutor.wallet_balance || 0);
 
     // Check if wallet has sufficient balance
     if (walletBalance < subscriptionPrice) {
@@ -227,7 +262,7 @@ export const subscribe = TryCatchFunction(async (req, res) => {
           transaction_type: "debit",
           amount: subscriptionPrice,
           currency: currency,
-          service_name: `Subscription Payment - ${tier}`,
+          service_name: `Subscription Payment - ${subscription_tier}`,
           balance_before: walletBalance,
           balance_after: newBalance,
           related_id: subscription.id,
@@ -246,6 +281,9 @@ export const subscribe = TryCatchFunction(async (req, res) => {
           ...subscription.toJSON(),
           payment_amount: subscriptionPrice,
           currency,
+          original_price_usd: subscriptionPriceUSD,
+          converted_price: subscriptionPrice,
+          converted_currency: currency,
           new_wallet_balance: newBalance,
         },
       });
