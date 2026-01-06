@@ -432,18 +432,18 @@ export const initiateTransfer = async (transferData) => {
     );
   }
 
-  try {
-    // Prepare transfer payload
-    const payload = {
-      account_bank: accountBank,
-      account_number: accountNumber,
-      amount: parseFloat(amount),
-      narration: narration || `Payout to ${beneficiaryName || accountNumber}`,
-      currency: currency.toUpperCase(),
-      reference: reference,
-      beneficiary_name: beneficiaryName || accountNumber,
-    };
+  // Prepare transfer payload (outside try block so it's accessible in catch)
+  const payload = {
+    account_bank: accountBank,
+    account_number: accountNumber,
+    amount: parseFloat(amount),
+    narration: narration || `Payout to ${beneficiaryName || accountNumber}`,
+    currency: currency.toUpperCase(),
+    reference: reference,
+    beneficiary_name: beneficiaryName || accountNumber,
+  };
 
+  try {
     // If source currency is different, Flutterwave will handle FX conversion
     if (sourceCurrency && sourceCurrency.toUpperCase() !== currency.toUpperCase()) {
       // Note: Flutterwave handles FX conversion automatically if you have multi-currency wallet
