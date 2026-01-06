@@ -170,16 +170,19 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
 
     // Determine payout currency
     const payoutCurrency = requestedCurrency || bankAccount.currency;
-    const baseCurrency = "NGN"; // Your base currency (can be configurable)
+    // Use tutor's wallet currency as base (not hardcoded NGN)
+    // This ensures conversion is from wallet currency to payout currency
+    const walletCurrency = tutor.currency || "NGN"; // Fallback to NGN if not set
 
     // Convert amount if currencies differ
     let convertedAmount = payoutAmount;
     let fxRate = 1;
     let conversionInfo = null;
 
-    if (baseCurrency !== payoutCurrency) {
+    // Only convert if wallet currency differs from payout currency
+    if (walletCurrency !== payoutCurrency) {
       try {
-        conversionInfo = await convertCurrency(payoutAmount, baseCurrency, payoutCurrency);
+        conversionInfo = await convertCurrency(payoutAmount, walletCurrency, payoutCurrency);
         // Check if conversion used fallback (indicates API failure)
         // The fallback flag is in rateInfo.fallback
         if (conversionInfo?.rateInfo?.fallback === true) {
@@ -228,7 +231,8 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
         status: "pending",
         metadata: {
           conversion: conversionInfo,
-          base_currency: baseCurrency,
+          wallet_currency: walletCurrency,
+          payout_currency: payoutCurrency,
         },
       },
       { transaction }
@@ -248,7 +252,7 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
         tutor_type: tutorType,
         transaction_type: "debit",
         amount: payoutAmount,
-        currency: baseCurrency,
+        currency: walletCurrency,
         service_name: "Payout Request",
         transaction_reference: reference,
         balance_before: walletBalance,
