@@ -32,11 +32,20 @@ const uploadPostImage = multer({
     fileSize: 10 * 1024 * 1024, // 10MB max for post images
   },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
+    const allowedTypes = [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+    ];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new ErrorClass("Only JPEG, PNG, WebP, and GIF images are allowed", 400), false);
+      cb(
+        new ErrorClass("Only JPEG, PNG, WebP, and GIF images are allowed", 400),
+        false
+      );
     }
   },
 });
@@ -49,7 +58,11 @@ export const uploadPostImageMiddleware = uploadPostImage.single("image");
  */
 async function checkCommunityAccess(communityId, userId, userType, req = null) {
   // First, check if user is the community owner (tutor)
-  if (userType === "sole_tutor" || userType === "organization" || userType === "organization_user") {
+  if (
+    userType === "sole_tutor" ||
+    userType === "organization" ||
+    userType === "organization_user"
+  ) {
     const community = await Community.findByPk(communityId);
     if (!community) {
       throw new ErrorClass("Community not found", 404);
@@ -73,7 +86,9 @@ async function checkCommunityAccess(communityId, userId, userType, req = null) {
         tutorId = req.user.organizationId;
       } else {
         // Fetch organization_id from database if not in req.tutor or req.user
-        const { OrganizationUser } = await import("../../models/marketplace/organizationUser.js");
+        const { OrganizationUser } = await import(
+          "../../models/marketplace/organizationUser.js"
+        );
         const orgUser = await OrganizationUser.findByPk(userId, {
           attributes: ["organization_id"],
         });
@@ -87,7 +102,12 @@ async function checkCommunityAccess(communityId, userId, userType, req = null) {
     const userTutorId = Number(tutorId);
 
     // Check if user is the owner
-    if (tutorId && tutorType && communityTutorId === userTutorId && community.tutor_type === tutorType) {
+    if (
+      tutorId &&
+      tutorType &&
+      communityTutorId === userTutorId &&
+      community.tutor_type === tutorType
+    ) {
       return { isOwner: true, isMember: false };
     }
   }
@@ -132,11 +152,21 @@ export const createPost = TryCatchFunction(async (req, res) => {
 
   // Check who can post
   if (community.who_can_post === "tutor_only" && !access.isOwner) {
-    throw new ErrorClass("Only the tutor can create posts in this community", 403);
+    throw new ErrorClass(
+      "Only the tutor can create posts in this community",
+      403
+    );
   }
 
-  if (community.who_can_post === "members" && !access.isMember && !access.isOwner) {
-    throw new ErrorClass("Only members can create posts in this community", 403);
+  if (
+    community.who_can_post === "members" &&
+    !access.isMember &&
+    !access.isOwner
+  ) {
+    throw new ErrorClass(
+      "Only members can create posts in this community",
+      403
+    );
   }
 
   const { title, content, content_type = "text", category, tags } = req.body;
@@ -163,7 +193,9 @@ export const createPost = TryCatchFunction(async (req, res) => {
       throw new ErrorClass(`Image upload failed: ${error.message}`, 500);
     }
 
-    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+    const { data: urlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(fileName);
     imageUrl = urlData.publicUrl;
   }
 
@@ -190,30 +222,117 @@ export const createPost = TryCatchFunction(async (req, res) => {
   if (access.isOwner) {
     // For tutors, get tutor info
     if (userType === "sole_tutor") {
-      author = {
-        id: req.tutor.id,
-        name: `${req.tutor.fname || ""} ${req.tutor.lname || ""}`.trim() || req.tutor.email,
-        email: req.tutor.email,
-      };
-    } else if (userType === "organization" || userType === "organization_user") {
-      author = {
-        id: req.tutor.organization_id || req.tutor.id,
-        name: req.tutor.organization?.name || req.tutor.name || req.tutor.email,
-        email: req.tutor.email,
-      };
+      // Try req.tutor first, otherwise fetch from database
+      if (req?.tutor) {
+        author = {
+          id: req.tutor.id,
+          name:
+            `${req.tutor.fname || ""} ${req.tutor.lname || ""}`.trim() ||
+            req.tutor.email,
+          email: req.tutor.email,
+        };
+      } else {
+        // Fetch from database
+        const { SoleTutor } = await import(
+          "../../models/marketplace/soleTutor.js"
+        );
+        const tutor = await SoleTutor.findByPk(userId, {
+          attributes: ["id", "fname", "lname", "email"],
+        });
+        if (tutor) {
+          author = {
+            id: tutor.id,
+            name:
+              `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || tutor.email,
+            email: tutor.email,
+          };
+        }
+      }
+    } else if (
+      userType === "organization" ||
+      userType === "organization_user"
+    ) {
+      // Try req.tutor first, otherwise fetch from database
+      if (req?.tutor) {
+        author = {
+          id: req.tutor.organization_id || req.tutor.id,
+          name:
+            req.tutor.organization?.name || req.tutor.name || req.tutor.email,
+          email: req.tutor.email,
+        };
+      } else {
+        // Fetch from database
+        const { Organization } = await import(
+          "../../models/marketplace/organization.js"
+        );
+        const { OrganizationUser } = await import(
+          "../../models/marketplace/organizationUser.js"
+        );
+
+        if (userType === "organization") {
+          const org = await Organization.findByPk(userId, {
+            attributes: ["id", "name", "email"],
+          });
+          if (org) {
+            author = {
+              id: org.id,
+              name: org.name || org.email,
+              email: org.email,
+            };
+          }
+        } else {
+          // organization_user
+          const orgUser = await OrganizationUser.findByPk(userId, {
+            attributes: ["id", "organization_id", "fname", "lname", "email"],
+            include: [
+              {
+                model: Organization,
+                as: "organization",
+                attributes: ["id", "name"],
+                required: false,
+              },
+            ],
+          });
+          if (orgUser) {
+            author = {
+              id: orgUser.organization_id || orgUser.id,
+              name:
+                orgUser.organization?.name ||
+                `${orgUser.fname || ""} ${orgUser.lname || ""}`.trim() ||
+                orgUser.email,
+              email: orgUser.email,
+            };
+          }
+        }
+      }
     }
-    authorName = author.name;
+    authorName = author?.name || "Unknown";
   } else {
     // For students
     const student = await Students.findByPk(authorId, {
       attributes: ["id", "fname", "lname", "mname", "email"],
     });
-    authorName = `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim() || student.email;
+    if (student) {
+      authorName =
+        `${student.fname || ""} ${student.mname || ""} ${
+          student.lname || ""
+        }`.trim() || student.email;
+      author = {
+        id: student.id,
+        name: authorName,
+        email: student.email,
+      };
+    }
+  }
+
+  // Fallback if author not found
+  if (!author) {
     author = {
-      id: student.id,
-      name: authorName,
-      email: student.email,
+      id: userId,
+      name: "Unknown",
+      email: "",
     };
+    authorName = "Unknown";
   }
 
   res.status(201).json({
@@ -237,7 +356,13 @@ export const createPost = TryCatchFunction(async (req, res) => {
  */
 export const getPosts = TryCatchFunction(async (req, res) => {
   const { id: communityId } = req.params;
-  const { page = 1, limit = 20, category, search, status = "published" } = req.query;
+  const {
+    page = 1,
+    limit = 20,
+    category,
+    search,
+    status = "published",
+  } = req.query;
   const userId = req.user?.id;
   const userType = req.user?.userType;
 
@@ -284,7 +409,10 @@ export const getPosts = TryCatchFunction(async (req, res) => {
   // Format posts with author names
   const formattedPosts = posts.map((post) => {
     const author = post.author;
-    const authorName = `${author.fname || ""} ${author.mname || ""} ${author.lname || ""}`.trim() || author.email;
+    const authorName =
+      `${author.fname || ""} ${author.mname || ""} ${
+        author.lname || ""
+      }`.trim() || author.email;
 
     return {
       ...post.toJSON(),
@@ -353,7 +481,10 @@ export const getPost = TryCatchFunction(async (req, res) => {
   await post.increment("views");
 
   const author = post.author;
-  const authorName = `${author.fname || ""} ${author.mname || ""} ${author.lname || ""}`.trim() || author.email;
+  const authorName =
+    `${author.fname || ""} ${author.mname || ""} ${
+      author.lname || ""
+    }`.trim() || author.email;
 
   res.json({
     status: true,
@@ -391,7 +522,10 @@ export const updatePost = TryCatchFunction(async (req, res) => {
   });
 
   if (!post) {
-    throw new ErrorClass("Post not found or you don't have permission to update it", 404);
+    throw new ErrorClass(
+      "Post not found or you don't have permission to update it",
+      404
+    );
   }
 
   const { title, content, content_type, category, tags } = req.body;
@@ -402,7 +536,9 @@ export const updatePost = TryCatchFunction(async (req, res) => {
     if (post.image_url) {
       try {
         const urlParts = post.image_url.split("/");
-        const fileName = urlParts.slice(urlParts.indexOf("communities")).join("/");
+        const fileName = urlParts
+          .slice(urlParts.indexOf("communities"))
+          .join("/");
         const bucket = process.env.COMMUNITIES_BUCKET || "communities";
         await supabase.storage.from(bucket).remove([fileName]);
       } catch (error) {
@@ -426,7 +562,9 @@ export const updatePost = TryCatchFunction(async (req, res) => {
       throw new ErrorClass(`Image upload failed: ${error.message}`, 500);
     }
 
-    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+    const { data: urlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(fileName);
     post.image_url = urlData.publicUrl;
   }
 
@@ -434,7 +572,8 @@ export const updatePost = TryCatchFunction(async (req, res) => {
   if (content !== undefined) post.content = content;
   if (content_type !== undefined) post.content_type = content_type;
   if (category !== undefined) post.category = category;
-  if (tags !== undefined) post.tags = tags ? (Array.isArray(tags) ? tags : JSON.parse(tags)) : null;
+  if (tags !== undefined)
+    post.tags = tags ? (Array.isArray(tags) ? tags : JSON.parse(tags)) : null;
 
   await post.save();
 
@@ -463,7 +602,7 @@ export const deletePost = TryCatchFunction(async (req, res) => {
     id: postId,
     community_id: communityId,
   };
-  
+
   if (!access.isOwner) {
     // Students can only delete their own posts
     where.author_id = userId;
@@ -472,7 +611,10 @@ export const deletePost = TryCatchFunction(async (req, res) => {
   const post = await CommunityPost.findOne({ where });
 
   if (!post) {
-    throw new ErrorClass("Post not found or you don't have permission to delete it", 404);
+    throw new ErrorClass(
+      "Post not found or you don't have permission to delete it",
+      404
+    );
   }
 
   // Soft delete (mark as deleted)
@@ -526,33 +668,122 @@ export const createComment = TryCatchFunction(async (req, res) => {
 
   // Get author info - handle both students and tutors
   let author, authorName;
-  if (userType === "sole_tutor" || userType === "organization" || userType === "organization_user") {
+  if (
+    userType === "sole_tutor" ||
+    userType === "organization" ||
+    userType === "organization_user"
+  ) {
     // For tutors
     if (userType === "sole_tutor") {
-      author = {
-        id: req.tutor.id,
-        name: `${req.tutor.fname || ""} ${req.tutor.lname || ""}`.trim() || req.tutor.email,
-        email: req.tutor.email,
-      };
+      // Try req.tutor first, otherwise fetch from database
+      if (req?.tutor) {
+        author = {
+          id: req.tutor.id,
+          name:
+            `${req.tutor.fname || ""} ${req.tutor.lname || ""}`.trim() ||
+            req.tutor.email,
+          email: req.tutor.email,
+        };
+      } else {
+        // Fetch from database
+        const { SoleTutor } = await import(
+          "../../models/marketplace/soleTutor.js"
+        );
+        const tutor = await SoleTutor.findByPk(userId, {
+          attributes: ["id", "fname", "lname", "email"],
+        });
+        if (tutor) {
+          author = {
+            id: tutor.id,
+            name:
+              `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || tutor.email,
+            email: tutor.email,
+          };
+        }
+      }
     } else {
-      author = {
-        id: req.tutor.organization_id || req.tutor.id,
-        name: req.tutor.organization?.name || req.tutor.name || req.tutor.email,
-        email: req.tutor.email,
-      };
+      // organization or organization_user
+      // Try req.tutor first, otherwise fetch from database
+      if (req?.tutor) {
+        author = {
+          id: req.tutor.organization_id || req.tutor.id,
+          name:
+            req.tutor.organization?.name || req.tutor.name || req.tutor.email,
+          email: req.tutor.email,
+        };
+      } else {
+        // Fetch from database
+        const { Organization } = await import(
+          "../../models/marketplace/organization.js"
+        );
+        const { OrganizationUser } = await import(
+          "../../models/marketplace/organizationUser.js"
+        );
+
+        if (userType === "organization") {
+          const org = await Organization.findByPk(userId, {
+            attributes: ["id", "name", "email"],
+          });
+          if (org) {
+            author = {
+              id: org.id,
+              name: org.name || org.email,
+              email: org.email,
+            };
+          }
+        } else {
+          // organization_user
+          const orgUser = await OrganizationUser.findByPk(userId, {
+            attributes: ["id", "organization_id", "fname", "lname", "email"],
+            include: [
+              {
+                model: Organization,
+                as: "organization",
+                attributes: ["id", "name"],
+                required: false,
+              },
+            ],
+          });
+          if (orgUser) {
+            author = {
+              id: orgUser.organization_id || orgUser.id,
+              name:
+                orgUser.organization?.name ||
+                `${orgUser.fname || ""} ${orgUser.lname || ""}`.trim() ||
+                orgUser.email,
+              email: orgUser.email,
+            };
+          }
+        }
+      }
     }
-    authorName = author.name;
+    authorName = author?.name || "Unknown";
   } else {
     // For students
     const student = await Students.findByPk(userId, {
       attributes: ["id", "fname", "lname", "mname", "email"],
     });
-    authorName = `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim() || student.email;
+    if (student) {
+      authorName =
+        `${student.fname || ""} ${student.mname || ""} ${
+          student.lname || ""
+        }`.trim() || student.email;
+      author = {
+        id: student.id,
+        name: authorName,
+        email: student.email,
+      };
+    }
+  }
+
+  // Fallback if author not found
+  if (!author) {
     author = {
-      id: student.id,
-      name: authorName,
-      email: student.email,
+      id: userId,
+      name: "Unknown",
+      email: "",
     };
+    authorName = "Unknown";
   }
 
   res.status(201).json({
@@ -627,7 +858,10 @@ export const getComments = TryCatchFunction(async (req, res) => {
   // Format comments
   const formattedComments = comments.map((comment) => {
     const author = comment.author;
-    const authorName = `${author.fname || ""} ${author.mname || ""} ${author.lname || ""}`.trim() || author.email;
+    const authorName =
+      `${author.fname || ""} ${author.mname || ""} ${
+        author.lname || ""
+      }`.trim() || author.email;
 
     const formatted = {
       ...comment.toJSON(),
@@ -640,7 +874,10 @@ export const getComments = TryCatchFunction(async (req, res) => {
 
     if (comment.parentComment) {
       const parentAuthor = comment.parentComment.author;
-      const parentAuthorName = `${parentAuthor.fname || ""} ${parentAuthor.mname || ""} ${parentAuthor.lname || ""}`.trim() || parentAuthor.email;
+      const parentAuthorName =
+        `${parentAuthor.fname || ""} ${parentAuthor.mname || ""} ${
+          parentAuthor.lname || ""
+        }`.trim() || parentAuthor.email;
 
       formatted.parent_comment = {
         ...comment.parentComment.toJSON(),
@@ -715,7 +952,9 @@ export const uploadFile = TryCatchFunction(async (req, res) => {
     throw new ErrorClass(`File upload failed: ${error.message}`, 500);
   }
 
-  const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+  const { data: urlData } = supabase.storage
+    .from(bucket)
+    .getPublicUrl(fileName);
   const fileUrl = urlData.publicUrl;
 
   // Create file record
@@ -759,7 +998,10 @@ export const getFiles = TryCatchFunction(async (req, res) => {
         throw error;
       }
       // Otherwise throw generic access denied
-      throw new ErrorClass("You do not have access to view files in this community", 403);
+      throw new ErrorClass(
+        "You do not have access to view files in this community",
+        403
+      );
     }
   } else {
     // If not authenticated, deny access (files are private)
@@ -799,7 +1041,10 @@ export const getFiles = TryCatchFunction(async (req, res) => {
   // Format files
   const formattedFiles = files.map((file) => {
     const uploader = file.uploader;
-    const uploaderName = `${uploader.fname || ""} ${uploader.mname || ""} ${uploader.lname || ""}`.trim() || uploader.email;
+    const uploaderName =
+      `${uploader.fname || ""} ${uploader.mname || ""} ${
+        uploader.lname || ""
+      }`.trim() || uploader.email;
 
     return {
       ...file.toJSON(),
@@ -844,7 +1089,7 @@ export const deleteFile = TryCatchFunction(async (req, res) => {
     id: fileId,
     community_id: communityId,
   };
-  
+
   if (!access.isOwner) {
     // Students can only delete their own files
     where.uploaded_by = userId;
@@ -853,7 +1098,10 @@ export const deleteFile = TryCatchFunction(async (req, res) => {
   const file = await CommunityFile.findOne({ where });
 
   if (!file) {
-    throw new ErrorClass("File not found or you don't have permission to delete it", 404);
+    throw new ErrorClass(
+      "File not found or you don't have permission to delete it",
+      404
+    );
   }
 
   // Delete from Supabase
@@ -874,4 +1122,3 @@ export const deleteFile = TryCatchFunction(async (req, res) => {
     message: "File deleted successfully",
   });
 });
-
