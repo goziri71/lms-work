@@ -7,6 +7,7 @@ import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { initiateTransfer, getTransferStatus } from "../../services/flutterwaveService.js";
 import { convertCurrency } from "../../services/fxConversionService.js";
+import { getCurrencyFromCountry } from "../../services/currencyService.js";
 import { Op, Sequelize } from "sequelize";
 import { db } from "../../database/database.js";
 import crypto from "crypto";
@@ -169,10 +170,24 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
     }
 
     // Determine payout currency
-    const payoutCurrency = requestedCurrency || bankAccount.currency;
+    // IMPORTANT: Use bank account's country to determine currency, not the stored currency field
+    // This ensures we use the correct currency even if the stored currency is wrong
+    const bankAccountCurrency = getCurrencyFromCountry(bankAccount.country);
+    const payoutCurrency = requestedCurrency || bankAccountCurrency;
+    
     // Use tutor's wallet currency as base (not hardcoded NGN)
     // This ensures conversion is from wallet currency to payout currency
     const walletCurrency = tutor.currency || "NGN"; // Fallback to NGN if not set
+    
+    // Log currency determination for debugging
+    console.log("Payout currency determination:", {
+      bankAccountCountry: bankAccount.country,
+      bankAccountStoredCurrency: bankAccount.currency,
+      bankAccountCorrectCurrency: bankAccountCurrency,
+      requestedCurrency,
+      payoutCurrency,
+      walletCurrency,
+    });
 
     // Convert amount if currencies differ
     let convertedAmount = payoutAmount;
@@ -358,7 +373,45 @@ async function processPayoutTransfer(payoutId) {
 
     await transaction.commit();
 
+    // Validate currency matches bank account's country currency
+    // Use country to determine correct currency (not stored currency field which might be wrong)
+    const bankAccountCorrectCurrency = getCurrencyFromCountry(payout.bankAccount.country);
+    
+    if (payout.currency !== bankAccountCorrectCurrency) {
+      console.error(`Currency mismatch: Payout currency (${payout.currency}) does not match bank account country currency (${bankAccountCorrectCurrency}) for country ${payout.bankAccount.country}`);
+      // Update payout with error
+      await payout.update({
+        status: "failed",
+        failure_reason: `Currency mismatch: Payout currency (${payout.currency}) does not match the required currency (${bankAccountCorrectCurrency}) for bank accounts in ${payout.bankAccount.country}. Please update your bank account or request payout in the correct currency.`,
+        processed_at: new Date(),
+      });
+      // Refund wallet
+      await refundPayout(payout, updateTransaction);
+      return;
+    }
+
+    // Validate minimum amount (Flutterwave typically requires minimum amounts)
+    const minAmount = 100; // Minimum 100 in local currency
+    if (payout.converted_amount < minAmount) {
+      console.error(`Amount too small: ${payout.converted_amount} is less than minimum ${minAmount}`);
+      await payout.update({
+        status: "failed",
+        failure_reason: `Amount too small. Minimum payout amount is ${minAmount} ${payout.currency}`,
+        processed_at: new Date(),
+      });
+      await refundPayout(payout, updateTransaction);
+      return;
+    }
+
     // Initiate Flutterwave transfer (outside transaction to avoid long locks)
+    console.log("Initiating Flutterwave transfer:", {
+      accountBank: payout.bankAccount.bank_code,
+      accountNumber: payout.bankAccount.account_number.replace(/(.{4})(.*)/, "$1****"),
+      amount: payout.converted_amount,
+      currency: payout.currency,
+      reference: payout.flutterwave_reference,
+    });
+
     const transferResult = await initiateTransfer({
       accountBank: payout.bankAccount.bank_code,
       accountNumber: payout.bankAccount.account_number,
@@ -444,7 +497,22 @@ async function processPayoutTransfer(payoutId) {
 
         await updateTransaction.commit();
       } else {
-        // Transfer failed - refund wallet
+        // Transfer failed - update failure reason and refund wallet
+        const failureReason = transferResult.message || "Transfer processing failed";
+        await lockedPayout.update(
+          {
+            status: "failed",
+            failure_reason: failureReason,
+            processed_at: new Date(),
+            metadata: {
+              ...lockedPayout.metadata,
+              transfer_error: transferResult.errorDetails || transferResult.message,
+            },
+          },
+          { transaction: updateTransaction }
+        );
+        
+        // Refund wallet
         await refundPayout(lockedPayout, updateTransaction);
       }
     } catch (error) {

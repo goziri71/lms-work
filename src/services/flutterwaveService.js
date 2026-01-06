@@ -482,12 +482,24 @@ export const initiateTransfer = async (transferData) => {
       message: response.data.message || "Transfer initiation failed",
     };
   } catch (error) {
-    console.error("Flutterwave initiateTransfer error:", error.message);
+    // Log detailed error information
+    console.error("Flutterwave initiateTransfer error:", {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      url: error.config?.url,
+      payload: payload,
+    });
     
     if (error.response?.status === 400) {
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.data?.complete_message ||
+                          "Invalid transfer details";
       return {
         success: false,
-        message: error.response?.data?.message || "Invalid transfer details",
+        message: errorMessage,
+        errorDetails: error.response?.data,
       };
     }
 
