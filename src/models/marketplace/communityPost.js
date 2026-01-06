@@ -45,6 +45,11 @@ export const CommunityPost = db.define(
       allowNull: true,
       comment: "Post tags",
     },
+    image_url: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: "Post image URL",
+    },
     status: {
       type: DataTypes.ENUM("published", "pinned", "archived", "deleted"),
       allowNull: false,

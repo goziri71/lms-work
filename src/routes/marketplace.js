@@ -545,12 +545,23 @@ import {
   getFiles,
   deleteFile,
   uploadCommunityFileMiddleware,
+  uploadPostImageMiddleware,
 } from "../controllers/marketplace/communityContent.js";
 
-router.post("/communities/:id/posts", authorize, createPost);
+router.post(
+  "/communities/:id/posts",
+  authorize,
+  uploadPostImageMiddleware,
+  createPost
+);
 router.get("/communities/:id/posts", optionalAuthorize, getPosts);
 router.get("/communities/:id/posts/:postId", optionalAuthorize, getPost);
-router.put("/communities/:id/posts/:postId", authorize, updatePost);
+router.put(
+  "/communities/:id/posts/:postId",
+  authorize,
+  uploadPostImageMiddleware,
+  updatePost
+);
 router.delete("/communities/:id/posts/:postId", authorize, deletePost);
 router.post(
   "/communities/:id/posts/:postId/comments",

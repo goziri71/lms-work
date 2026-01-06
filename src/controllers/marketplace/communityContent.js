@@ -25,24 +25,73 @@ const uploadCommunityFile = multer({
 
 export const uploadCommunityFileMiddleware = uploadCommunityFile.single("file");
 
-/**
- * Helper to check if student has active access to community
- */
-async function checkCommunityAccess(communityId, studentId) {
-  const member = await CommunityMember.findOne({
-    where: {
-      community_id: communityId,
-      student_id: studentId,
-      status: "active",
-      subscription_status: "active",
-    },
-  });
+// Configure multer for post image uploads
+const uploadPostImage = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max for post images
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new ErrorClass("Only JPEG, PNG, WebP, and GIF images are allowed", 400), false);
+    }
+  },
+});
 
-  if (!member) {
-    throw new ErrorClass("You do not have active access to this community", 403);
+export const uploadPostImageMiddleware = uploadPostImage.single("image");
+
+/**
+ * Helper to check if user has access to community
+ * Checks both student membership and tutor ownership
+ */
+async function checkCommunityAccess(communityId, userId, userType, req = null) {
+  // First, check if user is the community owner (tutor)
+  if (userType === "sole_tutor" || userType === "organization" || userType === "organization_user") {
+    const community = await Community.findByPk(communityId);
+    if (!community) {
+      throw new ErrorClass("Community not found", 404);
+    }
+
+    // Get tutor info from request
+    let tutorId, tutorType;
+    if (userType === "sole_tutor") {
+      tutorId = req?.tutor?.id;
+      tutorType = "sole_tutor";
+    } else if (userType === "organization") {
+      tutorId = req?.tutor?.id;
+      tutorType = "organization";
+    } else if (userType === "organization_user") {
+      tutorId = req?.tutor?.organization_id;
+      tutorType = "organization";
+    }
+
+    // Check if user is the owner
+    if (tutorId && tutorType && community.tutor_id === tutorId && community.tutor_type === tutorType) {
+      return { isOwner: true, isMember: false };
+    }
   }
 
-  return member;
+  // If not owner, check if user is an active member (for students)
+  if (userType === "student") {
+    const member = await CommunityMember.findOne({
+      where: {
+        community_id: communityId,
+        student_id: userId,
+        status: "active",
+        subscription_status: "active",
+      },
+    });
+
+    if (member) {
+      return { isOwner: false, isMember: true, member };
+    }
+  }
+
+  // No access
+  throw new ErrorClass("You do not have active access to this community", 403);
 }
 
 /**
@@ -51,14 +100,11 @@ async function checkCommunityAccess(communityId, studentId) {
  */
 export const createPost = TryCatchFunction(async (req, res) => {
   const { id: communityId } = req.params;
-  const studentId = req.user?.id;
+  const userId = req.user?.id;
+  const userType = req.user?.userType;
 
-  if (req.user?.userType !== "student") {
-    throw new ErrorClass("Only students can create posts", 403);
-  }
-
-  // Check access
-  await checkCommunityAccess(communityId, studentId);
+  // Check access (allows both students and tutors)
+  const access = await checkCommunityAccess(communityId, userId, userType, req);
 
   // Get community
   const community = await Community.findByPk(communityId);
@@ -67,8 +113,12 @@ export const createPost = TryCatchFunction(async (req, res) => {
   }
 
   // Check who can post
-  if (community.who_can_post === "tutor_only") {
+  if (community.who_can_post === "tutor_only" && !access.isOwner) {
     throw new ErrorClass("Only the tutor can create posts in this community", 403);
+  }
+
+  if (community.who_can_post === "members" && !access.isMember && !access.isOwner) {
+    throw new ErrorClass("Only members can create posts in this community", 403);
   }
 
   const { title, content, content_type = "text", category, tags } = req.body;
@@ -77,26 +127,76 @@ export const createPost = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Post content is required", 400);
   }
 
+  // Upload image if provided
+  let imageUrl = null;
+  if (req.file) {
+    const fileExt = req.file.originalname.split(".").pop();
+    const fileName = `communities/${communityId}/posts/${userId}_${Date.now()}.${fileExt}`;
+    const bucket = process.env.COMMUNITIES_BUCKET || "communities";
+
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(fileName, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: false,
+      });
+
+    if (error) {
+      throw new ErrorClass(`Image upload failed: ${error.message}`, 500);
+    }
+
+    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+    imageUrl = urlData.publicUrl;
+  }
+
+  // Determine author ID - for tutors, use their ID; for students, use student ID
+  const authorId = userId;
+
   const post = await CommunityPost.create({
     community_id: communityId,
-    author_id: studentId,
+    author_id: authorId,
     title: title || null,
     content,
     content_type,
     category: category || null,
     tags: tags ? (Array.isArray(tags) ? tags : JSON.parse(tags)) : null,
+    image_url: imageUrl,
     status: "published",
   });
 
   // Increment post count
   await community.increment("post_count");
 
-  // Get author info
-  const author = await Students.findByPk(studentId, {
-    attributes: ["id", "fname", "lname", "mname", "email"],
-  });
-
-  const authorName = `${author.fname || ""} ${author.mname || ""} ${author.lname || ""}`.trim() || author.email;
+  // Get author info - handle both students and tutors
+  let author, authorName;
+  if (access.isOwner) {
+    // For tutors, get tutor info
+    if (userType === "sole_tutor") {
+      author = {
+        id: req.tutor.id,
+        name: `${req.tutor.fname || ""} ${req.tutor.lname || ""}`.trim() || req.tutor.email,
+        email: req.tutor.email,
+      };
+    } else if (userType === "organization" || userType === "organization_user") {
+      author = {
+        id: req.tutor.organization_id || req.tutor.id,
+        name: req.tutor.organization?.name || req.tutor.name || req.tutor.email,
+        email: req.tutor.email,
+      };
+    }
+    authorName = author.name;
+  } else {
+    // For students
+    const student = await Students.findByPk(authorId, {
+      attributes: ["id", "fname", "lname", "mname", "email"],
+    });
+    authorName = `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim() || student.email;
+    author = {
+      id: student.id,
+      name: authorName,
+      email: student.email,
+    };
+  }
 
   res.status(201).json({
     status: true,
@@ -120,12 +220,13 @@ export const createPost = TryCatchFunction(async (req, res) => {
 export const getPosts = TryCatchFunction(async (req, res) => {
   const { id: communityId } = req.params;
   const { page = 1, limit = 20, category, search, status = "published" } = req.query;
-  const studentId = req.user?.id;
+  const userId = req.user?.id;
+  const userType = req.user?.userType;
 
   // Check if user has access (optional auth for public browsing)
-  if (studentId) {
+  if (userId) {
     try {
-      await checkCommunityAccess(communityId, studentId);
+      await checkCommunityAccess(communityId, userId, userType, req);
     } catch (error) {
       // If no access, still allow viewing published posts (public browsing)
     }
@@ -199,12 +300,13 @@ export const getPosts = TryCatchFunction(async (req, res) => {
  */
 export const getPost = TryCatchFunction(async (req, res) => {
   const { id: communityId, postId } = req.params;
-  const studentId = req.user?.id;
+  const userId = req.user?.id;
+  const userType = req.user?.userType;
 
   // Check access
-  if (studentId) {
+  if (userId) {
     try {
-      await checkCommunityAccess(communityId, studentId);
+      await checkCommunityAccess(communityId, userId, userType, req);
     } catch (error) {
       // Allow viewing published posts even without active subscription
     }
@@ -256,14 +358,11 @@ export const getPost = TryCatchFunction(async (req, res) => {
  */
 export const updatePost = TryCatchFunction(async (req, res) => {
   const { id: communityId, postId } = req.params;
-  const studentId = req.user?.id;
+  const userId = req.user?.id;
+  const userType = req.user?.userType;
 
-  if (req.user?.userType !== "student") {
-    throw new ErrorClass("Only students can update posts", 403);
-  }
-
-  // Check access
-  await checkCommunityAccess(communityId, studentId);
+  // Check access (allows both students and tutors)
+  const access = await checkCommunityAccess(communityId, userId, userType, req);
 
   const post = await CommunityPost.findOne({
     where: {
@@ -278,6 +377,40 @@ export const updatePost = TryCatchFunction(async (req, res) => {
   }
 
   const { title, content, content_type, category, tags } = req.body;
+
+  // Handle image upload if provided
+  if (req.file) {
+    // Delete old image if exists
+    if (post.image_url) {
+      try {
+        const urlParts = post.image_url.split("/");
+        const fileName = urlParts.slice(urlParts.indexOf("communities")).join("/");
+        const bucket = process.env.COMMUNITIES_BUCKET || "communities";
+        await supabase.storage.from(bucket).remove([fileName]);
+      } catch (error) {
+        console.error("Error deleting old image:", error);
+      }
+    }
+
+    // Upload new image
+    const fileExt = req.file.originalname.split(".").pop();
+    const fileName = `communities/${communityId}/posts/${userId}_${Date.now()}.${fileExt}`;
+    const bucket = process.env.COMMUNITIES_BUCKET || "communities";
+
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(fileName, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: false,
+      });
+
+    if (error) {
+      throw new ErrorClass(`Image upload failed: ${error.message}`, 500);
+    }
+
+    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+    post.image_url = urlData.publicUrl;
+  }
 
   if (title !== undefined) post.title = title;
   if (content !== undefined) post.content = content;
@@ -301,22 +434,24 @@ export const updatePost = TryCatchFunction(async (req, res) => {
  */
 export const deletePost = TryCatchFunction(async (req, res) => {
   const { id: communityId, postId } = req.params;
-  const studentId = req.user?.id;
+  const userId = req.user?.id;
+  const userType = req.user?.userType;
 
-  if (req.user?.userType !== "student") {
-    throw new ErrorClass("Only students can delete posts", 403);
+  // Check access (allows both students and tutors)
+  const access = await checkCommunityAccess(communityId, userId, userType, req);
+
+  // Build where clause - allow tutors to delete any post in their community, students only their own
+  const where = {
+    id: postId,
+    community_id: communityId,
+  };
+  
+  if (!access.isOwner) {
+    // Students can only delete their own posts
+    where.author_id = userId;
   }
 
-  // Check access
-  await checkCommunityAccess(communityId, studentId);
-
-  const post = await CommunityPost.findOne({
-    where: {
-      id: postId,
-      community_id: communityId,
-      author_id: studentId,
-    },
-  });
+  const post = await CommunityPost.findOne({ where });
 
   if (!post) {
     throw new ErrorClass("Post not found or you don't have permission to delete it", 404);
@@ -342,14 +477,11 @@ export const deletePost = TryCatchFunction(async (req, res) => {
  */
 export const createComment = TryCatchFunction(async (req, res) => {
   const { id: communityId, postId } = req.params;
-  const studentId = req.user?.id;
+  const userId = req.user?.id;
+  const userType = req.user?.userType;
 
-  if (req.user?.userType !== "student") {
-    throw new ErrorClass("Only students can create comments", 403);
-  }
-
-  // Check access
-  await checkCommunityAccess(communityId, studentId);
+  // Check access (allows both students and tutors)
+  await checkCommunityAccess(communityId, userId, userType, req);
 
   // Verify post exists
   const post = await CommunityPost.findByPk(postId);
@@ -365,7 +497,7 @@ export const createComment = TryCatchFunction(async (req, res) => {
 
   const comment = await CommunityComment.create({
     post_id: postId,
-    author_id: studentId,
+    author_id: userId,
     parent_comment_id: parent_comment_id || null,
     content,
     status: "published",
@@ -374,12 +506,36 @@ export const createComment = TryCatchFunction(async (req, res) => {
   // Increment comment count
   await post.increment("comments_count");
 
-  // Get author info
-  const author = await Students.findByPk(studentId, {
-    attributes: ["id", "fname", "lname", "mname", "email"],
-  });
-
-  const authorName = `${author.fname || ""} ${author.mname || ""} ${author.lname || ""}`.trim() || author.email;
+  // Get author info - handle both students and tutors
+  let author, authorName;
+  if (userType === "sole_tutor" || userType === "organization" || userType === "organization_user") {
+    // For tutors
+    if (userType === "sole_tutor") {
+      author = {
+        id: req.tutor.id,
+        name: `${req.tutor.fname || ""} ${req.tutor.lname || ""}`.trim() || req.tutor.email,
+        email: req.tutor.email,
+      };
+    } else {
+      author = {
+        id: req.tutor.organization_id || req.tutor.id,
+        name: req.tutor.organization?.name || req.tutor.name || req.tutor.email,
+        email: req.tutor.email,
+      };
+    }
+    authorName = author.name;
+  } else {
+    // For students
+    const student = await Students.findByPk(userId, {
+      attributes: ["id", "fname", "lname", "mname", "email"],
+    });
+    authorName = `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim() || student.email;
+    author = {
+      id: student.id,
+      name: authorName,
+      email: student.email,
+    };
+  }
 
   res.status(201).json({
     status: true,
@@ -403,12 +559,13 @@ export const createComment = TryCatchFunction(async (req, res) => {
 export const getComments = TryCatchFunction(async (req, res) => {
   const { id: communityId, postId } = req.params;
   const { page = 1, limit = 50 } = req.query;
-  const studentId = req.user?.id;
+  const userId = req.user?.id;
+  const userType = req.user?.userType;
 
   // Check access (optional)
-  if (studentId) {
+  if (userId) {
     try {
-      await checkCommunityAccess(communityId, studentId);
+      await checkCommunityAccess(communityId, userId, userType, req);
     } catch (error) {
       // Allow viewing comments even without active subscription
     }
@@ -502,14 +659,11 @@ export const getComments = TryCatchFunction(async (req, res) => {
  */
 export const uploadFile = TryCatchFunction(async (req, res) => {
   const { id: communityId } = req.params;
-  const studentId = req.user?.id;
+  const userId = req.user?.id;
+  const userType = req.user?.userType;
 
-  if (req.user?.userType !== "student") {
-    throw new ErrorClass("Only students can upload files", 403);
-  }
-
-  // Check access
-  await checkCommunityAccess(communityId, studentId);
+  // Check access (allows both students and tutors)
+  await checkCommunityAccess(communityId, userId, userType, req);
 
   // Get community
   const community = await Community.findByPk(communityId);
@@ -529,7 +683,7 @@ export const uploadFile = TryCatchFunction(async (req, res) => {
 
   // Upload to Supabase
   const fileExt = req.file.originalname.split(".").pop();
-  const fileName = `communities/${communityId}/files/${studentId}_${Date.now()}.${fileExt}`;
+  const fileName = `communities/${communityId}/files/${userId}_${Date.now()}.${fileExt}`;
   const bucket = process.env.COMMUNITIES_BUCKET || "communities";
 
   const { data, error } = await supabase.storage
@@ -549,7 +703,7 @@ export const uploadFile = TryCatchFunction(async (req, res) => {
   // Create file record
   const file = await CommunityFile.create({
     community_id: communityId,
-    uploaded_by: studentId,
+    uploaded_by: userId,
     file_name: req.file.originalname,
     file_url: fileUrl,
     file_type: req.file.mimetype,
@@ -573,12 +727,13 @@ export const uploadFile = TryCatchFunction(async (req, res) => {
 export const getFiles = TryCatchFunction(async (req, res) => {
   const { id: communityId } = req.params;
   const { page = 1, limit = 20, category, search } = req.query;
-  const studentId = req.user?.id;
+  const userId = req.user?.id;
+  const userType = req.user?.userType;
 
-  // Check access
-  if (studentId) {
+  // Check access (allows both students and tutors)
+  if (userId) {
     try {
-      await checkCommunityAccess(communityId, studentId);
+      await checkCommunityAccess(communityId, userId, userType, req);
     } catch (error) {
       throw new ErrorClass("You do not have access to view files in this community", 403);
     }
@@ -651,22 +806,24 @@ export const getFiles = TryCatchFunction(async (req, res) => {
  */
 export const deleteFile = TryCatchFunction(async (req, res) => {
   const { id: communityId, fileId } = req.params;
-  const studentId = req.user?.id;
+  const userId = req.user?.id;
+  const userType = req.user?.userType;
 
-  if (req.user?.userType !== "student") {
-    throw new ErrorClass("Only students can delete files", 403);
+  // Check access (allows both students and tutors)
+  const access = await checkCommunityAccess(communityId, userId, userType, req);
+
+  // Build where clause - allow tutors to delete any file in their community, students only their own
+  const where = {
+    id: fileId,
+    community_id: communityId,
+  };
+  
+  if (!access.isOwner) {
+    // Students can only delete their own files
+    where.uploaded_by = userId;
   }
 
-  // Check access
-  await checkCommunityAccess(communityId, studentId);
-
-  const file = await CommunityFile.findOne({
-    where: {
-      id: fileId,
-      community_id: communityId,
-      uploaded_by: studentId,
-    },
-  });
+  const file = await CommunityFile.findOne({ where });
 
   if (!file) {
     throw new ErrorClass("File not found or you don't have permission to delete it", 404);
