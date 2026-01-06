@@ -90,44 +90,44 @@ export async function getExchangeRate(
   }
   
   try {
-    // Prepare request body
-    const requestBody = {
-      source: {
-        currency: source,
-      },
-      destination: {
-        currency: destination,
-      },
-    };
+    // Prepare query parameters for GET request
+    // Flutterwave API uses GET with query params
+    // Based on Flutterwave docs: GET /v3/transfers/rates?amount=1000&destination_currency=USD&source_currency=KES
+    const params = new URLSearchParams();
+    params.append("source_currency", source);
+    params.append("destination_currency", destination);
     
     // If destination amount is provided, include it
     if (destinationAmount) {
-      requestBody.destination.amount = destinationAmount.toString();
+      params.append("amount", destinationAmount.toString());
     }
     
-    // Call Flutterwave Rates API
-    const response = await axios.post(
-      `${FLUTTERWAVE_BASE_URL}/transfers/rates`,
-      requestBody,
-      {
-        headers: {
-          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 10000, // 10 second timeout
-      }
-    );
+    // Call Flutterwave Rates API (GET request)
+    // Endpoint: GET /v3/transfers/rates
+    const ratesUrl = `${FLUTTERWAVE_BASE_URL}/transfers/rates?${params.toString()}`;
+    
+    const response = await axios.get(ratesUrl, {
+      headers: {
+        Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 10000, // 10 second timeout
+    });
     
     if (response.data.status === "success" && response.data.data) {
+      const data = response.data.data;
+      
+      // Flutterwave returns rate data in this format:
+      // { rate: number, source: { currency, amount }, destination: { currency, amount } }
       const rateData = {
-        rate: parseFloat(response.data.data.rate),
+        rate: parseFloat(data.rate || 1),
         source: {
-          amount: parseFloat(response.data.data.source.amount),
-          currency: response.data.data.source.currency,
+          amount: parseFloat(data.source?.amount || 0),
+          currency: data.source?.currency || source,
         },
         destination: {
-          amount: parseFloat(response.data.data.destination.amount),
-          currency: response.data.data.destination.currency,
+          amount: parseFloat(data.destination?.amount || 0),
+          currency: data.destination?.currency || destination,
         },
         cached: false,
       };
