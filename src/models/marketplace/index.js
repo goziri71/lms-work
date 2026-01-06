@@ -32,4 +32,8 @@ export { CommunityFile } from "./communityFile.js";
 export { CommunityPurchase } from "./communityPurchase.js";
 export { CommunityAudioSession } from "./communityAudioSession.js";
 export { TutorWalletTransaction } from "./tutorWalletTransaction.js";
+// Learner Activity Tracking exports
+export { LearnerActivityLog } from "./learnerActivityLog.js";
+export { CourseProgress } from "./courseProgress.js";
+export { LearnerLoginHistory } from "./learnerLoginHistory.js";
 

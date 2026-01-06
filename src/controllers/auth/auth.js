@@ -276,6 +276,49 @@ export const login = TryCatchFunction(async (req, res) => {
 
   const accessToken = await authService.generateAccessToken(tokenPayload);
 
+  // Track login history for students
+  if (userType === "student") {
+    const { LearnerLoginHistory } = await import(
+      "../../models/marketplace/learnerLoginHistory.js"
+    );
+    const { getIPGeolocation, parseUserAgent } = await import(
+      "../../services/ipGeolocationService.js"
+    );
+
+    const ipAddress =
+      req.ip ||
+      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+      req.connection?.remoteAddress;
+    const userAgent = req.headers["user-agent"] || null;
+
+    // Get geolocation and device info asynchronously (don't block login)
+    if (ipAddress && ipAddress !== "::1" && ipAddress !== "127.0.0.1") {
+      getIPGeolocation(ipAddress)
+        .then(async (geo) => {
+          const deviceInfo = parseUserAgent(userAgent);
+
+          await LearnerLoginHistory.create({
+            student_id: user.id,
+            ip_address: ipAddress,
+            location_country: geo.country || null,
+            location_city: geo.city || null,
+            location_region: geo.region || null,
+            location_latitude: geo.latitude || null,
+            location_longitude: geo.longitude || null,
+            device_type: deviceInfo.device_type || null,
+            browser: deviceInfo.browser || null,
+            operating_system: deviceInfo.operating_system || null,
+            user_agent: userAgent,
+            login_at: new Date(),
+            is_active: true,
+          });
+        })
+        .catch((err) => {
+          console.error("Error tracking login history:", err.message);
+        });
+    }
+  }
+
   // Prepare user data based on type
   let userData = {
     id: user.id,

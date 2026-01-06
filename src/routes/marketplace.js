@@ -51,6 +51,12 @@ import {
   updateSettings,
 } from "../controllers/marketplace/tutorProfile.js";
 import {
+  getMyLearners,
+  getLearnerDetails,
+  getLearnerActivity,
+  getLearnerCourseProgress,
+} from "../controllers/marketplace/tutorLearnerManagement.js";
+import {
   getOrganizationUsers,
   getOrganizationUserById,
   createOrganizationUser,
@@ -701,5 +707,19 @@ import {
 router.post("/tutor/payouts/request", tutorAuthorize, requestPayout);
 router.get("/tutor/payouts", tutorAuthorize, listPayouts);
 router.get("/tutor/payouts/:id", tutorAuthorize, getPayout);
+
+// Learner Management & Activity Tracking
+router.get("/tutor/learners", tutorAuthorize, getMyLearners);
+router.get("/tutor/learners/:learnerId", tutorAuthorize, getLearnerDetails);
+router.get(
+  "/tutor/learners/:learnerId/activity",
+  tutorAuthorize,
+  getLearnerActivity
+);
+router.get(
+  "/tutor/learners/:learnerId/courses/:courseId/progress",
+  tutorAuthorize,
+  getLearnerCourseProgress
+);
 
 export default router;

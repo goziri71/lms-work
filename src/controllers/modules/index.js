@@ -18,6 +18,7 @@ import {
   getCreatorId,
 } from "../../utils/examAccessControl.js";
 import { logAdminActivity } from "../../middlewares/adminAuthorize.js";
+import { trackLearnerActivity } from "../../middlewares/learnerActivityTracker.js";
 
 // Helper function to normalize userType (handle admin with super_admin role)
 function normalizeUserType(req) {
@@ -605,6 +606,22 @@ export const getUnitsByModule = TryCatchFunction(async (req, res) => {
     where: { module_id: moduleId },
     order: [["created_at", "ASC"], ["id", "ASC"]],
   });
+
+  // Track module view activity for students
+  if (userType === "student") {
+    trackLearnerActivity(
+      {
+        activityType: "module_view",
+        studentId: userId,
+        courseId: moduleRecord.course_id,
+        moduleId: moduleId,
+      },
+      req
+    ).catch((err) => {
+      console.error("Error tracking module view:", err.message);
+    });
+  }
+
   res.status(200).json({
     status: true,
     code: 200,

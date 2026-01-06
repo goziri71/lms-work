@@ -60,6 +60,9 @@ import {
   CommunityPurchase,
   CommunityAudioSession,
   TutorWalletTransaction,
+  LearnerActivityLog,
+  CourseProgress,
+  LearnerLoginHistory,
 } from "./marketplace/index.js";
 
 export const setupAssociations = () => {
@@ -895,5 +898,59 @@ export const setupAssociations = () => {
   CommunityAudioSession.belongsTo(Community, {
     foreignKey: "community_id",
     as: "community",
+  });
+
+  // ============================================
+  // LEARNER ACTIVITY TRACKING ASSOCIATIONS
+  // ============================================
+
+  // Students -> Learner Activity Logs
+  Students.hasMany(LearnerActivityLog, {
+    foreignKey: "student_id",
+    as: "activityLogs",
+  });
+  LearnerActivityLog.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Courses -> Learner Activity Logs
+  Courses.hasMany(LearnerActivityLog, {
+    foreignKey: "course_id",
+    as: "learnerActivities",
+  });
+  LearnerActivityLog.belongsTo(Courses, {
+    foreignKey: "course_id",
+    as: "course",
+  });
+
+  // Students -> Course Progress
+  Students.hasMany(CourseProgress, {
+    foreignKey: "student_id",
+    as: "courseProgress",
+  });
+  CourseProgress.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Courses -> Course Progress
+  Courses.hasMany(CourseProgress, {
+    foreignKey: "course_id",
+    as: "studentProgress",
+  });
+  CourseProgress.belongsTo(Courses, {
+    foreignKey: "course_id",
+    as: "course",
+  });
+
+  // Students -> Login History
+  Students.hasMany(LearnerLoginHistory, {
+    foreignKey: "student_id",
+    as: "loginHistory",
+  });
+  LearnerLoginHistory.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
   });
 };
