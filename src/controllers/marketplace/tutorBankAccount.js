@@ -363,8 +363,10 @@ export const deleteBankAccount = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Bank account not found", 404);
   }
 
-  // Check if there are pending payouts using this account
+  // Check if there are any payouts using this account (foreign key constraint prevents deletion)
   const { TutorPayout } = await import("../../models/marketplace/tutorPayout.js");
+  
+  // Check for pending/processing payouts (critical - these must be resolved first)
   const pendingPayouts = await TutorPayout.count({
     where: {
       bank_account_id: id,
@@ -376,7 +378,21 @@ export const deleteBankAccount = TryCatchFunction(async (req, res) => {
 
   if (pendingPayouts > 0) {
     throw new ErrorClass(
-      "Cannot delete bank account with pending payouts",
+      "Cannot delete bank account with pending or processing payouts. Please wait for these payouts to complete or cancel them first.",
+      400
+    );
+  }
+
+  // Check for any payouts at all (for audit purposes, we keep accounts with payout history)
+  const allPayouts = await TutorPayout.count({
+    where: {
+      bank_account_id: id,
+    },
+  });
+
+  if (allPayouts > 0) {
+    throw new ErrorClass(
+      `Cannot delete bank account that has been used for ${allPayouts} payout(s). Bank accounts with payout history cannot be deleted for audit purposes. You can add a new account and set it as primary instead.`,
       400
     );
   }
