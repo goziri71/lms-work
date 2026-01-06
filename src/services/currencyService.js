@@ -3,7 +3,51 @@
  * Handles country-to-currency mapping and currency detection
  */
 
-// Country to Currency Mapping
+// ISO Country Code to Currency Mapping
+// Based on Flutterwave supported countries
+const ISO_COUNTRY_CURRENCY_MAP = {
+  // African Countries
+  NG: "NGN", // Nigeria
+  GH: "GHS", // Ghana
+  KE: "KES", // Kenya
+  ZA: "ZAR", // South Africa
+  UG: "UGX", // Uganda
+  TZ: "TZS", // Tanzania
+  RW: "RWF", // Rwanda
+  ZM: "ZMW", // Zambia
+  CM: "XAF", // Cameroon
+  CI: "XOF", // Ivory Coast
+  SN: "XOF", // Senegal
+  MW: "MWK", // Malawi
+  MU: "MUR", // Mauritius
+  EG: "EGP", // Egypt
+  MZ: "MZN", // Mozambique
+  
+  // European Countries
+  GB: "GBP", // United Kingdom
+  FR: "EUR", // France
+  DE: "EUR", // Germany
+  ES: "EUR", // Spain
+  IT: "EUR", // Italy
+  NL: "EUR", // Netherlands
+  BE: "EUR", // Belgium
+  PT: "EUR", // Portugal
+  GR: "EUR", // Greece
+  PL: "EUR", // Poland
+  SE: "EUR", // Sweden
+  DK: "EUR", // Denmark
+  FI: "EUR", // Finland
+  IE: "EUR", // Ireland
+  AT: "EUR", // Austria
+  CH: "CHF", // Switzerland
+  NO: "NOK", // Norway
+  
+  // North America
+  US: "USD", // United States
+  CA: "CAD", // Canada
+};
+
+// Country Name to Currency Mapping
 // Based on Flutterwave supported countries
 const COUNTRY_CURRENCY_MAP = {
   // African Countries
@@ -57,23 +101,33 @@ const COUNTRY_CURRENCY_MAP = {
 };
 
 /**
- * Get currency code from country name
- * @param {string} country - Country name (case-insensitive)
+ * Get currency code from country name or ISO code
+ * @param {string} country - Country name (case-insensitive) or ISO country code (e.g., 'NG', 'GH', 'KE')
  * @returns {string} Currency code (e.g., 'NGN', 'USD', 'GBP')
  */
 export function getCurrencyFromCountry(country) {
   if (!country) return "USD";
   
-  const normalizedCountry = country.toLowerCase().trim();
+  const normalizedCountry = country.trim();
+  const upperCountry = normalizedCountry.toUpperCase();
+  const lowerCountry = normalizedCountry.toLowerCase();
   
-  // Direct match
-  if (COUNTRY_CURRENCY_MAP[normalizedCountry]) {
-    return COUNTRY_CURRENCY_MAP[normalizedCountry];
+  // First, check if it's an ISO country code (2 letters, uppercase)
+  if (normalizedCountry.length === 2 && /^[A-Z]{2}$/i.test(normalizedCountry)) {
+    if (ISO_COUNTRY_CURRENCY_MAP[upperCountry]) {
+      return ISO_COUNTRY_CURRENCY_MAP[upperCountry];
+    }
+  }
+  
+  // Check country name map (direct match)
+  if (COUNTRY_CURRENCY_MAP[lowerCountry]) {
+    return COUNTRY_CURRENCY_MAP[lowerCountry];
   }
   
   // Check for partial matches (e.g., "United States" contains "united states")
   for (const [key, currency] of Object.entries(COUNTRY_CURRENCY_MAP)) {
-    if (normalizedCountry.includes(key) || key.includes(normalizedCountry)) {
+    if (key === "default") continue; // Skip default entry
+    if (lowerCountry.includes(key) || key.includes(lowerCountry)) {
       return currency;
     }
   }
@@ -88,7 +142,7 @@ export function getCurrencyFromCountry(country) {
     "slovakia", "slovenia", "ukraine", "vatican"
   ];
   
-  if (europeanCountries.some(eu => normalizedCountry.includes(eu))) {
+  if (europeanCountries.some(eu => lowerCountry.includes(eu))) {
     return "EUR";
   }
   
