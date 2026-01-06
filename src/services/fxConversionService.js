@@ -93,14 +93,14 @@ export async function getExchangeRate(
     // Prepare query parameters for GET request
     // Flutterwave API uses GET with query params
     // Based on Flutterwave docs: GET /v3/transfers/rates?amount=1000&destination_currency=USD&source_currency=KES
+    // IMPORTANT: Flutterwave requires 'amount' parameter - use 1 as default if not provided
     const params = new URLSearchParams();
     params.append("source_currency", source);
     params.append("destination_currency", destination);
     
-    // If destination amount is provided, include it
-    if (destinationAmount) {
-      params.append("amount", destinationAmount.toString());
-    }
+    // Flutterwave requires amount parameter - use provided amount or default to 1
+    const amountToUse = destinationAmount || 1;
+    params.append("amount", amountToUse.toString());
     
     // Call Flutterwave Rates API (GET request)
     // Endpoint: GET /v3/transfers/rates
@@ -200,17 +200,18 @@ export async function convertCurrency(amount, fromCurrency, toCurrency) {
     };
   }
   
-  // Get exchange rate
-  const rateInfo = await getExchangeRate(from, to);
+  // Get exchange rate - pass the amount since Flutterwave requires it
+  // Flutterwave will return the converted amount directly
+  const rateInfo = await getExchangeRate(from, to, amount);
   
   // Calculate converted amount
   let convertedAmount;
   if (rateInfo.destination.amount && rateInfo.source.amount) {
-    // If rate includes amounts, calculate proportionally
-    const rate = rateInfo.destination.amount / rateInfo.source.amount;
-    convertedAmount = amount * rate;
+    // Flutterwave returns the converted amount in destination.amount
+    // Use it directly since it's already calculated for our specific amount
+    convertedAmount = rateInfo.destination.amount;
   } else {
-    // Use rate directly
+    // Fallback: Use rate directly if amounts not provided
     convertedAmount = amount * rateInfo.rate;
   }
   
