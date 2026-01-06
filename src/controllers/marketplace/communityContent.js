@@ -56,20 +56,38 @@ async function checkCommunityAccess(communityId, userId, userType, req = null) {
     }
 
     // Get tutor info from request
+    // Try req.tutor first (if tutorAuthorize was used), otherwise use req.user.id
     let tutorId, tutorType;
     if (userType === "sole_tutor") {
-      tutorId = req?.tutor?.id;
+      tutorId = req?.tutor?.id || userId;
       tutorType = "sole_tutor";
     } else if (userType === "organization") {
-      tutorId = req?.tutor?.id;
+      tutorId = req?.tutor?.id || userId;
       tutorType = "organization";
     } else if (userType === "organization_user") {
-      tutorId = req?.tutor?.organization_id;
+      // For organization_user, we need to get the organization_id
+      if (req?.tutor?.organization_id) {
+        tutorId = req.tutor.organization_id;
+      } else if (req?.user?.organizationId) {
+        // Check if organizationId is in req.user (from JWT token)
+        tutorId = req.user.organizationId;
+      } else {
+        // Fetch organization_id from database if not in req.tutor or req.user
+        const { OrganizationUser } = await import("../../models/marketplace/organizationUser.js");
+        const orgUser = await OrganizationUser.findByPk(userId, {
+          attributes: ["organization_id"],
+        });
+        tutorId = orgUser?.organization_id;
+      }
       tutorType = "organization";
     }
 
+    // Convert IDs to numbers for comparison (in case one is string and other is number)
+    const communityTutorId = Number(community.tutor_id);
+    const userTutorId = Number(tutorId);
+
     // Check if user is the owner
-    if (tutorId && tutorType && community.tutor_id === tutorId && community.tutor_type === tutorType) {
+    if (tutorId && tutorType && communityTutorId === userTutorId && community.tutor_type === tutorType) {
       return { isOwner: true, isMember: false };
     }
   }
@@ -731,12 +749,21 @@ export const getFiles = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
 
   // Check access (allows both students and tutors)
-  if (userId) {
+  // If user is authenticated, verify access
+  if (userId && userType) {
     try {
       await checkCommunityAccess(communityId, userId, userType, req);
     } catch (error) {
+      // Re-throw the original error if it's already an ErrorClass
+      if (error instanceof ErrorClass) {
+        throw error;
+      }
+      // Otherwise throw generic access denied
       throw new ErrorClass("You do not have access to view files in this community", 403);
     }
+  } else {
+    // If not authenticated, deny access (files are private)
+    throw new ErrorClass("Authentication required to view files", 401);
   }
 
   const where = {
