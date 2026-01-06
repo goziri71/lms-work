@@ -321,13 +321,8 @@ async function processPayoutTransfer(payoutId) {
 
   try {
     // Lock payout record to prevent concurrent processing
+    // Note: Can't use FOR UPDATE with LEFT JOIN, so fetch payout first, then bank account
     const payout = await TutorPayout.findByPk(payoutId, {
-      include: [
-        {
-          model: TutorBankAccount,
-          as: "bankAccount",
-        },
-      ],
       lock: Sequelize.Transaction.LOCK.UPDATE,
       transaction,
     });
@@ -336,6 +331,20 @@ async function processPayoutTransfer(payoutId) {
       await transaction.rollback();
       return;
     }
+
+    // Fetch bank account separately (can't use include with FOR UPDATE)
+    const bankAccount = await TutorBankAccount.findByPk(payout.bank_account_id, {
+      transaction,
+    });
+
+    if (!bankAccount) {
+      await transaction.rollback();
+      console.error(`Bank account ${payout.bank_account_id} not found for payout ${payoutId}`);
+      return;
+    }
+
+    // Attach bank account to payout object for later use
+    payout.bankAccount = bankAccount;
 
     // Check if already refunded (prevent duplicate refunds)
     if (payout.metadata?.refunded) {
@@ -605,14 +614,15 @@ export const listPayouts = TryCatchFunction(async (req, res) => {
     data: {
       payouts: payouts.map((p) => ({
         id: p.id,
-        amount: parseFloat(p.amount),
-        currency: p.currency,
+        amount: parseFloat(p.amount), // Amount in wallet currency
+        wallet_currency: p.metadata?.wallet_currency || "NGN", // Currency of wallet balance
+        currency: p.currency, // Payout currency (bank account currency)
         converted_amount: p.converted_amount
           ? parseFloat(p.converted_amount)
-          : null,
+          : null, // Converted amount in payout currency
         fx_rate: p.fx_rate ? parseFloat(p.fx_rate) : null,
         transfer_fee: parseFloat(p.transfer_fee),
-        net_amount: parseFloat(p.net_amount),
+        net_amount: parseFloat(p.net_amount), // Net amount in payout currency
         status: p.status,
         reference: p.flutterwave_reference,
         bank_account: p.bankAccount
@@ -703,14 +713,15 @@ export const getPayout = TryCatchFunction(async (req, res) => {
     success: true,
     data: {
       id: payout.id,
-      amount: parseFloat(payout.amount),
-      currency: payout.currency,
+      amount: parseFloat(payout.amount), // Amount in wallet currency
+      wallet_currency: payout.metadata?.wallet_currency || "NGN", // Currency of wallet balance
+      currency: payout.currency, // Payout currency (bank account currency)
       converted_amount: payout.converted_amount
         ? parseFloat(payout.converted_amount)
-        : null,
+        : null, // Converted amount in payout currency
       fx_rate: payout.fx_rate ? parseFloat(payout.fx_rate) : null,
       transfer_fee: parseFloat(payout.transfer_fee),
-      net_amount: parseFloat(payout.net_amount),
+      net_amount: parseFloat(payout.net_amount), // Net amount in payout currency
       status: payout.status,
       reference: payout.flutterwave_reference,
       flutterwave_transfer_id: payout.flutterwave_transfer_id,
