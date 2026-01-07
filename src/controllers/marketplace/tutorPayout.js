@@ -379,14 +379,35 @@ async function processPayoutTransfer(payoutId) {
     
     if (payout.currency !== bankAccountCorrectCurrency) {
       console.error(`Currency mismatch: Payout currency (${payout.currency}) does not match bank account country currency (${bankAccountCorrectCurrency}) for country ${payout.bankAccount.country}`);
-      // Update payout with error
-      await payout.update({
-        status: "failed",
-        failure_reason: `Currency mismatch: Payout currency (${payout.currency}) does not match the required currency (${bankAccountCorrectCurrency}) for bank accounts in ${payout.bankAccount.country}. Please update your bank account or request payout in the correct currency.`,
-        processed_at: new Date(),
+      
+      // Create transaction for refund
+      const refundTransaction = await db.transaction({
+        isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
       });
-      // Refund wallet
-      await refundPayout(payout, updateTransaction);
+      
+      try {
+        // Re-fetch payout with lock
+        const lockedPayout = await TutorPayout.findByPk(payoutId, {
+          lock: Sequelize.Transaction.LOCK.UPDATE,
+          transaction: refundTransaction,
+        });
+        
+        if (lockedPayout) {
+          await lockedPayout.update({
+            status: "failed",
+            failure_reason: `Currency mismatch: Payout currency (${payout.currency}) does not match the required currency (${bankAccountCorrectCurrency}) for bank accounts in ${payout.bankAccount.country}. Please update your bank account or request payout in the correct currency.`,
+            processed_at: new Date(),
+          }, { transaction: refundTransaction });
+          
+          // Refund wallet
+          await refundPayout(lockedPayout, refundTransaction);
+        } else {
+          await refundTransaction.rollback();
+        }
+      } catch (error) {
+        console.error(`Error refunding payout ${payoutId} due to currency mismatch:`, error);
+        await refundTransaction.rollback();
+      }
       return;
     }
 
@@ -394,12 +415,34 @@ async function processPayoutTransfer(payoutId) {
     const minAmount = 100; // Minimum 100 in local currency
     if (payout.converted_amount < minAmount) {
       console.error(`Amount too small: ${payout.converted_amount} is less than minimum ${minAmount}`);
-      await payout.update({
-        status: "failed",
-        failure_reason: `Amount too small. Minimum payout amount is ${minAmount} ${payout.currency}`,
-        processed_at: new Date(),
+      
+      // Create transaction for refund
+      const refundTransaction = await db.transaction({
+        isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
       });
-      await refundPayout(payout, updateTransaction);
+      
+      try {
+        // Re-fetch payout with lock
+        const lockedPayout = await TutorPayout.findByPk(payoutId, {
+          lock: Sequelize.Transaction.LOCK.UPDATE,
+          transaction: refundTransaction,
+        });
+        
+        if (lockedPayout) {
+          await lockedPayout.update({
+            status: "failed",
+            failure_reason: `Amount too small. Minimum payout amount is ${minAmount} ${payout.currency}`,
+            processed_at: new Date(),
+          }, { transaction: refundTransaction });
+          
+          await refundPayout(lockedPayout, refundTransaction);
+        } else {
+          await refundTransaction.rollback();
+        }
+      } catch (error) {
+        console.error(`Error refunding payout ${payoutId} due to amount too small:`, error);
+        await refundTransaction.rollback();
+      }
       return;
     }
 
