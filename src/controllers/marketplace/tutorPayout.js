@@ -637,10 +637,60 @@ async function refundPayout(payout, transaction) {
     return;
   }
 
+  // Get the original debit transaction to ensure we refund the exact amount that was deducted
+  // This is more reliable than using payout.amount which might have currency conversion issues
+  const originalDebitTx = await TutorWalletTransaction.findOne({
+    where: {
+      transaction_reference: payout.flutterwave_reference,
+      tutor_id: payout.tutor_id,
+      tutor_type: payout.tutor_type,
+      transaction_type: "debit",
+      service_name: "Payout Request",
+    },
+    transaction,
+    order: [["created_at", "DESC"]], // Get the most recent one if multiple exist
+  });
+
+  if (!originalDebitTx) {
+    console.error(`⚠️  No debit transaction found for payout ${payout.id}, using payout.amount as fallback`);
+    // Fallback to payout.amount if debit transaction not found
+    const refundAmount = parseFloat(payout.amount);
+    if (isNaN(refundAmount) || refundAmount <= 0) {
+      await transaction.rollback();
+      console.error(`❌ Invalid refund amount: ${refundAmount} for payout ${payout.id}`);
+      return;
+    }
+  }
+
+  // Use the original debit amount (in wallet currency) for refund
+  // This ensures we refund exactly what was deducted, regardless of currency conversions
+  const refundAmount = originalDebitTx 
+    ? parseFloat(originalDebitTx.amount || 0)
+    : parseFloat(payout.amount || 0);
+
+  if (isNaN(refundAmount) || refundAmount <= 0) {
+    await transaction.rollback();
+    console.error(`❌ Invalid refund amount: ${refundAmount} for payout ${payout.id}`);
+    return;
+  }
+
+  // Get wallet currency from payout metadata or tutor record
+  const walletCurrency = payout.metadata?.wallet_currency || tutor.currency || "NGN";
+
   // Refund wallet balance
   const currentBalance = parseFloat(tutor.wallet_balance || 0);
-  const refundAmount = parseFloat(payout.amount);
   const newBalance = currentBalance + refundAmount;
+
+  // Log refund details for debugging
+  console.log(`🔄 Refunding payout ${payout.id}:`, {
+    payout_id: payout.id,
+    payout_amount: parseFloat(payout.amount),
+    original_debit_amount: originalDebitTx ? parseFloat(originalDebitTx.amount) : null,
+    refund_amount: refundAmount,
+    current_balance: currentBalance,
+    new_balance: newBalance,
+    wallet_currency: walletCurrency,
+  });
 
   await tutor.update({ wallet_balance: newBalance }, { transaction });
 
@@ -652,6 +702,7 @@ async function refundPayout(payout, transaction) {
         refunded: true,
         refunded_at: new Date(),
         failure_reason: payout.failure_reason,
+        refund_amount: refundAmount,
       },
     },
     {
@@ -659,6 +710,7 @@ async function refundPayout(payout, transaction) {
         transaction_reference: payout.flutterwave_reference,
         tutor_id: payout.tutor_id,
         tutor_type: payout.tutor_type,
+        transaction_type: "debit",
       },
       transaction,
     }
@@ -671,7 +723,7 @@ async function refundPayout(payout, transaction) {
       tutor_type: payout.tutor_type,
       transaction_type: "credit",
       amount: refundAmount,
-      currency: payout.metadata?.base_currency || "NGN",
+      currency: walletCurrency,
       service_name: "Payout Refund",
       transaction_reference: `REFUND-${payout.flutterwave_reference}`,
       balance_before: currentBalance,
@@ -681,6 +733,7 @@ async function refundPayout(payout, transaction) {
         payout_id: payout.id,
         payout_reference: payout.flutterwave_reference,
         refund_reason: payout.failure_reason,
+        original_debit_tx_id: originalDebitTx?.id || null,
       },
     },
     { transaction }

@@ -68,6 +68,10 @@ async function reconcileTutorWallet(tutorId, tutorType, fix = false) {
     console.log(`📝 Found ${transactions.length} wallet transactions\n`);
 
     // Calculate balance from transactions
+    // IMPORTANT: Only count successful transactions
+    // - Failed debits should NOT be counted (they were refunded)
+    // - Successful credits should be counted (including refunds)
+    // - Successful debits should be counted (actual deductions)
     let calculatedBalance = 0;
     const transactionHistory = [];
 
@@ -75,10 +79,15 @@ async function reconcileTutorWallet(tutorId, tutorType, fix = false) {
       const amount = parseFloat(tx.amount || 0);
       const before = calculatedBalance;
       
-      if (tx.transaction_type === "credit") {
-        calculatedBalance += amount;
-      } else if (tx.transaction_type === "debit") {
-        calculatedBalance -= amount;
+      // Only count successful transactions
+      // Failed debits are not counted because they were refunded
+      // Pending transactions are not counted until they complete
+      if (tx.status === "successful") {
+        if (tx.transaction_type === "credit") {
+          calculatedBalance += amount;
+        } else if (tx.transaction_type === "debit") {
+          calculatedBalance -= amount;
+        }
       }
       
       transactionHistory.push({
@@ -92,6 +101,7 @@ async function reconcileTutorWallet(tutorId, tutorType, fix = false) {
         status: tx.status,
         created_at: tx.created_at,
         metadata: tx.metadata,
+        counted: tx.status === "successful", // Track if counted
       });
     }
 
@@ -259,10 +269,19 @@ async function reconcileTutorWallet(tutorId, tutorType, fix = false) {
     // Export transaction history
     console.log("📄 Transaction History (last 20):\n");
     transactionHistory.slice(-20).forEach((tx, idx) => {
+      const counted = tx.counted ? "✓" : "✗";
+      const statusBadge = tx.status === "successful" ? "✅" : tx.status === "failed" ? "❌" : "⏳";
       console.log(
-        `${idx + 1}. [${tx.type.toUpperCase()}] ${tx.amount.toLocaleString()} | Balance: ${tx.balance_after.toLocaleString()} | ${tx.service} | ${tx.reference}`
+        `${idx + 1}. ${counted} ${statusBadge} [${tx.type.toUpperCase()}] ${tx.amount.toLocaleString()} | Balance: ${tx.balance_after.toLocaleString()} | ${tx.service} | ${tx.reference}`
       );
     });
+    
+    // Show summary of counted vs not counted
+    const counted = transactionHistory.filter(tx => tx.counted).length;
+    const notCounted = transactionHistory.filter(tx => !tx.counted).length;
+    console.log(`\n📊 Transaction Summary:`);
+    console.log(`   Counted (successful): ${counted}`);
+    console.log(`   Not counted (failed/pending): ${notCounted}`);
 
     process.exit(0);
   } catch (error) {
