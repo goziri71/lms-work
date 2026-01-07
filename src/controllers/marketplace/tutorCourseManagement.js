@@ -379,11 +379,14 @@ export const createCourse = TryCatchFunction(async (req, res) => {
 
   try {
     // Check if course code already exists for this tutor (scoped to tutor's courses only)
-    // Only check uniqueness if course_code is provided
+    // Only check uniqueness if course_code is provided and not empty
     // Using transaction to ensure this check and insert are atomic
     // Use case-insensitive comparison and exclude soft-deleted courses
-    if (course_code && course_code.trim()) {
-      const trimmedCode = course_code.trim().toUpperCase();
+    // Normalize course_code: treat null, undefined, empty string, and whitespace-only as "no code"
+    const normalizedCourseCode = course_code && typeof course_code === 'string' ? course_code.trim() : null;
+    
+    if (normalizedCourseCode && normalizedCourseCode.length > 0) {
+      const trimmedCode = normalizedCourseCode.toUpperCase();
       const existingCourse = await Courses.findOne({
         where: {
           [Op.and]: [
@@ -471,10 +474,13 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     }
 
     // Create course within transaction
+    // Normalize course_code: set to null if empty, undefined, or whitespace-only
+    const finalCourseCode = normalizedCourseCode && normalizedCourseCode.length > 0 ? normalizedCourseCode : null;
+    
     const course = await Courses.create(
       {
         title: title.trim(),
-        course_code: course_code && course_code.trim() ? course_code.trim() : null,
+        course_code: finalCourseCode,
         course_unit: course_unit || null,
         price: price ? String(price) : "0",
         pricing_type: pricingType,
