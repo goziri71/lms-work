@@ -119,24 +119,17 @@ export const createSession = TryCatchFunction(async (req, res) => {
   }
 
   // Validate category if provided
-  const validCategories = [
-    "Business",
-    "Tech",
-    "Art",
-    "Logistics",
-    "Ebooks",
-    "Podcast",
-    "Videos",
-    "Music",
-    "Articles",
-    "Code",
-    "2D/3D Files",
-  ];
-  if (category && !validCategories.includes(category)) {
-    throw new ErrorClass(
-      `Invalid category. Must be one of: ${validCategories.join(", ")}`,
-      400
-    );
+  if (category) {
+    const { normalizeCategory } = await import("../../constants/categories.js");
+    const normalizedCategory = normalizeCategory(category);
+    if (!normalizedCategory) {
+      throw new ErrorClass(
+        "Invalid category. Must be one of: Business & Management, Technology & Data, Engineering & Physical Science, Health & Medicine, Arts & Humanities, Personal Development & Education",
+        400
+      );
+    }
+    // Use normalized category
+    category = normalizedCategory;
   }
 
   // Validate commission_rate if provided

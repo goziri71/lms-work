@@ -17,6 +17,7 @@ import { getMyMarketplaceCourses } from "../controllers/marketplace/myMarketplac
 import { browseMarketplaceCourses } from "../controllers/marketplace/browseMarketplaceCourses.js";
 import { getAllTutors } from "../controllers/marketplace/getAllTutors.js";
 import { getAllPrograms } from "../controllers/marketplace/getAllPrograms.js";
+import { getCategories } from "../controllers/marketplace/categories.js";
 import { authorize } from "../middlewares/authorize.js";
 import { optionalAuthorize } from "../middlewares/optionalAuthorize.js";
 import {
@@ -174,6 +175,9 @@ router.get("/programs", getAllPrograms);
 // IMPORTANT: More specific routes must come first (Express matches in order)
 // Get My Marketplace Courses (Student only - lifetime access courses)
 router.get("/courses/my-courses", authorize, getMyMarketplaceCourses);
+
+// Categories endpoint (public - no auth required)
+router.get("/categories", getCategories);
 
 // Course Purchase (Student only)
 router.post("/courses/purchase", authorize, purchaseMarketplaceCourse);

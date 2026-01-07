@@ -62,9 +62,16 @@ export const DigitalDownloads = db.define(
       comment: "URL of preview file (for videos/audio - trailer/preview clip)",
     },
     category: {
-      type: DataTypes.STRING(100),
-      allowNull: true,
-      comment: "Product category",
+      type: DataTypes.ENUM(
+        "Business & Management",
+        "Technology & Data",
+        "Engineering & Physical Science",
+        "Health & Medicine",
+        "Arts & Humanities",
+        "Personal Development & Education"
+      ),
+      allowNull: false,
+      comment: "Product category (required)",
     },
     tags: {
       type: DataTypes.ARRAY(DataTypes.STRING),

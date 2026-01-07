@@ -30,17 +30,12 @@ export const Community = db.define(
     },
     category: {
       type: DataTypes.ENUM(
-        "Business",
-        "Tech",
-        "Art",
-        "Logistics",
-        "Ebooks",
-        "Podcast",
-        "Videos",
-        "Music",
-        "Articles",
-        "Code",
-        "2D/3D Files"
+        "Business & Management",
+        "Technology & Data",
+        "Engineering & Physical Science",
+        "Health & Medicine",
+        "Arts & Humanities",
+        "Personal Development & Education"
       ),
       allowNull: true,
       comment: "Community category",

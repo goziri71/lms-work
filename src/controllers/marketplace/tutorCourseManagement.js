@@ -30,29 +30,7 @@ const uploadCourseImage = multer({
 // Middleware export
 export const uploadCourseImageMiddleware = uploadCourseImage.single("image");
 
-// Helper function to normalize category
-const normalizeCategory = (category) => {
-  if (!category) return null;
-  
-  const categoryMap = {
-    "business": "Business",
-    "tech": "Tech",
-    "art": "Art",
-    "logistics": "Logistics",
-    "ebooks": "Ebooks",
-    "podcast": "Podcast",
-    "videos": "Videos",
-    "music": "Music",
-    "articles": "Articles",
-    "code": "Code",
-    "2d/3d files": "2D/3D Files",
-    "2d files": "2D/3D Files",
-    "3d files": "2D/3D Files",
-  };
-  
-  const normalized = category.trim().toLowerCase();
-  return categoryMap[normalized] || null;
-};
+import { normalizeCategory } from "../../constants/categories.js";
 
 /**
  * Get all courses created by tutor
@@ -283,7 +261,7 @@ export const createCourse = TryCatchFunction(async (req, res) => {
   const normalizedCategory = normalizeCategory(category);
   if (!normalizedCategory) {
     throw new ErrorClass(
-      "Invalid category. Must be one of: Business, Tech, Art, Logistics, Ebooks, Podcast, Videos, Music, Articles, Code, 2D/3D Files",
+      "Invalid category. Must be one of: Business & Management, Technology & Data, Engineering & Physical Science, Health & Medicine, Arts & Humanities, Personal Development & Education",
       400
     );
   }
@@ -634,7 +612,7 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
     normalizedCategory = normalizeCategory(category);
     if (!normalizedCategory) {
       throw new ErrorClass(
-        "Invalid category. Must be one of: Business, Tech, Art, Logistics, Ebooks, Podcast, Videos, Music, Articles, Code, 2D/3D Files",
+        "Invalid category. Must be one of: Business & Management, Technology & Data, Engineering & Physical Science, Health & Medicine, Arts & Humanities, Personal Development & Education",
         400
       );
     }

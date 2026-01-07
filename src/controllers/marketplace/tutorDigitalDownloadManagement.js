@@ -4,6 +4,7 @@ import { DigitalDownloads } from "../../models/marketplace/digitalDownloads.js";
 import { Op } from "sequelize";
 import multer from "multer";
 import { supabase } from "../../utils/supabase.js";
+import { normalizeCategory } from "../../constants/categories.js";
 
 // Product type configurations
 const PRODUCT_TYPES = {
@@ -454,6 +455,19 @@ export const createDigitalDownload = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Title and file URL are required", 400);
   }
 
+  if (!category) {
+    throw new ErrorClass("Category is required", 400);
+  }
+
+  // Validate and normalize category
+  const normalizedCategory = normalizeCategory(category);
+  if (!normalizedCategory) {
+    throw new ErrorClass(
+      "Invalid category. Must be one of: Business & Management, Technology & Data, Engineering & Physical Science, Health & Medicine, Arts & Humanities, Personal Development & Education",
+      400
+    );
+  }
+
   if (!PRODUCT_TYPES[product_type]) {
     throw new ErrorClass(
       `Invalid product_type. Must be one of: ${Object.keys(PRODUCT_TYPES).join(", ")}`,
@@ -520,7 +534,7 @@ export const createDigitalDownload = TryCatchFunction(async (req, res) => {
     file_size: req.body.file_size ? parseInt(req.body.file_size) : null,
     cover_image: req.body.cover_image || null,
     preview_url: preview_url || null,
-    category: category || null,
+    category: normalizedCategory,
     tags: Array.isArray(tags) ? tags : [],
     product_type: product_type,
     owner_type: ownerType,
@@ -617,7 +631,16 @@ export const updateDigitalDownload = TryCatchFunction(async (req, res) => {
   if (file_size !== undefined) updateData.file_size = file_size ? parseInt(file_size) : null;
   if (cover_image !== undefined) updateData.cover_image = cover_image;
   if (preview_url !== undefined) updateData.preview_url = preview_url;
-  if (category !== undefined) updateData.category = category;
+  if (category !== undefined && category !== null) {
+    const normalizedCategory = normalizeCategory(category);
+    if (!normalizedCategory) {
+      throw new ErrorClass(
+        "Invalid category. Must be one of: Business & Management, Technology & Data, Engineering & Physical Science, Health & Medicine, Arts & Humanities, Personal Development & Education",
+        400
+      );
+    }
+    updateData.category = normalizedCategory;
+  }
   if (tags !== undefined) updateData.tags = Array.isArray(tags) ? tags : [];
   if (status !== undefined) updateData.status = status;
   if (duration !== undefined) updateData.duration = duration ? parseInt(duration) : null;

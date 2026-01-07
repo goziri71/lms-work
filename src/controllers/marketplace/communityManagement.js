@@ -10,6 +10,7 @@ import { checkSubscriptionLimit } from "./tutorSubscription.js";
 import { supabase } from "../../utils/supabase.js";
 import multer from "multer";
 import { Op } from "sequelize";
+import { normalizeCategory } from "../../constants/categories.js";
 
 // Configure multer for community image uploads
 const uploadCommunityImage = multer({
@@ -52,29 +53,6 @@ function getTutorInfo(req) {
   return { tutorId, tutorType };
 }
 
-/**
- * Normalize category
- */
-const normalizeCategory = (category) => {
-  if (!category) return null;
-  const categoryMap = {
-    business: "Business",
-    tech: "Tech",
-    art: "Art",
-    logistics: "Logistics",
-    ebooks: "Ebooks",
-    podcast: "Podcast",
-    videos: "Videos",
-    music: "Music",
-    articles: "Articles",
-    code: "Code",
-    "2d/3d files": "2D/3D Files",
-    "2d files": "2D/3D Files",
-    "3d files": "2D/3D Files",
-  };
-  const normalized = category.trim().toLowerCase();
-  return categoryMap[normalized] || null;
-};
 
 /**
  * Create a new community
