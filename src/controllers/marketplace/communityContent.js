@@ -169,11 +169,24 @@ export const createPost = TryCatchFunction(async (req, res) => {
     );
   }
 
-  const { title, content, content_type = "text", category, tags } = req.body;
+  const { 
+    title, 
+    content, 
+    content_type = "text", 
+    category, 
+    tags,
+    status = "published",
+    scheduled_at,
+    is_featured = false,
+  } = req.body;
 
   if (!content) {
     throw new ErrorClass("Post content is required", 400);
   }
+
+  // Parse mentions from content
+  const { parseMentions } = await import("../../utils/mentionParser.js");
+  const mentionedUserIds = parseMentions(content);
 
   // Upload image if provided
   let imageUrl = null;
@@ -202,6 +215,28 @@ export const createPost = TryCatchFunction(async (req, res) => {
   // Determine author ID - for tutors, use their ID; for students, use student ID
   const authorId = userId;
 
+  // Validate status
+  const validStatuses = ["draft", "published", "scheduled", "pinned", "archived"];
+  const postStatus = validStatuses.includes(status) ? status : "published";
+
+  // Validate scheduled_at if status is scheduled
+  let scheduledDate = null;
+  if (postStatus === "scheduled") {
+    if (!scheduled_at) {
+      throw new ErrorClass("scheduled_at is required when status is 'scheduled'", 400);
+    }
+    scheduledDate = new Date(scheduled_at);
+    if (isNaN(scheduledDate.getTime())) {
+      throw new ErrorClass("Invalid scheduled_at date format", 400);
+    }
+    if (scheduledDate <= new Date()) {
+      throw new ErrorClass("scheduled_at must be in the future", 400);
+    }
+  }
+
+  // Only tutors can feature posts
+  const featured = access.isOwner && is_featured === true;
+
   const post = await CommunityPost.create({
     community_id: communityId,
     author_id: authorId,
@@ -211,11 +246,17 @@ export const createPost = TryCatchFunction(async (req, res) => {
     category: category || null,
     tags: tags ? (Array.isArray(tags) ? tags : JSON.parse(tags)) : null,
     image_url: imageUrl,
-    status: "published",
+    status: postStatus,
+    scheduled_at: scheduledDate,
+    is_featured: featured,
+    featured_at: featured ? new Date() : null,
+    mentions: mentionedUserIds.length > 0 ? mentionedUserIds : null,
   });
 
-  // Increment post count
-  await community.increment("post_count");
+  // Increment post count only if published
+  if (postStatus === "published") {
+    await community.increment("post_count");
+  }
 
   // Get author info - handle both students and tutors
   let author, authorName;
@@ -361,7 +402,9 @@ export const getPosts = TryCatchFunction(async (req, res) => {
     limit = 20,
     category,
     search,
-    status = "published",
+    status,
+    featured,
+    scheduled,
   } = req.query;
   const userId = req.user?.id;
   const userType = req.user?.userType;
@@ -375,10 +418,40 @@ export const getPosts = TryCatchFunction(async (req, res) => {
     }
   }
 
+  // Build where clause
   const where = {
     community_id: communityId,
-    status,
   };
+
+  // Status filter - default to published for non-owners, allow all for owners
+  const isOwner = userId && (
+    userType === "sole_tutor" ||
+    userType === "organization" ||
+    userType === "organization_user"
+  );
+
+  if (status) {
+    where.status = status;
+  } else if (!isOwner) {
+    // Non-owners only see published posts and scheduled posts that are ready
+    where[Op.or] = [
+      { status: "published" },
+      {
+        status: "scheduled",
+        scheduled_at: { [Op.lte]: new Date() },
+      },
+    ];
+  }
+
+  // Featured filter
+  if (featured === "true" || featured === true) {
+    where.is_featured = true;
+  }
+
+  // Scheduled filter (for owners)
+  if (scheduled === "true" || scheduled === true) {
+    where.status = "scheduled";
+  }
 
   if (category) {
     where.category = category;
@@ -396,7 +469,10 @@ export const getPosts = TryCatchFunction(async (req, res) => {
     where,
     limit: parseInt(limit),
     offset,
-    order: [["created_at", "DESC"]],
+    order: [
+      ["is_featured", "DESC"], // Featured posts first
+      ["created_at", "DESC"],
+    ],
     include: [
       {
         model: Students,
@@ -655,11 +731,24 @@ export const createComment = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Comment content is required", 400);
   }
 
+  // Validate parent_comment_id if provided
+  if (parent_comment_id) {
+    const parentComment = await CommunityComment.findByPk(parent_comment_id);
+    if (!parentComment || parentComment.post_id !== parseInt(postId)) {
+      throw new ErrorClass("Parent comment not found", 404);
+    }
+  }
+
+  // Parse mentions from content
+  const { parseMentions } = await import("../../utils/mentionParser.js");
+  const mentionedUserIds = parseMentions(content);
+
   const comment = await CommunityComment.create({
     post_id: postId,
     author_id: userId,
     parent_comment_id: parent_comment_id || null,
     content,
+    mentions: mentionedUserIds.length > 0 ? mentionedUserIds : null,
     status: "published",
   });
 
@@ -826,14 +915,12 @@ export const getComments = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Post not found", 404);
   }
 
-  const offset = (parseInt(page) - 1) * parseInt(limit);
-  const { count, rows: comments } = await CommunityComment.findAndCountAll({
+  // Get all comments for this post (no pagination for threading)
+  const allComments = await CommunityComment.findAll({
     where: {
       post_id: postId,
       status: "published",
     },
-    limit: parseInt(limit),
-    offset,
     order: [["created_at", "ASC"]],
     include: [
       {
@@ -841,22 +928,15 @@ export const getComments = TryCatchFunction(async (req, res) => {
         as: "author",
         attributes: ["id", "fname", "lname", "mname", "email"],
       },
-      {
-        model: CommunityComment,
-        as: "parentComment",
-        include: [
-          {
-            model: Students,
-            as: "author",
-            attributes: ["id", "fname", "lname", "mname", "email"],
-          },
-        ],
-      },
     ],
   });
 
-  // Format comments
-  const formattedComments = comments.map((comment) => {
+  // Build threaded structure
+  const commentMap = new Map();
+  const rootComments = [];
+
+  // First pass: create map of all comments
+  allComments.forEach((comment) => {
     const author = comment.author;
     const authorName =
       `${author.fname || ""} ${author.mname || ""} ${
@@ -870,39 +950,45 @@ export const getComments = TryCatchFunction(async (req, res) => {
         name: authorName,
         email: author.email,
       },
+      replies: [],
     };
 
-    if (comment.parentComment) {
-      const parentAuthor = comment.parentComment.author;
-      const parentAuthorName =
-        `${parentAuthor.fname || ""} ${parentAuthor.mname || ""} ${
-          parentAuthor.lname || ""
-        }`.trim() || parentAuthor.email;
-
-      formatted.parent_comment = {
-        ...comment.parentComment.toJSON(),
-        author: {
-          id: parentAuthor.id,
-          name: parentAuthorName,
-          email: parentAuthor.email,
-        },
-      };
-    }
-
-    return formatted;
+    commentMap.set(comment.id, formatted);
   });
+
+  // Second pass: build tree structure
+  allComments.forEach((comment) => {
+    const formatted = commentMap.get(comment.id);
+    
+    if (comment.parent_comment_id) {
+      // This is a reply, add to parent's replies
+      const parent = commentMap.get(comment.parent_comment_id);
+      if (parent) {
+        parent.replies.push(formatted);
+      }
+    } else {
+      // This is a root comment
+      rootComments.push(formatted);
+    }
+  });
+
+  // Apply pagination to root comments only
+  const totalRootComments = rootComments.length;
+  const startIndex = (parseInt(page) - 1) * parseInt(limit);
+  const endIndex = startIndex + parseInt(limit);
+  const paginatedRootComments = rootComments.slice(startIndex, endIndex);
 
   res.json({
     status: true,
     code: 200,
     message: "Comments retrieved successfully",
     data: {
-      comments: formattedComments,
+      comments: paginatedRootComments,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
-        total: count,
-        totalPages: Math.ceil(count / parseInt(limit)),
+        total: totalRootComments,
+        totalPages: Math.ceil(totalRootComments / parseInt(limit)),
       },
     },
   });

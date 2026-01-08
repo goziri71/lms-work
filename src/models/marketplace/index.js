@@ -28,6 +28,7 @@ export { CommunityMember } from "./communityMember.js";
 export { CommunitySubscription } from "./communitySubscription.js";
 export { CommunityPost } from "./communityPost.js";
 export { CommunityComment } from "./communityComment.js";
+export { CommunityReaction } from "./communityReaction.js";
 export { CommunityFile } from "./communityFile.js";
 export { CommunityPurchase } from "./communityPurchase.js";
 export { CommunityAudioSession } from "./communityAudioSession.js";

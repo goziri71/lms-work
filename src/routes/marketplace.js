@@ -592,6 +592,15 @@ router.post(
 router.get("/communities/:id/files", authorize, getFiles);
 router.delete("/communities/:id/files/:fileId", authorize, deleteFile);
 
+// COMMUNITY REACTIONS
+import {
+  addReaction,
+  getReactions,
+} from "../controllers/marketplace/communityReactions.js";
+
+router.post("/communities/:id/reactions", authorize, addReaction);
+router.get("/communities/:id/reactions", optionalAuthorize, getReactions);
+
 // COMMUNITY AUDIO SESSIONS
 import {
   createAudioSession,

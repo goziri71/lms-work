@@ -29,6 +29,11 @@ export const CommunityComment = db.define(
       allowNull: false,
       comment: "Comment content",
     },
+    mentions: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      comment: "Array of mentioned user IDs",
+    },
     status: {
       type: DataTypes.ENUM("published", "deleted"),
       allowNull: false,

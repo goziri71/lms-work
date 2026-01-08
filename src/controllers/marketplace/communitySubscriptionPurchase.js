@@ -100,10 +100,10 @@ export const purchaseCommunitySubscription = TryCatchFunction(async (req, res) =
     );
   }
 
-  // Get commission rate
-  const commissionRate = parseFloat(community.commission_rate || 15.0);
-  const wspCommission = (priceInStudentCurrency * commissionRate) / 100;
-  const tutorEarnings = priceInStudentCurrency - wspCommission;
+  // No commission for communities
+  const commissionRate = 0;
+  const wspCommission = 0;
+  const tutorEarnings = priceInStudentCurrency;
 
   // Generate transaction reference
   const txRef = `COMMUNITY-SUB-${id}-${Date.now()}`;

@@ -81,7 +81,6 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
     file_sharing_enabled = true,
     live_sessions_enabled = true,
     visibility = "public",
-    commission_rate = 15.0,
   } = req.body;
 
   if (!name || !price) {
@@ -128,7 +127,7 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
     live_sessions_enabled: live_sessions_enabled !== false && live_sessions_enabled !== "false",
     visibility,
     status: "draft",
-    commission_rate: parseFloat(commission_rate) || 15.0,
+    commission_rate: 0, // No commission for communities
   });
 
   res.status(201).json({
@@ -249,7 +248,6 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
     file_sharing_enabled,
     live_sessions_enabled,
     visibility,
-    commission_rate,
   } = req.body;
 
   // Upload new image if provided
@@ -299,7 +297,8 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
   if (file_sharing_enabled !== undefined) community.file_sharing_enabled = file_sharing_enabled !== false && file_sharing_enabled !== "false";
   if (live_sessions_enabled !== undefined) community.live_sessions_enabled = live_sessions_enabled !== false && live_sessions_enabled !== "false";
   if (visibility !== undefined) community.visibility = visibility;
-  if (commission_rate !== undefined) community.commission_rate = parseFloat(commission_rate) || 15.0;
+  // Commission rate is always 0 for communities (no commission)
+  community.commission_rate = 0;
 
   await community.save();
 

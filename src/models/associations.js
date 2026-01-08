@@ -56,6 +56,7 @@ import {
   CommunitySubscription,
   CommunityPost,
   CommunityComment,
+  CommunityReaction,
   CommunityFile,
   CommunityPurchase,
   CommunityAudioSession,
@@ -860,6 +861,33 @@ export const setupAssociations = () => {
   CommunityComment.belongsTo(CommunityComment, {
     foreignKey: "parent_comment_id",
     as: "parentComment",
+  });
+  CommunityComment.hasMany(CommunityComment, {
+    foreignKey: "parent_comment_id",
+    as: "replies",
+  });
+
+  // Community Reactions
+  CommunityPost.hasMany(CommunityReaction, {
+    foreignKey: "post_id",
+    as: "reactions",
+  });
+  CommunityComment.hasMany(CommunityReaction, {
+    foreignKey: "comment_id",
+    as: "reactions",
+  });
+  CommunityReaction.belongsTo(CommunityPost, {
+    foreignKey: "post_id",
+    as: "post",
+  });
+  CommunityReaction.belongsTo(CommunityComment, {
+    foreignKey: "comment_id",
+    as: "comment",
+  });
+  CommunityReaction.belongsTo(Students, {
+    foreignKey: "user_id",
+    as: "user",
+    constraints: false,
   });
 
   // Community Files

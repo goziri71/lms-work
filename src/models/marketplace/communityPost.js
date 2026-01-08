@@ -51,10 +51,31 @@ export const CommunityPost = db.define(
       comment: "Post image URL",
     },
     status: {
-      type: DataTypes.ENUM("published", "pinned", "archived", "deleted"),
+      type: DataTypes.ENUM("draft", "published", "scheduled", "pinned", "archived", "deleted"),
       allowNull: false,
-      defaultValue: "published",
+      defaultValue: "draft",
       comment: "Post status",
+    },
+    scheduled_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "Scheduled publish date/time",
+    },
+    is_featured: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: "Whether post is featured",
+    },
+    featured_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "When post was featured",
+    },
+    mentions: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      comment: "Array of mentioned user IDs",
     },
     views: {
       type: DataTypes.INTEGER,
