@@ -105,6 +105,7 @@ export const CoachingSession = db.define(
     },
     currency: {
       type: DataTypes.STRING(10),
+      allowNull: true,
       defaultValue: "NGN",
       comment: "Currency for paid sessions",
     },

@@ -214,11 +214,19 @@ export const createSession = TryCatchFunction(async (req, res) => {
       );
     }
 
-    await streamVideoService.getOrCreateCall("default", streamCallId, {
-      createdBy: String(tutorId),
-      record: false,
-      startsAt: startTime.toISOString(),
-    });
+    try {
+      await streamVideoService.getOrCreateCall("default", streamCallId, {
+        createdBy: String(tutorId),
+        record: false,
+        startsAt: startTime.toISOString(),
+      });
+    } catch (streamError) {
+      console.error("❌ Stream.io call creation failed:", streamError);
+      throw new ErrorClass(
+        `Failed to create video call: ${streamError.message}`,
+        500
+      );
+    }
 
     // Generate view link (public link for students)
     const viewLink = `${Config.frontendUrl}/coaching/session/${streamCallId}`;
@@ -292,7 +300,14 @@ export const createSession = TryCatchFunction(async (req, res) => {
           ? Array.isArray(tags)
             ? tags
             : typeof tags === "string"
-            ? JSON.parse(tags)
+            ? (() => {
+                try {
+                  return JSON.parse(tags);
+                } catch (e) {
+                  console.error("Failed to parse tags JSON:", e);
+                  return null;
+                }
+              })()
             : tags
           : null,
         commission_rate: finalCommissionRate,
@@ -329,9 +344,26 @@ export const createSession = TryCatchFunction(async (req, res) => {
           )
         )
       );
+    }
 
-      // Send email invitations
-      await sendSessionInvitations(
+    await transaction.commit();
+
+    // Send email invitations AFTER transaction commits (non-blocking)
+    if (student_ids && Array.isArray(student_ids) && student_ids.length > 0) {
+      // Reload session to get fresh data
+      await session.reload();
+      
+      // Fetch students again (outside transaction)
+      const students = await Students.findAll({
+        where: {
+          id: {
+            [Op.in]: student_ids,
+          },
+        },
+      });
+
+      // Send emails asynchronously (don't await to avoid blocking)
+      sendSessionInvitations(
         session,
         students,
         tutorName,
@@ -339,10 +371,11 @@ export const createSession = TryCatchFunction(async (req, res) => {
         viewLink,
         startTime,
         endTime
-      );
+      ).catch((emailError) => {
+        console.error("Failed to send session invitation emails:", emailError);
+        // Don't throw - emails are not critical for session creation
+      });
     }
-
-    await transaction.commit();
 
     res.status(201).json({
       success: true,
@@ -373,9 +406,23 @@ export const createSession = TryCatchFunction(async (req, res) => {
   } catch (error) {
     await transaction.rollback();
     // Refund hours if session creation failed
-    if (hoursCheck.allowed && !hoursCheck.unlimited) {
-      await refundHours(tutorId, tutorType, durationHours);
+    if (hoursCheck && hoursCheck.allowed && !hoursCheck.unlimited) {
+      try {
+        await refundHours(tutorId, tutorType, durationHours);
+      } catch (refundError) {
+        console.error("Failed to refund hours after session creation error:", refundError);
+      }
     }
+    // Log detailed error for debugging
+    console.error("❌ Error creating coaching session:", {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+      tutorId,
+      tutorType,
+      title,
+      pricing_type,
+    });
     throw error;
   }
 });
@@ -848,8 +895,8 @@ export const endSession = TryCatchFunction(async (req, res) => {
   const reservedHours = parseFloat(session.hours_reserved);
   if (actualDurationHours < reservedHours) {
     // Refund the difference
-    const refundHours = reservedHours - actualDurationHours;
-    await refundHours(tutorId, tutorType, refundHours);
+    const hoursToRefund = reservedHours - actualDurationHours;
+    await refundHours(tutorId, tutorType, hoursToRefund);
   }
 
   res.json({
