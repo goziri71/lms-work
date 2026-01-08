@@ -18,6 +18,9 @@ import { db } from "../database/database.js";
  * @param {number} [options.moduleId] - Module ID (if applicable)
  * @param {number} [options.unitId] - Unit ID (if applicable)
  * @param {number} [options.durationSeconds] - Duration in seconds
+ * @param {string} [options.startTime] - Start time (ISO timestamp) - from frontend
+ * @param {string} [options.endTime] - End time (ISO timestamp) - from frontend
+ * @param {Object} [options.engagementMetrics] - Engagement metrics from frontend
  * @param {Object} [options.metadata] - Additional metadata
  * @param {Object} req - Express request object (for IP, user agent, etc.)
  */
@@ -29,6 +32,9 @@ export async function trackLearnerActivity(options, req = null) {
     moduleId = null,
     unitId = null,
     durationSeconds = null,
+    startTime = null,
+    endTime = null,
+    engagementMetrics = null,
     metadata = null,
   } = options;
 
@@ -53,6 +59,7 @@ export async function trackLearnerActivity(options, req = null) {
       userAgent = req.headers["user-agent"] || null;
 
       // Get geolocation synchronously if possible (with timeout)
+      let geoData = {};
       if (ipAddress && ipAddress !== "::1" && ipAddress !== "127.0.0.1" && !ipAddress.startsWith("192.168.") && !ipAddress.startsWith("10.") && !ipAddress.startsWith("172.")) {
         try {
           // Use Promise.race to timeout after 2 seconds
@@ -61,6 +68,7 @@ export async function trackLearnerActivity(options, req = null) {
           geoData = await Promise.race([geoPromise, timeoutPromise]);
         } catch (err) {
           console.error("Geolocation error:", err.message);
+          geoData = {};
         }
       }
 
@@ -88,6 +96,21 @@ export async function trackLearnerActivity(options, req = null) {
       }
     }
 
+    // Prepare metadata with engagement metrics and timing info
+    const finalMetadata = {
+      ...(metadata && typeof metadata === "object" ? metadata : {}),
+      ...(startTime && { start_time: startTime }),
+      ...(endTime && { end_time: endTime }),
+      ...(engagementMetrics && {
+        engagement_metrics: {
+          scroll_depth: engagementMetrics.scroll_depth,
+          video_watch_percentage: engagementMetrics.video_watch_percentage,
+          interaction_count: engagementMetrics.interaction_count,
+          engagement_score: engagementMetrics.engagement_score,
+        },
+      }),
+    };
+
     // Create activity log entry
     await LearnerActivityLog.create({
       student_id: studentId,
@@ -104,12 +127,22 @@ export async function trackLearnerActivity(options, req = null) {
       browser: deviceInfo.browser || null,
       user_agent: userAgent,
       duration_seconds: durationSeconds,
-      metadata: metadata,
+      metadata: Object.keys(finalMetadata).length > 0 ? finalMetadata : null,
     });
 
     // Update course progress if course-related activity
     if (courseId && (activityType === "course_view" || activityType === "module_view" || activityType === "unit_view")) {
-      await updateCourseProgress(studentId, courseId, tutorId, tutorType, activityType, moduleId, unitId, durationSeconds);
+      await updateCourseProgress(
+        studentId,
+        courseId,
+        tutorId,
+        tutorType,
+        activityType,
+        moduleId,
+        unitId,
+        durationSeconds,
+        engagementMetrics
+      );
     }
   } catch (error) {
     console.error("Error tracking learner activity:", error.message);
@@ -128,7 +161,8 @@ async function updateCourseProgress(
   activityType,
   moduleId,
   unitId,
-  durationSeconds
+  durationSeconds,
+  engagementMetrics = null
 ) {
   try {
     // Get or create progress record
@@ -170,6 +204,41 @@ async function updateCourseProgress(
     if (durationSeconds) {
       progress.total_time_spent_seconds =
         (progress.total_time_spent_seconds || 0) + durationSeconds;
+    }
+
+    // Update engagement metrics in metadata if provided
+    if (engagementMetrics) {
+      const currentMetadata = progress.metadata && typeof progress.metadata === "object" ? progress.metadata : {};
+      
+      // Calculate or update engagement score
+      let engagementScore = null;
+      if (engagementMetrics.scroll_depth !== undefined || 
+          engagementMetrics.video_watch_percentage !== undefined || 
+          engagementMetrics.interaction_count !== undefined) {
+        const scrollDepth = engagementMetrics.scroll_depth || 0;
+        const videoWatch = engagementMetrics.video_watch_percentage || 0;
+        const interactionScore = Math.min((engagementMetrics.interaction_count || 0) * 10, 100);
+        engagementScore = (scrollDepth + videoWatch + interactionScore) / 3;
+      }
+
+      // Update metadata with engagement metrics
+      const updatedMetadata = {
+        ...currentMetadata,
+        ...(engagementMetrics.scroll_depth !== undefined && {
+          average_scroll_depth: engagementMetrics.scroll_depth,
+        }),
+        ...(engagementMetrics.video_watch_percentage !== undefined && {
+          average_video_completion: engagementMetrics.video_watch_percentage,
+        }),
+        ...(engagementMetrics.interaction_count !== undefined && {
+          total_interactions: (currentMetadata.total_interactions || 0) + engagementMetrics.interaction_count,
+        }),
+        ...(engagementScore !== null && {
+          engagement_score: engagementScore,
+        }),
+      };
+
+      progress.metadata = updatedMetadata;
     }
 
     // Update viewed units count if unit viewed

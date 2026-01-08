@@ -90,9 +90,38 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
   // Upload image if provided
   let imageUrl = null;
   if (req.file) {
+    const bucket = process.env.COMMUNITIES_BUCKET || "communities";
+    
+    // Check if bucket exists, create if it doesn't
+    try {
+      const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+      if (!listError) {
+        const bucketExists = buckets?.some((b) => b.name === bucket);
+        if (!bucketExists) {
+          // Try to create the bucket
+          const { error: createError } = await supabase.storage.createBucket(bucket, {
+            public: true,
+            allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+          });
+          if (createError) {
+            console.error(`Failed to create bucket "${bucket}":`, createError.message);
+            throw new ErrorClass(
+              `Storage bucket "${bucket}" does not exist. Please create it in Supabase Storage settings. Error: ${createError.message}`,
+              500
+            );
+          }
+        }
+      }
+    } catch (error) {
+      if (error instanceof ErrorClass) {
+        throw error;
+      }
+      // If bucket check fails, continue and let upload error handle it
+      console.warn("Could not verify bucket existence:", error.message);
+    }
+
     const fileExt = req.file.originalname.split(".").pop();
     const fileName = `communities/${tutorId}_${Date.now()}.${fileExt}`;
-    const bucket = process.env.COMMUNITIES_BUCKET || "communities";
 
     const { data, error } = await supabase.storage
       .from(bucket)
@@ -102,6 +131,12 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
       });
 
     if (error) {
+      if (error.message?.includes("Bucket not found") || error.message?.includes("not found")) {
+        throw new ErrorClass(
+          `Storage bucket "${bucket}" does not exist. Please create a bucket named "${bucket}" in your Supabase Storage settings.`,
+          500
+        );
+      }
       throw new ErrorClass(`Image upload failed: ${error.message}`, 500);
     }
 
@@ -252,12 +287,41 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
 
   // Upload new image if provided
   if (req.file) {
+    const bucket = process.env.COMMUNITIES_BUCKET || "communities";
+    
+    // Check if bucket exists, create if it doesn't
+    try {
+      const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+      if (!listError) {
+        const bucketExists = buckets?.some((b) => b.name === bucket);
+        if (!bucketExists) {
+          // Try to create the bucket
+          const { error: createError } = await supabase.storage.createBucket(bucket, {
+            public: true,
+            allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+          });
+          if (createError) {
+            console.error(`Failed to create bucket "${bucket}":`, createError.message);
+            throw new ErrorClass(
+              `Storage bucket "${bucket}" does not exist. Please create it in Supabase Storage settings. Error: ${createError.message}`,
+              500
+            );
+          }
+        }
+      }
+    } catch (error) {
+      if (error instanceof ErrorClass) {
+        throw error;
+      }
+      // If bucket check fails, continue and let upload error handle it
+      console.warn("Could not verify bucket existence:", error.message);
+    }
+
     // Delete old image if exists
     if (community.image_url) {
       try {
         const urlParts = community.image_url.split("/");
         const fileName = urlParts[urlParts.length - 1];
-        const bucket = process.env.COMMUNITIES_BUCKET || "communities";
         await supabase.storage.from(bucket).remove([`communities/${fileName}`]);
       } catch (error) {
         console.error("Error deleting old image:", error);
@@ -266,7 +330,6 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
 
     const fileExt = req.file.originalname.split(".").pop();
     const fileName = `communities/${tutorId}_${Date.now()}.${fileExt}`;
-    const bucket = process.env.COMMUNITIES_BUCKET || "communities";
 
     const { data, error } = await supabase.storage
       .from(bucket)
@@ -276,6 +339,12 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
       });
 
     if (error) {
+      if (error.message?.includes("Bucket not found") || error.message?.includes("not found")) {
+        throw new ErrorClass(
+          `Storage bucket "${bucket}" does not exist. Please create a bucket named "${bucket}" in your Supabase Storage settings.`,
+          500
+        );
+      }
       throw new ErrorClass(`Image upload failed: ${error.message}`, 500);
     }
 

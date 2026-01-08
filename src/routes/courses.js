@@ -19,6 +19,11 @@ import {
   verifySchoolFeesPayment,
   paySchoolFeesFromWallet,
 } from "../controllers/student/schoolFees.js";
+import {
+  trackActivity,
+  sendHeartbeat,
+  trackBatch,
+} from "../controllers/student/activityTracking.js";
 import { authorize } from "../middlewares/authorize.js";
 
 const router = Router();
@@ -65,5 +70,10 @@ router.get("/school-fees", authorize, getMySchoolFees);
 router.get("/school-fees/history", authorize, getMySchoolFeesHistory);
 router.post("/school-fees/verify", authorize, verifySchoolFeesPayment);
 router.post("/school-fees/pay-from-wallet", authorize, paySchoolFeesFromWallet);
+
+// Activity tracking endpoints (student) - for frontend tracking
+router.post("/activity/track", authorize, trackActivity);
+router.post("/activity/heartbeat", authorize, sendHeartbeat);
+router.post("/activity/batch", authorize, trackBatch);
 
 export default router;
