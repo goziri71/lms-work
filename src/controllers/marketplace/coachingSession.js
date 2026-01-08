@@ -33,14 +33,45 @@ const uploadCoachingImage = multer({
   },
 });
 
-// Middleware export
-export const uploadCoachingImageMiddleware =
-  uploadCoachingImage.single("image");
+// Middleware export with error handling
+export const uploadCoachingImageMiddleware = (req, res, next) => {
+  uploadCoachingImage.single("image")(req, res, (err) => {
+    if (err) {
+      console.error("❌ Multer error in coaching session image upload:", {
+        message: err.message,
+        name: err.name,
+        code: err.code,
+        field: err.field,
+      });
+      // Convert multer errors to ErrorClass
+      if (err instanceof ErrorClass) {
+        return next(err);
+      }
+      // Handle multer-specific errors
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return next(new ErrorClass("File size exceeds 5MB limit", 400));
+      }
+      if (err.code === "LIMIT_UNEXPECTED_FILE") {
+        return next(new ErrorClass("Unexpected file field. Use 'image' field name", 400));
+      }
+      return next(new ErrorClass(`File upload error: ${err.message}`, 400));
+    }
+    next();
+  });
+};
 
 /**
  * Helper to get tutor ID and type from request
  */
 function getTutorInfo(req) {
+  if (!req.user) {
+    throw new ErrorClass("User not authenticated", 401);
+  }
+  
+  if (!req.tutor) {
+    throw new ErrorClass("Tutor information not found", 403);
+  }
+  
   const userType = req.user.userType;
   let tutorId, tutorType, tutorName, tutorEmail;
 
@@ -73,7 +104,19 @@ function getTutorInfo(req) {
  * Body: { title, description?, start_time, end_time, student_ids[] }
  */
 export const createSession = TryCatchFunction(async (req, res) => {
-  const { tutorId, tutorType, tutorName, tutorEmail } = getTutorInfo(req);
+  let tutorId, tutorType, tutorName, tutorEmail;
+  
+  try {
+    ({ tutorId, tutorType, tutorName, tutorEmail } = getTutorInfo(req));
+  } catch (error) {
+    console.error("❌ Error getting tutor info:", {
+      message: error.message,
+      name: error.name,
+      userType: req.user?.userType,
+      tutor: req.tutor ? "exists" : "missing",
+    });
+    throw error;
+  }
   const {
     title,
     description,
@@ -152,6 +195,9 @@ export const createSession = TryCatchFunction(async (req, res) => {
   const durationMs = endTime.getTime() - startTime.getTime();
   const durationMinutes = Math.round(durationMs / (1000 * 60));
   const durationHours = durationMinutes / 60;
+  
+  // Initialize hoursCheck to avoid undefined in catch block
+  let hoursCheck = null;
 
   // Get coaching settings
   let settings;
@@ -177,7 +223,6 @@ export const createSession = TryCatchFunction(async (req, res) => {
   }
 
   // Check and deduct hours (if not unlimited)
-  let hoursCheck;
   try {
     hoursCheck = await checkAndDeductHours(tutorId, tutorType, durationHours);
   } catch (error) {
@@ -405,8 +450,8 @@ export const createSession = TryCatchFunction(async (req, res) => {
     });
   } catch (error) {
     await transaction.rollback();
-    // Refund hours if session creation failed
-    if (hoursCheck && hoursCheck.allowed && !hoursCheck.unlimited) {
+    // Refund hours if session creation failed and hours were deducted
+    if (hoursCheck && hoursCheck.allowed && !hoursCheck.unlimited && typeof durationHours !== 'undefined') {
       try {
         await refundHours(tutorId, tutorType, durationHours);
       } catch (refundError) {
@@ -418,11 +463,29 @@ export const createSession = TryCatchFunction(async (req, res) => {
       message: error.message,
       name: error.name,
       stack: error.stack,
-      tutorId,
-      tutorType,
-      title,
-      pricing_type,
+      tutorId: tutorId || "unknown",
+      tutorType: tutorType || "unknown",
+      title: title || "unknown",
+      pricing_type: pricing_type || "unknown",
+      errorCode: error.code,
+      errorParent: error.parent?.message,
+      errorOriginal: error.original?.message,
     });
+    
+    // Handle specific database errors
+    if (error.name === "SequelizeDatabaseError") {
+      console.error("Database error details:", error.parent);
+      throw new ErrorClass(
+        `Database error: ${error.message || "An error occurred while creating the session"}`,
+        500
+      );
+    }
+    
+    if (error.name === "SequelizeValidationError") {
+      const validationErrors = error.errors?.map((e) => e.message).join(", ") || error.message;
+      throw new ErrorClass(`Validation error: ${validationErrors}`, 400);
+    }
+    
     throw error;
   }
 });
