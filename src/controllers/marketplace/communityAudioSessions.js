@@ -145,7 +145,58 @@ export const createAudioSession = TryCatchFunction(async (req, res) => {
 });
 
 /**
- * Get audio sessions for community
+ * Get audio sessions for community (Tutor endpoint)
+ * GET /api/marketplace/tutor/communities/:id/audio-sessions
+ */
+export const getTutorAudioSessions = TryCatchFunction(async (req, res) => {
+  const { id: communityId } = req.params;
+  const { tutorId, tutorType } = getTutorInfo(req);
+  const { page = 1, limit = 20, status } = req.query;
+
+  // Verify tutor owns community
+  const community = await Community.findByPk(communityId);
+  if (!community) {
+    throw new ErrorClass("Community not found", 404);
+  }
+
+  if (community.tutor_id !== tutorId || community.tutor_type !== tutorType) {
+    throw new ErrorClass("You don't have permission to view sessions for this community", 403);
+  }
+
+  const where = {
+    community_id: communityId,
+  };
+
+  if (status) {
+    where.status = status;
+  }
+
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const { count, rows: sessions } = await CommunityAudioSession.findAndCountAll({
+    where,
+    limit: parseInt(limit),
+    offset,
+    order: [["created_at", "DESC"]],
+  });
+
+  res.json({
+    status: true,
+    code: 200,
+    message: "Audio sessions retrieved successfully",
+    data: {
+      sessions,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: count,
+        totalPages: Math.ceil(count / parseInt(limit)),
+      },
+    },
+  });
+});
+
+/**
+ * Get audio sessions for community (Student endpoint)
  * GET /api/marketplace/communities/:id/audio-sessions
  */
 export const getAudioSessions = TryCatchFunction(async (req, res) => {

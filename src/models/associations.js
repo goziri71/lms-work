@@ -64,6 +64,10 @@ import {
   LearnerActivityLog,
   CourseProgress,
   LearnerLoginHistory,
+  Membership,
+  MembershipProduct,
+  MembershipSubscription,
+  MembershipPayment,
 } from "./marketplace/index.js";
 
 export const setupAssociations = () => {
@@ -926,6 +930,84 @@ export const setupAssociations = () => {
   CommunityAudioSession.belongsTo(Community, {
     foreignKey: "community_id",
     as: "community",
+  });
+
+  // ============================================
+  // MEMBERSHIP ASSOCIATIONS
+  // ============================================
+
+  // Membership -> Tutor (polymorphic)
+  Membership.belongsTo(SoleTutor, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "sole_tutor" },
+    as: "soleTutor",
+  });
+  Membership.belongsTo(Organization, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "organization" },
+    as: "organization",
+  });
+  SoleTutor.hasMany(Membership, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "sole_tutor" },
+    as: "memberships",
+  });
+  Organization.hasMany(Membership, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "organization" },
+    as: "memberships",
+  });
+
+  // Membership -> Membership Products
+  Membership.hasMany(MembershipProduct, {
+    foreignKey: "membership_id",
+    as: "products",
+  });
+  MembershipProduct.belongsTo(Membership, {
+    foreignKey: "membership_id",
+    as: "membership",
+  });
+
+  // Membership -> Subscriptions
+  Membership.hasMany(MembershipSubscription, {
+    foreignKey: "membership_id",
+    as: "subscriptions",
+  });
+  MembershipSubscription.belongsTo(Membership, {
+    foreignKey: "membership_id",
+    as: "membership",
+  });
+  MembershipSubscription.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Membership Subscription -> Payments
+  MembershipSubscription.hasMany(MembershipPayment, {
+    foreignKey: "subscription_id",
+    as: "payments",
+  });
+  MembershipPayment.belongsTo(MembershipSubscription, {
+    foreignKey: "subscription_id",
+    as: "subscription",
+  });
+  MembershipPayment.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+  MembershipPayment.belongsTo(Membership, {
+    foreignKey: "membership_id",
+    as: "membership",
+  });
+
+  // Students -> Membership Subscriptions
+  Students.hasMany(MembershipSubscription, {
+    foreignKey: "student_id",
+    as: "membershipSubscriptions",
   });
 
   // ============================================

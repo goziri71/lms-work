@@ -564,7 +564,16 @@ export async function checkSubscriptionLimit(tutorId, tutorType, resourceType) {
         },
       });
       break;
-    // TODO: Add memberships when implemented
+    case "membership":
+      limit = tierInfo.memberships_limit;
+      const { Membership } = await import("../../models/marketplace/membership.js");
+      currentCount = await Membership.count({
+        where: {
+          tutor_id: tutorId,
+          tutor_type: tutorType === "sole_tutor" ? "sole_tutor" : "organization",
+        },
+      });
+      break;
     default:
       return { allowed: true, reason: null };
   }

@@ -37,4 +37,9 @@ export { TutorWalletTransaction } from "./tutorWalletTransaction.js";
 export { LearnerActivityLog } from "./learnerActivityLog.js";
 export { CourseProgress } from "./courseProgress.js";
 export { LearnerLoginHistory } from "./learnerLoginHistory.js";
+// Membership exports
+export { Membership } from "./membership.js";
+export { MembershipProduct } from "./membershipProduct.js";
+export { MembershipSubscription } from "./membershipSubscription.js";
+export { MembershipPayment } from "./membershipPayment.js";
 

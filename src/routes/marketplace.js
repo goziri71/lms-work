@@ -604,6 +604,7 @@ router.get("/communities/:id/reactions", optionalAuthorize, getReactions);
 // COMMUNITY AUDIO SESSIONS
 import {
   createAudioSession,
+  getTutorAudioSessions,
   getAudioSessions,
   getAudioSession,
   startAudioSession,
@@ -616,6 +617,11 @@ router.post(
   "/tutor/communities/:id/audio-sessions",
   tutorAuthorize,
   createAudioSession
+);
+router.get(
+  "/tutor/communities/:id/audio-sessions",
+  tutorAuthorize,
+  getTutorAudioSessions
 );
 router.get(
   "/communities/:id/audio-sessions",
