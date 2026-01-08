@@ -436,6 +436,10 @@ export async function checkSubscriptionExpiration(tutorId, tutorType) {
     if (now > endDate) {
       // Subscription expired - auto-expire it
       await subscription.update({ status: "expired" });
+      
+      // Deactivate all tutor's memberships
+      await deactivateTutorMemberships(tutorId, tutorType);
+      
       return {
         expired: true,
         isFreeTier: subscription.subscription_tier === "free",
@@ -593,3 +597,61 @@ export async function checkSubscriptionLimit(tutorId, tutorType, resourceType) {
   return { allowed: true, reason: null };
 }
 
+/**
+ * Deactivate all memberships for a tutor when their subscription expires
+ * Internal helper function
+ */
+export async function deactivateTutorMemberships(tutorId, tutorType) {
+  try {
+    const { Membership } = await import("../../models/marketplace/index.js");
+    
+    const memberships = await Membership.findAll({
+      where: {
+        tutor_id: tutorId,
+        tutor_type: tutorType,
+        status: "active",
+      },
+    });
+
+    // Set all to inactive
+    for (const membership of memberships) {
+      await membership.update({ status: "inactive" });
+    }
+
+    if (memberships.length > 0) {
+      console.log(`✅ Deactivated ${memberships.length} memberships for tutor ${tutorId} (${tutorType})`);
+    }
+  } catch (error) {
+    // If Membership model doesn't exist yet, just log and continue
+    console.warn("Could not deactivate memberships:", error.message);
+  }
+}
+
+/**
+ * Reactivate memberships for a tutor when they resubscribe
+ * Internal helper function
+ */
+export async function reactivateTutorMemberships(tutorId, tutorType) {
+  try {
+    const { Membership } = await import("../../models/marketplace/index.js");
+    
+    const memberships = await Membership.findAll({
+      where: {
+        tutor_id: tutorId,
+        tutor_type: tutorType,
+        status: "inactive",
+      },
+    });
+
+    // Set all to active
+    for (const membership of memberships) {
+      await membership.update({ status: "active" });
+    }
+
+    if (memberships.length > 0) {
+      console.log(`✅ Reactivated ${memberships.length} memberships for tutor ${tutorId} (${tutorType})`);
+    }
+  } catch (error) {
+    console.warn("Could not reactivate memberships:", error.message);
+  }
+}

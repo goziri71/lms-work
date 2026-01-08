@@ -727,6 +727,57 @@ import {
 
 router.post("/tutor/payouts/request", tutorAuthorize, requestPayout);
 router.get("/tutor/payouts", tutorAuthorize, listPayouts);
+
+// ============================================
+// MEMBERSHIP MANAGEMENT (TUTOR)
+// ============================================
+import {
+  createMembership,
+  getMyMemberships,
+  getMembership,
+  updateMembership,
+  addProductToMembership,
+  removeProductFromMembership,
+  deleteMembership,
+  uploadMembershipImageMiddleware,
+} from "../controllers/marketplace/membershipManagement.js";
+
+router.post(
+  "/tutor/memberships",
+  tutorAuthorize,
+  uploadMembershipImageMiddleware,
+  createMembership
+);
+router.get("/tutor/memberships", tutorAuthorize, getMyMemberships);
+router.get("/tutor/memberships/:id", tutorAuthorize, getMembership);
+router.put(
+  "/tutor/memberships/:id",
+  tutorAuthorize,
+  uploadMembershipImageMiddleware,
+  updateMembership
+);
+router.post("/tutor/memberships/:id/products", tutorAuthorize, addProductToMembership);
+router.delete("/tutor/memberships/:id/products/:productId", tutorAuthorize, removeProductFromMembership);
+router.delete("/tutor/memberships/:id", tutorAuthorize, deleteMembership);
+
+// ============================================
+// MEMBERSHIP SUBSCRIPTION (LEARNER)
+// ============================================
+import {
+  browseMemberships,
+  getMembershipDetails,
+  subscribeToMembership,
+  cancelSubscription,
+  getMySubscriptions,
+  checkProductAccessEndpoint,
+} from "../controllers/marketplace/membershipSubscription.js";
+
+router.get("/memberships", authorize, browseMemberships);
+router.get("/memberships/:id", authorize, getMembershipDetails);
+router.post("/memberships/:id/subscribe", authorize, subscribeToMembership);
+router.post("/memberships/:id/cancel", authorize, cancelSubscription);
+router.get("/memberships/my-subscriptions", authorize, getMySubscriptions);
+router.get("/products/:productType/:productId/access", authorize, checkProductAccessEndpoint);
 router.get("/tutor/payouts/:id", tutorAuthorize, getPayout);
 
 // Learner Management & Activity Tracking
