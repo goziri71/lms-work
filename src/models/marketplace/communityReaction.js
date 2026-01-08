@@ -1,6 +1,5 @@
 import { db } from "../../database/database.js";
 import { DataTypes } from "sequelize";
-import { Students } from "../auth/student.js";
 
 export const CommunityReaction = db.define(
   "CommunityReaction",
@@ -66,10 +65,5 @@ export const CommunityReaction = db.define(
   }
 );
 
-// Associations
-CommunityReaction.belongsTo(Students, {
-  foreignKey: "user_id",
-  as: "user",
-  constraints: false, // Allow for both students and tutors
-});
+// Associations are defined in src/models/associations.js
 
