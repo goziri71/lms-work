@@ -30,7 +30,7 @@ const uploadCourseImage = multer({
 // Middleware export
 export const uploadCourseImageMiddleware = uploadCourseImage.single("image");
 
-import { normalizeCategory } from "../../constants/categories.js";
+import { normalizeCategory, CATEGORIES } from "../../constants/categories.js";
 
 /**
  * Get all courses created by tutor
@@ -261,7 +261,7 @@ export const createCourse = TryCatchFunction(async (req, res) => {
   const normalizedCategory = normalizeCategory(category);
   if (!normalizedCategory) {
     throw new ErrorClass(
-      "Invalid category. Must be one of: Business & Management, Technology & Data, Engineering & Physical Science, Health & Medicine, Arts & Humanities, Personal Development & Education",
+      `Invalid category. Must be one of: ${CATEGORIES.join(", ")}`,
       400
     );
   }
@@ -618,7 +618,7 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
     normalizedCategory = normalizeCategory(category);
     if (!normalizedCategory) {
       throw new ErrorClass(
-        "Invalid category. Must be one of: Business & Management, Technology & Data, Engineering & Physical Science, Health & Medicine, Arts & Humanities, Personal Development & Education",
+        `Invalid category. Must be one of: ${CATEGORIES.join(", ")}`,
         400
       );
     }

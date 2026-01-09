@@ -46,7 +46,9 @@ async function createMembershipTables() {
             'Engineering & Physical Science',
             'Health & Medicine',
             'Arts & Humanities',
-            'Personal Development & Education'
+            'Personal Development & Education',
+            'Religious and Faith',
+            'Social and Impact'
           )),
           image_url TEXT,
           pricing_type VARCHAR(50) NOT NULL DEFAULT 'monthly' CHECK (pricing_type IN ('free', 'monthly', 'yearly', 'lifetime')),

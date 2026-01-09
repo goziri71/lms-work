@@ -4,7 +4,7 @@ import { DigitalDownloads } from "../../models/marketplace/digitalDownloads.js";
 import { Op } from "sequelize";
 import multer from "multer";
 import { supabase } from "../../utils/supabase.js";
-import { normalizeCategory } from "../../constants/categories.js";
+import { normalizeCategory, CATEGORIES } from "../../constants/categories.js";
 
 // Product type configurations
 const PRODUCT_TYPES = {
@@ -463,7 +463,7 @@ export const createDigitalDownload = TryCatchFunction(async (req, res) => {
   const normalizedCategory = normalizeCategory(category);
   if (!normalizedCategory) {
     throw new ErrorClass(
-      "Invalid category. Must be one of: Business & Management, Technology & Data, Engineering & Physical Science, Health & Medicine, Arts & Humanities, Personal Development & Education",
+      `Invalid category. Must be one of: ${CATEGORIES.join(", ")}`,
       400
     );
   }
@@ -635,7 +635,7 @@ export const updateDigitalDownload = TryCatchFunction(async (req, res) => {
     const normalizedCategory = normalizeCategory(category);
     if (!normalizedCategory) {
       throw new ErrorClass(
-        "Invalid category. Must be one of: Business & Management, Technology & Data, Engineering & Physical Science, Health & Medicine, Arts & Humanities, Personal Development & Education",
+        `Invalid category. Must be one of: ${CATEGORIES.join(", ")}`,
         400
       );
     }

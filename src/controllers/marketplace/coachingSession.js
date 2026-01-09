@@ -13,6 +13,7 @@ import { checkAndDeductHours, refundHours } from "./coachingHours.js";
 import { db } from "../../database/database.js";
 import { Op } from "sequelize";
 import { supabase } from "../../utils/supabase.js";
+import { CATEGORIES } from "../../constants/categories.js";
 
 // Configure multer for coaching session image uploads
 const uploadCoachingImage = multer({
@@ -167,7 +168,7 @@ export const createSession = TryCatchFunction(async (req, res) => {
     const normalizedCategory = normalizeCategory(category);
     if (!normalizedCategory) {
       throw new ErrorClass(
-        "Invalid category. Must be one of: Business & Management, Technology & Data, Engineering & Physical Science, Health & Medicine, Arts & Humanities, Personal Development & Education",
+        `Invalid category. Must be one of: ${CATEGORIES.join(", ")}`,
         400
       );
     }

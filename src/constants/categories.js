@@ -10,6 +10,8 @@ export const CATEGORIES = [
   "Health & Medicine",
   "Arts & Humanities",
   "Personal Development & Education",
+  "Religious and Faith",
+  "Social and Impact",
 ];
 
 /**
@@ -19,14 +21,14 @@ export const CATEGORIES = [
  */
 export function normalizeCategory(category) {
   if (!category) return null;
-  
+
   const normalized = category.trim();
-  
+
   // Direct match (case-sensitive)
   if (CATEGORIES.includes(normalized)) {
     return normalized;
   }
-  
+
   // Case-insensitive match
   const lowerNormalized = normalized.toLowerCase();
   for (const cat of CATEGORIES) {
@@ -34,32 +36,37 @@ export function normalizeCategory(category) {
       return cat;
     }
   }
-  
+
   // Partial match (for flexibility)
   const categoryMap = {
-    "business": "Business & Management",
-    "management": "Business & Management",
-    "tech": "Technology & Data",
-    "technology": "Technology & Data",
-    "data": "Technology & Data",
-    "engineering": "Engineering & Physical Science",
-    "science": "Engineering & Physical Science",
-    "health": "Health & Medicine",
-    "medicine": "Health & Medicine",
-    "arts": "Arts & Humanities",
-    "humanities": "Arts & Humanities",
+    business: "Business & Management",
+    management: "Business & Management",
+    tech: "Technology & Data",
+    technology: "Technology & Data",
+    data: "Technology & Data",
+    engineering: "Engineering & Physical Science",
+    science: "Engineering & Physical Science",
+    health: "Health & Medicine",
+    medicine: "Health & Medicine",
+    arts: "Arts & Humanities",
+    humanities: "Arts & Humanities",
     "personal development": "Personal Development & Education",
-    "education": "Personal Development & Education",
-    "development": "Personal Development & Education",
+    education: "Personal Development & Education",
+    development: "Personal Development & Education",
+    religious: "Religious and Faith",
+    faith: "Religious and Faith",
+    religion: "Religious and Faith",
+    social: "Social and Impact",
+    impact: "Social and Impact",
   };
-  
+
   const lowerInput = lowerNormalized;
   for (const [key, value] of Object.entries(categoryMap)) {
     if (lowerInput.includes(key) || key.includes(lowerInput)) {
       return value;
     }
   }
-  
+
   return null;
 }
 
@@ -71,4 +78,3 @@ export function normalizeCategory(category) {
 export function isValidCategory(category) {
   return normalizeCategory(category) !== null;
 }
-
