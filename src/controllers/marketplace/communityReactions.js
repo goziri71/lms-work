@@ -13,6 +13,82 @@ import { CommunityMember } from "../../models/marketplace/communityMember.js";
 import { Students } from "../../models/auth/student.js";
 import { Op } from "sequelize";
 
+// Helper function to get user info for reactions (handles both tutors and students)
+async function getUserInfoForReaction(userId, userType, community) {
+  if (userType === "student") {
+    const student = await Students.findByPk(userId, {
+      attributes: ["id", "fname", "lname", "mname", "email"],
+    });
+    if (student) {
+      return {
+        id: student.id,
+        name: `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim() || student.email,
+        email: student.email,
+      };
+    }
+  } else if (userType === "tutor") {
+    // Check if user is the community tutor
+    if (community && Number(community.tutor_id) === Number(userId)) {
+      if (community.tutor_type === "sole_tutor") {
+        const { SoleTutor } = await import("../../models/marketplace/soleTutor.js");
+        const tutor = await SoleTutor.findByPk(userId, {
+          attributes: ["id", "fname", "lname", "email"],
+        });
+        if (tutor) {
+          return {
+            id: tutor.id,
+            name: `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || tutor.email,
+            email: tutor.email,
+          };
+        }
+      } else if (community.tutor_type === "organization") {
+        const { Organization } = await import("../../models/marketplace/organization.js");
+        const org = await Organization.findByPk(userId, {
+          attributes: ["id", "name", "email"],
+        });
+        if (org) {
+          return {
+            id: org.id,
+            name: org.name || org.email,
+            email: org.email,
+          };
+        }
+      }
+    }
+
+    // Check if user is an organization_user whose organization_id matches community tutor_id
+    if (community && community.tutor_type === "organization") {
+      const { OrganizationUser } = await import("../../models/marketplace/organizationUser.js");
+      const { Organization } = await import("../../models/marketplace/organization.js");
+      const orgUser = await OrganizationUser.findByPk(userId, {
+        attributes: ["id", "organization_id", "fname", "lname", "email"],
+        include: [
+          {
+            model: Organization,
+            as: "organization",
+            attributes: ["id", "name"],
+            required: false,
+          },
+        ],
+      });
+      if (orgUser && Number(orgUser.organization_id) === Number(community.tutor_id)) {
+        return {
+          id: orgUser.organization_id || orgUser.id,
+          name: orgUser.organization?.name || `${orgUser.fname || ""} ${orgUser.lname || ""}`.trim() || orgUser.email,
+          email: orgUser.email,
+        };
+      }
+    }
+  }
+
+  // Fallback
+  return {
+    id: userId,
+    name: "Unknown",
+    email: "",
+  };
+}
+
 /**
  * Helper to check if user has access to community
  */
@@ -211,50 +287,48 @@ export const getReactions = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Either post_id or comment_id is required", 400);
   }
 
+  // Get community info to check tutor
+  const community = await Community.findByPk(communityId, {
+    attributes: ["id", "tutor_id", "tutor_type"],
+  });
+
   // Get reactions
   const reactions = await CommunityReaction.findAll({
     where: {
       post_id: post_id || null,
       comment_id: comment_id || null,
     },
-    include: [
-      {
-        model: Students,
-        as: "user",
-        attributes: ["id", "fname", "lname", "mname", "email"],
-        required: false,
-      },
-    ],
     order: [["created_at", "DESC"]],
   });
 
-  // Group by emoji
+  // Group by emoji and get user info for each reaction
   const groupedReactions = {};
-  reactions.forEach((reaction) => {
-    if (!groupedReactions[reaction.emoji]) {
-      groupedReactions[reaction.emoji] = {
-        emoji: reaction.emoji,
-        count: 0,
-        users: [],
-        user_reacted: false,
-      };
-    }
-    groupedReactions[reaction.emoji].count++;
-    
-    if (reaction.user) {
-      const userName = `${reaction.user.fname || ""} ${reaction.user.mname || ""} ${reaction.user.lname || ""}`.trim() || reaction.user.email;
-      groupedReactions[reaction.emoji].users.push({
-        id: reaction.user.id,
-        name: userName,
-        email: reaction.user.email,
-      });
-    }
+  await Promise.all(
+    reactions.map(async (reaction) => {
+      if (!groupedReactions[reaction.emoji]) {
+        groupedReactions[reaction.emoji] = {
+          emoji: reaction.emoji,
+          count: 0,
+          users: [],
+          user_reacted: false,
+        };
+      }
+      groupedReactions[reaction.emoji].count++;
 
-    // Check if current user reacted with this emoji
-    if (userId && reaction.user_id === userId) {
-      groupedReactions[reaction.emoji].user_reacted = true;
-    }
-  });
+      // Get user info (handles both tutors and students)
+      const userInfo = await getUserInfoForReaction(
+        reaction.user_id,
+        reaction.user_type,
+        community
+      );
+      groupedReactions[reaction.emoji].users.push(userInfo);
+
+      // Check if current user reacted with this emoji
+      if (userId && reaction.user_id === userId) {
+        groupedReactions[reaction.emoji].user_reacted = true;
+      }
+    })
+  );
 
   res.json({
     status: true,

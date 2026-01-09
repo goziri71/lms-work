@@ -15,6 +15,101 @@ import { supabase } from "../../utils/supabase.js";
 import multer from "multer";
 import { Op } from "sequelize";
 
+// Helper function to get author info (handles both tutors and students)
+async function getAuthorInfo(authorId, community) {
+  if (!community) {
+    // If no community info, try student first, then fallback
+    const student = await Students.findByPk(authorId, {
+      attributes: ["id", "fname", "lname", "mname", "email"],
+    });
+    if (student) {
+      return {
+        id: student.id,
+        name: `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim() || student.email,
+        email: student.email,
+      };
+    }
+    return {
+      id: authorId,
+      name: "Unknown",
+      email: "",
+    };
+  }
+
+  // First, check if author_id matches the community tutor_id (for sole_tutor and organization)
+  if (Number(community.tutor_id) === Number(authorId)) {
+    // Author is the tutor
+    if (community.tutor_type === "sole_tutor") {
+      const { SoleTutor } = await import("../../models/marketplace/soleTutor.js");
+      const tutor = await SoleTutor.findByPk(authorId, {
+        attributes: ["id", "fname", "lname", "email"],
+      });
+      if (tutor) {
+        return {
+          id: tutor.id,
+          name: `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || tutor.email,
+          email: tutor.email,
+        };
+      }
+    } else if (community.tutor_type === "organization") {
+      const { Organization } = await import("../../models/marketplace/organization.js");
+      const org = await Organization.findByPk(authorId, {
+        attributes: ["id", "name", "email"],
+      });
+      if (org) {
+        return {
+          id: org.id,
+          name: org.name || org.email,
+          email: org.email,
+        };
+      }
+    }
+  }
+
+  // Check if author is an organization_user whose organization_id matches community tutor_id
+  if (community.tutor_type === "organization") {
+    const { OrganizationUser } = await import("../../models/marketplace/organizationUser.js");
+    const { Organization } = await import("../../models/marketplace/organization.js");
+    const orgUser = await OrganizationUser.findByPk(authorId, {
+      attributes: ["id", "organization_id", "fname", "lname", "email"],
+      include: [
+        {
+          model: Organization,
+          as: "organization",
+          attributes: ["id", "name"],
+          required: false,
+        },
+      ],
+    });
+    if (orgUser && Number(orgUser.organization_id) === Number(community.tutor_id)) {
+      return {
+        id: orgUser.organization_id || orgUser.id,
+        name: orgUser.organization?.name || `${orgUser.fname || ""} ${orgUser.lname || ""}`.trim() || orgUser.email,
+        email: orgUser.email,
+      };
+    }
+  }
+
+  // Author is a student
+  const student = await Students.findByPk(authorId, {
+    attributes: ["id", "fname", "lname", "mname", "email"],
+  });
+  if (student) {
+    return {
+      id: student.id,
+      name: `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim() || student.email,
+      email: student.email,
+    };
+  }
+
+  // Fallback
+  return {
+    id: authorId,
+    name: "Unknown",
+    email: "",
+  };
+}
+
 // Configure multer for file uploads
 const uploadCommunityFile = multer({
   storage: multer.memoryStorage(),
@@ -464,6 +559,11 @@ export const getPosts = TryCatchFunction(async (req, res) => {
     ];
   }
 
+  // Get community info to check tutor
+  const community = await Community.findByPk(communityId, {
+    attributes: ["id", "tutor_id", "tutor_type"],
+  });
+
   const offset = (parseInt(page) - 1) * parseInt(limit);
   const { count, rows: posts } = await CommunityPost.findAndCountAll({
     where,
@@ -473,32 +573,18 @@ export const getPosts = TryCatchFunction(async (req, res) => {
       ["is_featured", "DESC"], // Featured posts first
       ["created_at", "DESC"],
     ],
-    include: [
-      {
-        model: Students,
-        as: "author",
-        attributes: ["id", "fname", "lname", "mname", "email"],
-      },
-    ],
   });
 
-  // Format posts with author names
-  const formattedPosts = posts.map((post) => {
-    const author = post.author;
-    const authorName =
-      `${author.fname || ""} ${author.mname || ""} ${
-        author.lname || ""
-      }`.trim() || author.email;
-
-    return {
-      ...post.toJSON(),
-      author: {
-        id: author.id,
-        name: authorName,
-        email: author.email,
-      },
-    };
-  });
+  // Format posts with author names (handle both tutors and students)
+  const formattedPosts = await Promise.all(
+    posts.map(async (post) => {
+      const author = await getAuthorInfo(post.author_id, community);
+      return {
+        ...post.toJSON(),
+        author,
+      };
+    })
+  );
 
   res.json({
     status: true,
@@ -540,27 +626,22 @@ export const getPost = TryCatchFunction(async (req, res) => {
       community_id: communityId,
       status: "published",
     },
-    include: [
-      {
-        model: Students,
-        as: "author",
-        attributes: ["id", "fname", "lname", "mname", "email"],
-      },
-    ],
   });
 
   if (!post) {
     throw new ErrorClass("Post not found", 404);
   }
 
+  // Get community info to check tutor
+  const community = await Community.findByPk(communityId, {
+    attributes: ["id", "tutor_id", "tutor_type"],
+  });
+
   // Increment views
   await post.increment("views");
 
-  const author = post.author;
-  const authorName =
-    `${author.fname || ""} ${author.mname || ""} ${
-      author.lname || ""
-    }`.trim() || author.email;
+  // Get author info (handles both tutors and students)
+  const author = await getAuthorInfo(post.author_id, community);
 
   res.json({
     status: true,
@@ -568,11 +649,7 @@ export const getPost = TryCatchFunction(async (req, res) => {
     message: "Post retrieved successfully",
     data: {
       ...post.toJSON(),
-      author: {
-        id: author.id,
-        name: authorName,
-        email: author.email,
-      },
+      author,
     },
   });
 });
@@ -589,13 +666,18 @@ export const updatePost = TryCatchFunction(async (req, res) => {
   // Check access (allows both students and tutors)
   const access = await checkCommunityAccess(communityId, userId, userType, req);
 
-  const post = await CommunityPost.findOne({
-    where: {
-      id: postId,
-      community_id: communityId,
-      author_id: studentId,
-    },
-  });
+  // Build where clause - allow tutors to update any post in their community, students only their own
+  const where = {
+    id: postId,
+    community_id: communityId,
+  };
+
+  if (!access.isOwner) {
+    // Students can only update their own posts
+    where.author_id = userId;
+  }
+
+  const post = await CommunityPost.findOne({ where });
 
   if (!post) {
     throw new ErrorClass(
@@ -653,11 +735,22 @@ export const updatePost = TryCatchFunction(async (req, res) => {
 
   await post.save();
 
+  // Get community info to check tutor
+  const community = await Community.findByPk(communityId, {
+    attributes: ["id", "tutor_id", "tutor_type"],
+  });
+
+  // Get author info (handles both tutors and students)
+  const author = await getAuthorInfo(post.author_id, community);
+
   res.json({
     status: true,
     code: 200,
     message: "Post updated successfully",
-    data: post,
+    data: {
+      ...post.toJSON(),
+      author,
+    },
   });
 });
 
@@ -915,6 +1008,11 @@ export const getComments = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Post not found", 404);
   }
 
+  // Get community info to check tutor
+  const community = await Community.findByPk(communityId, {
+    attributes: ["id", "tutor_id", "tutor_type"],
+  });
+
   // Get all comments for this post (no pagination for threading)
   const allComments = await CommunityComment.findAll({
     where: {
@@ -922,39 +1020,24 @@ export const getComments = TryCatchFunction(async (req, res) => {
       status: "published",
     },
     order: [["created_at", "ASC"]],
-    include: [
-      {
-        model: Students,
-        as: "author",
-        attributes: ["id", "fname", "lname", "mname", "email"],
-      },
-    ],
   });
 
   // Build threaded structure
   const commentMap = new Map();
   const rootComments = [];
 
-  // First pass: create map of all comments
-  allComments.forEach((comment) => {
-    const author = comment.author;
-    const authorName =
-      `${author.fname || ""} ${author.mname || ""} ${
-        author.lname || ""
-      }`.trim() || author.email;
-
-    const formatted = {
-      ...comment.toJSON(),
-      author: {
-        id: author.id,
-        name: authorName,
-        email: author.email,
-      },
-      replies: [],
-    };
-
-    commentMap.set(comment.id, formatted);
-  });
+  // First pass: create map of all comments with author info
+  await Promise.all(
+    allComments.map(async (comment) => {
+      const author = await getAuthorInfo(comment.author_id, community);
+      const formatted = {
+        ...comment.toJSON(),
+        author,
+        replies: [],
+      };
+      commentMap.set(comment.id, formatted);
+    })
+  );
 
   // Second pass: build tree structure
   allComments.forEach((comment) => {
