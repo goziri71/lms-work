@@ -5,7 +5,7 @@
 
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
-import { Membership, MembershipProduct, MembershipSubscription, MembershipPayment } from "../../models/marketplace/index.js";
+import { Membership, MembershipProduct, MembershipSubscription, MembershipPayment, MembershipTier, MembershipTierChange } from "../../models/marketplace/index.js";
 import { Students } from "../../models/auth/student.js";
 import { Funding } from "../../models/payment/index.js";
 import { getWalletBalance } from "../../services/walletBalanceService.js";
@@ -201,6 +201,19 @@ export const getMembershipDetails = TryCatchFunction(async (req, res) => {
       {
         model: MembershipProduct,
         as: "products",
+      },
+      {
+        model: MembershipTier,
+        as: "tiers",
+        where: { status: "active" },
+        required: false,
+        include: [
+          {
+            model: MembershipTierProduct,
+            as: "products",
+          },
+        ],
+        order: [["display_order", "ASC"]],
       },
     ],
   });
@@ -403,22 +416,62 @@ export const getMembershipDetails = TryCatchFunction(async (req, res) => {
 export const subscribeToMembership = TryCatchFunction(async (req, res) => {
   const { id: membershipId } = req.params;
   const studentId = req.user?.id;
-  const { payment_method = "wallet" } = req.body;
+  const { payment_method = "wallet", tier_id, pricing_type } = req.body;
 
   if (req.user?.userType !== "student") {
     throw new ErrorClass("Only students can subscribe to memberships", 403);
   }
 
-  // Get membership
+  // Get membership with tiers
   const membership = await Membership.findOne({
     where: {
       id: membershipId,
       status: "active",
     },
+    include: [
+      {
+        model: MembershipTier,
+        as: "tiers",
+        where: { status: "active" },
+        required: false,
+      },
+    ],
   });
 
   if (!membership) {
     throw new ErrorClass("Membership not found", 404);
+  }
+
+  // Determine if using tier system or legacy
+  const hasTiers = membership.tiers && membership.tiers.length > 0;
+  const useTierSystem = hasTiers;
+
+  // If membership has tiers, tier_id and pricing_type are required
+  if (useTierSystem) {
+    if (!tier_id) {
+      throw new ErrorClass("tier_id is required for this membership", 400);
+    }
+    if (!pricing_type || !["monthly", "yearly", "lifetime"].includes(pricing_type)) {
+      throw new ErrorClass("pricing_type must be one of: monthly, yearly, lifetime", 400);
+    }
+
+    // Find and validate tier
+    const tier = membership.tiers.find((t) => t.id === parseInt(tier_id));
+    if (!tier) {
+      throw new ErrorClass("Tier not found or inactive", 404);
+    }
+
+    // Check if tier has pricing for the selected period
+    const priceField = `${pricing_type}_price`;
+    const price = tier[priceField];
+    if (price === null || price === undefined) {
+      throw new ErrorClass(`This tier does not support ${pricing_type} pricing`, 400);
+    }
+  } else {
+    // Legacy: use membership pricing
+    if (!membership.pricing_type) {
+      throw new ErrorClass("Membership pricing is not configured", 400);
+    }
   }
 
   // Check tutor subscription is active
@@ -453,20 +506,39 @@ export const subscribeToMembership = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Student not found", 404);
   }
 
+  // Get pricing information
+  let price = 0;
+  let currency = "NGN";
+  let selectedPricingType = null;
+  let selectedTier = null;
+
+  if (useTierSystem) {
+    selectedTier = membership.tiers.find((t) => t.id === parseInt(tier_id));
+    selectedPricingType = pricing_type;
+    const priceField = `${pricing_type}_price`;
+    price = parseFloat(selectedTier[priceField]);
+    currency = selectedTier.currency || "NGN";
+  } else {
+    // Legacy
+    selectedPricingType = membership.pricing_type;
+    price = parseFloat(membership.price) || 0;
+    currency = membership.currency || "NGN";
+  }
+
   // Calculate dates based on pricing type
   const now = new Date();
   let endDate = null;
   let nextPaymentDate = null;
 
-  if (membership.pricing_type === "monthly") {
+  if (selectedPricingType === "monthly") {
     endDate = new Date(now);
     endDate.setMonth(endDate.getMonth() + 1);
     nextPaymentDate = new Date(endDate);
-  } else if (membership.pricing_type === "yearly") {
+  } else if (selectedPricingType === "yearly") {
     endDate = new Date(now);
     endDate.setFullYear(endDate.getFullYear() + 1);
     nextPaymentDate = new Date(endDate);
-  } else if (membership.pricing_type === "lifetime") {
+  } else if (selectedPricingType === "lifetime") {
     endDate = null; // Lifetime has no end date
     nextPaymentDate = null;
   }
@@ -474,9 +546,7 @@ export const subscribeToMembership = TryCatchFunction(async (req, res) => {
 
   // Process payment if not free
   let payment = null;
-  if (membership.pricing_type !== "free" && parseFloat(membership.price) > 0) {
-    const price = parseFloat(membership.price);
-    const currency = membership.currency || "NGN";
+  if (selectedPricingType !== "free" && price > 0) {
 
     if (payment_method === "wallet") {
       // Get wallet balance
@@ -526,7 +596,7 @@ export const subscribeToMembership = TryCatchFunction(async (req, res) => {
             payment_method: "wallet",
             payment_reference: txRef,
             status: "completed",
-            payment_period: membership.pricing_type,
+            payment_period: selectedPricingType,
             paid_at: now,
           },
           { transaction }
@@ -547,7 +617,7 @@ export const subscribeToMembership = TryCatchFunction(async (req, res) => {
         currency: currency,
         payment_method: "flutterwave",
         status: "pending",
-        payment_period: membership.pricing_type,
+        payment_period: selectedPricingType,
       });
 
       // Return payment URL for Flutterwave
@@ -560,12 +630,30 @@ export const subscribeToMembership = TryCatchFunction(async (req, res) => {
   const subscription = await MembershipSubscription.create({
     student_id: studentId,
     membership_id: membershipId,
+    tier_id: useTierSystem ? parseInt(tier_id) : null,
+    tier_name: useTierSystem ? selectedTier.tier_name : null,
     status: "active",
     start_date: now,
     end_date: endDate,
     next_payment_date: nextPaymentDate,
     auto_renew: true,
   });
+
+  // Create tier change record for initial subscription
+  if (useTierSystem) {
+    await MembershipTierChange.create({
+      subscription_id: subscription.id,
+      old_tier_id: null,
+      old_tier_name: null,
+      new_tier_id: parseInt(tier_id),
+      new_tier_name: selectedTier.tier_name,
+      change_type: "initial",
+      payment_amount: price > 0 ? price : null,
+      refund_amount: null,
+      currency: currency,
+      effective_date: now,
+    });
+  }
 
   res.status(201).json({
     status: true,
@@ -574,6 +662,11 @@ export const subscribeToMembership = TryCatchFunction(async (req, res) => {
     data: {
       subscription,
       payment: payment,
+      tier: useTierSystem ? {
+        id: selectedTier.id,
+        name: selectedTier.tier_name,
+        pricing_type: selectedPricingType,
+      } : null,
     },
   });
 });
@@ -685,6 +778,283 @@ export const getMySubscriptions = TryCatchFunction(async (req, res) => {
       },
     },
   });
+});
+
+/**
+ * Change tier (upgrade/downgrade)
+ * POST /api/marketplace/memberships/:id/change-tier
+ */
+export const changeTier = TryCatchFunction(async (req, res) => {
+  const { id: membershipId } = req.params;
+  const studentId = req.user?.id;
+  const { new_tier_id, pricing_type, payment_method = "wallet" } = req.body;
+
+  if (req.user?.userType !== "student") {
+    throw new ErrorClass("Only students can change tiers", 403);
+  }
+
+  if (!new_tier_id) {
+    throw new ErrorClass("new_tier_id is required", 400);
+  }
+
+  if (!pricing_type || !["monthly", "yearly", "lifetime"].includes(pricing_type)) {
+    throw new ErrorClass("pricing_type must be one of: monthly, yearly, lifetime", 400);
+  }
+
+  // Get membership with tiers
+  const membership = await Membership.findOne({
+    where: {
+      id: membershipId,
+      status: "active",
+    },
+    include: [
+      {
+        model: MembershipTier,
+        as: "tiers",
+        where: { status: "active" },
+        required: false,
+      },
+    ],
+  });
+
+  if (!membership) {
+    throw new ErrorClass("Membership not found", 404);
+  }
+
+  // Check if membership uses tier system
+  const hasTiers = membership.tiers && membership.tiers.length > 0;
+  if (!hasTiers) {
+    throw new ErrorClass("This membership does not use the tier system", 400);
+  }
+
+  // Find new tier
+  const newTier = membership.tiers.find((t) => t.id === parseInt(new_tier_id));
+  if (!newTier) {
+    throw new ErrorClass("New tier not found or inactive", 404);
+  }
+
+  // Check if new tier has pricing for selected period
+  const newPriceField = `${pricing_type}_price`;
+  const newPrice = newTier[newPriceField];
+  if (newPrice === null || newPrice === undefined) {
+    throw new ErrorClass(`This tier does not support ${pricing_type} pricing`, 400);
+  }
+
+  // Get current subscription
+  const subscription = await MembershipSubscription.findOne({
+    where: {
+      membership_id: membershipId,
+      student_id: studentId,
+      status: "active",
+    },
+  });
+
+  if (!subscription) {
+    throw new ErrorClass("Active subscription not found", 404);
+  }
+
+  if (!subscription.tier_id) {
+    throw new ErrorClass("Current subscription does not have a tier. Please subscribe to a tier first.", 400);
+  }
+
+  // Check if already on this tier
+  if (subscription.tier_id === parseInt(new_tier_id)) {
+    throw new ErrorClass("You are already subscribed to this tier", 400);
+  }
+
+  // Find old tier
+  const oldTier = membership.tiers.find((t) => t.id === subscription.tier_id);
+  if (!oldTier) {
+    throw new ErrorClass("Current tier not found", 404);
+  }
+
+  // Get old tier price for current pricing period
+  const oldPricingType = subscription.next_payment_date ? (subscription.end_date ? "yearly" : "monthly") : "lifetime";
+  const oldPriceField = `${oldPricingType}_price`;
+  const oldPrice = oldTier[oldPriceField] || 0;
+
+  // Determine change type
+  const isUpgrade = parseFloat(newPrice) > parseFloat(oldPrice);
+  const changeType = isUpgrade ? "upgrade" : "downgrade";
+
+  // Calculate payment/refund
+  const now = new Date();
+  let paymentAmount = 0;
+  let refundAmount = 0;
+  const currency = newTier.currency || "NGN";
+
+  if (isUpgrade) {
+    // Upgrade: Pay full new tier price
+    paymentAmount = parseFloat(newPrice);
+  } else {
+    // Downgrade: Calculate prorated refund
+    if (subscription.end_date) {
+      const startDate = new Date(subscription.start_date);
+      const endDate = new Date(subscription.end_date);
+      const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+      const remainingDays = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24));
+      
+      if (remainingDays > 0 && totalDays > 0) {
+        const proratedOldPrice = (parseFloat(oldPrice) * remainingDays) / totalDays;
+        refundAmount = proratedOldPrice;
+      }
+    } else {
+      // Lifetime subscription - no refund for downgrade
+      refundAmount = 0;
+    }
+  }
+
+  // Get student
+  const student = await Students.findByPk(studentId);
+  if (!student) {
+    throw new ErrorClass("Student not found", 404);
+  }
+
+  // Process payment/refund
+  let payment = null;
+  const transaction = await db.transaction();
+
+  try {
+    if (isUpgrade && paymentAmount > 0) {
+      // Process upgrade payment
+      if (payment_method === "wallet") {
+        const { balance: walletBalance } = await getWalletBalance(studentId, true);
+
+        if (walletBalance < paymentAmount) {
+          await transaction.rollback();
+          throw new ErrorClass(
+            `Insufficient wallet balance. Required: ${paymentAmount} ${currency}, Available: ${walletBalance} ${currency}`,
+            400
+          );
+        }
+
+        // Debit wallet
+        const newBalance = walletBalance - paymentAmount;
+        const txRef = `MEMBERSHIP-TIER-UP-${membershipId}-${Date.now()}`;
+
+        await Funding.create(
+          {
+            student_id: studentId,
+            amount: paymentAmount,
+            type: "Debit",
+            service_name: "Membership Tier Upgrade",
+            ref: txRef,
+            date: now,
+            semester: null,
+            academic_year: null,
+            currency: currency,
+            balance: newBalance.toString(),
+          },
+          { transaction }
+        );
+
+        await student.update({ wallet_balance: newBalance }, { transaction });
+
+        // Create payment record
+        payment = await MembershipPayment.create(
+          {
+            student_id: studentId,
+            membership_id: membershipId,
+            amount: paymentAmount,
+            currency: currency,
+            payment_method: "wallet",
+            payment_reference: txRef,
+            status: "completed",
+            payment_period: pricing_type,
+            paid_at: now,
+          },
+          { transaction }
+        );
+      } else if (payment_method === "flutterwave") {
+        // TODO: Implement Flutterwave payment
+        await transaction.rollback();
+        throw new ErrorClass("Flutterwave payment not yet implemented", 501);
+      }
+    } else if (!isUpgrade && refundAmount > 0) {
+      // Process downgrade refund
+      const newBalance = parseFloat(student.wallet_balance) + refundAmount;
+      const txRef = `MEMBERSHIP-TIER-DOWN-${membershipId}-${Date.now()}`;
+
+      await Funding.create(
+        {
+          student_id: studentId,
+          amount: refundAmount,
+          type: "Credit",
+          service_name: "Membership Tier Downgrade Refund",
+          ref: txRef,
+          date: now,
+          semester: null,
+          academic_year: null,
+          currency: currency,
+          balance: newBalance.toString(),
+        },
+        { transaction }
+      );
+
+      await student.update({ wallet_balance: newBalance }, { transaction });
+    }
+
+    // Update subscription tier (immediate effect)
+    subscription.tier_id = parseInt(new_tier_id);
+    subscription.tier_name = newTier.tier_name;
+
+    // Recalculate dates if pricing period changed
+    if (pricing_type !== oldPricingType) {
+      if (pricing_type === "monthly") {
+        subscription.end_date = new Date(now);
+        subscription.end_date.setMonth(subscription.end_date.getMonth() + 1);
+        subscription.next_payment_date = new Date(subscription.end_date);
+      } else if (pricing_type === "yearly") {
+        subscription.end_date = new Date(now);
+        subscription.end_date.setFullYear(subscription.end_date.getFullYear() + 1);
+        subscription.next_payment_date = new Date(subscription.end_date);
+      } else if (pricing_type === "lifetime") {
+        subscription.end_date = null;
+        subscription.next_payment_date = null;
+      }
+    }
+
+    await subscription.save({ transaction });
+
+    // Create tier change record
+    const tierChange = await MembershipTierChange.create(
+      {
+        subscription_id: subscription.id,
+        old_tier_id: oldTier.id,
+        old_tier_name: oldTier.tier_name,
+        new_tier_id: newTier.id,
+        new_tier_name: newTier.tier_name,
+        change_type: changeType,
+        payment_amount: isUpgrade ? paymentAmount : null,
+        refund_amount: !isUpgrade ? refundAmount : null,
+        currency: currency,
+        effective_date: now,
+      },
+      { transaction }
+    );
+
+    await transaction.commit();
+
+    res.json({
+      status: true,
+      code: 200,
+      message: `Tier ${changeType} successful`,
+      data: {
+        subscription,
+        tier_change: tierChange,
+        payment: payment,
+        refund_amount: !isUpgrade ? refundAmount : null,
+        new_tier: {
+          id: newTier.id,
+          name: newTier.tier_name,
+          pricing_type: pricing_type,
+        },
+      },
+    });
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
 });
 
 /**

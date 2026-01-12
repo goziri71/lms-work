@@ -761,6 +761,29 @@ router.delete("/tutor/memberships/:id/products/:productId", tutorAuthorize, remo
 router.delete("/tutor/memberships/:id", tutorAuthorize, deleteMembership);
 
 // ============================================
+// MEMBERSHIP TIER MANAGEMENT (TUTOR)
+// ============================================
+import {
+  createTier,
+  getMembershipTiers,
+  getTier,
+  updateTier,
+  deleteTier,
+  bulkAssignProductsToTiers,
+  addProductToTier,
+  removeProductFromTier,
+} from "../controllers/marketplace/membershipTierManagement.js";
+
+router.post("/tutor/memberships/:id/tiers", tutorAuthorize, createTier);
+router.get("/tutor/memberships/:id/tiers", tutorAuthorize, getMembershipTiers);
+router.get("/tutor/memberships/:id/tiers/:tierId", tutorAuthorize, getTier);
+router.put("/tutor/memberships/:id/tiers/:tierId", tutorAuthorize, updateTier);
+router.delete("/tutor/memberships/:id/tiers/:tierId", tutorAuthorize, deleteTier);
+router.post("/tutor/memberships/:id/tiers/products", tutorAuthorize, bulkAssignProductsToTiers);
+router.post("/tutor/memberships/:id/tiers/:tierId/products", tutorAuthorize, addProductToTier);
+router.delete("/tutor/memberships/:id/tiers/:tierId/products/:productId", tutorAuthorize, removeProductFromTier);
+
+// ============================================
 // MEMBERSHIP SUBSCRIPTION (LEARNER)
 // ============================================
 import {
@@ -770,11 +793,13 @@ import {
   cancelSubscription,
   getMySubscriptions,
   checkProductAccessEndpoint,
+  changeTier,
 } from "../controllers/marketplace/membershipSubscription.js";
 
 router.get("/memberships", authorize, browseMemberships);
 router.get("/memberships/:id", authorize, getMembershipDetails);
 router.post("/memberships/:id/subscribe", authorize, subscribeToMembership);
+router.post("/memberships/:id/change-tier", authorize, changeTier);
 router.post("/memberships/:id/cancel", authorize, cancelSubscription);
 router.get("/memberships/my-subscriptions", authorize, getMySubscriptions);
 router.get("/products/:productType/:productId/access", authorize, checkProductAccessEndpoint);

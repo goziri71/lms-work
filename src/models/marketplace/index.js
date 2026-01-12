@@ -42,4 +42,7 @@ export { Membership } from "./membership.js";
 export { MembershipProduct } from "./membershipProduct.js";
 export { MembershipSubscription } from "./membershipSubscription.js";
 export { MembershipPayment } from "./membershipPayment.js";
+export { MembershipTier } from "./membershipTier.js";
+export { MembershipTierProduct } from "./membershipTierProduct.js";
+export { MembershipTierChange } from "./membershipTierChange.js";
 

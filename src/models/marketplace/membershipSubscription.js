@@ -19,6 +19,16 @@ export const MembershipSubscription = db.define(
       allowNull: false,
       comment: "Membership ID",
     },
+    tier_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: "ID of the membership tier (null for legacy subscriptions without tiers)",
+    },
+    tier_name: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: "Name of the membership tier (null for legacy subscriptions)",
+    },
     status: {
       type: DataTypes.ENUM("active", "expired", "cancelled"),
       allowNull: false,
@@ -68,6 +78,9 @@ export const MembershipSubscription = db.define(
       },
       {
         fields: ["membership_id"],
+      },
+      {
+        fields: ["tier_id"],
       },
       {
         fields: ["status"],

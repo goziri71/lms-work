@@ -5,7 +5,7 @@
 
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
-import { Membership, MembershipProduct } from "../../models/marketplace/index.js";
+import { Membership, MembershipProduct, MembershipTier, MembershipTierProduct } from "../../models/marketplace/index.js";
 import { checkSubscriptionLimit, validateSubscriptionStatus } from "./tutorSubscription.js";
 import { supabase } from "../../utils/supabase.js";
 import multer from "multer";
@@ -81,26 +81,33 @@ export const createMembership = TryCatchFunction(async (req, res) => {
     name,
     description,
     category,
-    pricing_type,
-    price,
+    pricing_type, // Legacy field - kept for backward compatibility
+    price, // Legacy field - kept for backward compatibility
     currency = "NGN",
-    products = [], // Array of { product_type, product_id }
+    products = [], // Legacy field - Array of { product_type, product_id }
+    tiers = [], // New field - Array of tier objects with products
   } = req.body;
 
   if (!name) {
     throw new ErrorClass("Name is required", 400);
   }
 
-  if (!pricing_type || !["free", "monthly", "yearly", "lifetime"].includes(pricing_type)) {
-    throw new ErrorClass("pricing_type must be one of: free, monthly, yearly, lifetime", 400);
-  }
+  // If tiers are provided, use tier system. Otherwise, use legacy pricing
+  const useTierSystem = Array.isArray(tiers) && tiers.length > 0;
 
-  if (pricing_type !== "free" && (!price || parseFloat(price) <= 0)) {
-    throw new ErrorClass("Price is required for paid memberships", 400);
-  }
+  if (!useTierSystem) {
+    // Legacy validation for backward compatibility
+    if (!pricing_type || !["free", "monthly", "yearly", "lifetime"].includes(pricing_type)) {
+      throw new ErrorClass("pricing_type must be one of: free, monthly, yearly, lifetime", 400);
+    }
 
-  if (pricing_type === "free" && parseFloat(price) !== 0) {
-    throw new ErrorClass("Price must be 0 for free memberships", 400);
+    if (pricing_type !== "free" && (!price || parseFloat(price) <= 0)) {
+      throw new ErrorClass("Price is required for paid memberships", 400);
+    }
+
+    if (pricing_type === "free" && parseFloat(price) !== 0) {
+      throw new ErrorClass("Price must be 0 for free memberships", 400);
+    }
   }
 
   // Upload image if provided
@@ -166,37 +173,137 @@ export const createMembership = TryCatchFunction(async (req, res) => {
     description: description || null,
     category: category ? normalizeCategory(category) : null,
     image_url: imageUrl,
-    pricing_type,
-    price: parseFloat(price) || 0,
+    pricing_type: useTierSystem ? null : pricing_type, // null if using tiers
+    price: useTierSystem ? null : (parseFloat(price) || 0), // null if using tiers
     currency,
     status: "active",
     commission_rate: 0, // No commission for memberships
   });
 
-  // Add products if provided
-  if (Array.isArray(products) && products.length > 0) {
-    const productPromises = products.map(async (product) => {
-      const { product_type, product_id } = product;
-      
-      // Validate product exists and belongs to tutor
-      await validateProductOwnership(tutorId, tutorType, product_type, product_id);
-      
-      return MembershipProduct.create({
-        membership_id: membership.id,
-        product_type,
-        product_id,
-      });
-    });
+  // Create tiers if provided
+  if (useTierSystem) {
+    for (let i = 0; i < tiers.length; i++) {
+      const tierData = tiers[i];
+      const {
+        tier_name,
+        description: tierDescription,
+        monthly_price,
+        yearly_price,
+        lifetime_price,
+        tier_currency = currency,
+        display_order = i,
+        products: tierProducts = [],
+      } = tierData;
 
-    await Promise.all(productPromises);
+      if (!tier_name) {
+        throw new ErrorClass(`Tier name is required for tier at index ${i}`, 400);
+      }
+
+      // Check if tier name already exists
+      const existingTier = await MembershipTier.findOne({
+        where: {
+          membership_id: membership.id,
+          tier_name: tier_name.trim(),
+        },
+      });
+
+      if (existingTier) {
+        throw new ErrorClass(`Tier name "${tier_name}" already exists`, 400);
+      }
+
+      // Validate at least one price is provided
+      const hasMonthly = monthly_price !== undefined && monthly_price !== null;
+      const hasYearly = yearly_price !== undefined && yearly_price !== null;
+      const hasLifetime = lifetime_price !== undefined && lifetime_price !== null;
+
+      if (!hasMonthly && !hasYearly && !hasLifetime) {
+        throw new ErrorClass(`At least one pricing option must be provided for tier "${tier_name}"`, 400);
+      }
+
+      // Validate prices are non-negative
+      if (hasMonthly && parseFloat(monthly_price) < 0) {
+        throw new ErrorClass(`Monthly price must be 0 or greater for tier "${tier_name}"`, 400);
+      }
+      if (hasYearly && parseFloat(yearly_price) < 0) {
+        throw new ErrorClass(`Yearly price must be 0 or greater for tier "${tier_name}"`, 400);
+      }
+      if (hasLifetime && parseFloat(lifetime_price) < 0) {
+        throw new ErrorClass(`Lifetime price must be 0 or greater for tier "${tier_name}"`, 400);
+      }
+
+      // Create tier
+      const tier = await MembershipTier.create({
+        membership_id: membership.id,
+        tier_name: tier_name.trim(),
+        description: tierDescription || null,
+        monthly_price: hasMonthly ? parseFloat(monthly_price) : null,
+        yearly_price: hasYearly ? parseFloat(yearly_price) : null,
+        lifetime_price: hasLifetime ? parseFloat(lifetime_price) : null,
+        currency: tier_currency,
+        display_order: parseInt(display_order) || i,
+        status: "active",
+      });
+
+      // Add products to tier if provided
+      if (Array.isArray(tierProducts) && tierProducts.length > 0) {
+        for (const product of tierProducts) {
+          const { product_type, product_id, monthly_access_level, yearly_access_level, lifetime_access_level } = product;
+
+          if (!product_type || !product_id) {
+            throw new ErrorClass(`product_type and product_id are required for products in tier "${tier_name}"`, 400);
+          }
+
+          // Validate product ownership
+          await validateProductOwnership(tutorId, tutorType, product_type, product_id);
+
+          // Create tier product
+          await MembershipTierProduct.create({
+            tier_id: tier.id,
+            product_type,
+            product_id,
+            monthly_access_level: monthly_access_level || null,
+            yearly_access_level: yearly_access_level || null,
+            lifetime_access_level: lifetime_access_level || null,
+          });
+        }
+      }
+    }
+  } else {
+    // Legacy: Add products directly to membership if provided
+    if (Array.isArray(products) && products.length > 0) {
+      const productPromises = products.map(async (product) => {
+        const { product_type, product_id } = product;
+        
+        // Validate product exists and belongs to tutor
+        await validateProductOwnership(tutorId, tutorType, product_type, product_id);
+        
+        return MembershipProduct.create({
+          membership_id: membership.id,
+          product_type,
+          product_id,
+        });
+      });
+
+      await Promise.all(productPromises);
+    }
   }
 
-  // Reload membership with products
+  // Reload membership with products and tiers
   await membership.reload({
     include: [
       {
         model: MembershipProduct,
         as: "products",
+      },
+      {
+        model: MembershipTier,
+        as: "tiers",
+        include: [
+          {
+            model: MembershipTierProduct,
+            as: "products",
+          },
+        ],
       },
     ],
   });

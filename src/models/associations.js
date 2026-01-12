@@ -68,6 +68,9 @@ import {
   MembershipProduct,
   MembershipSubscription,
   MembershipPayment,
+  MembershipTier,
+  MembershipTierProduct,
+  MembershipTierChange,
 } from "./marketplace/index.js";
 
 export const setupAssociations = () => {
@@ -1008,6 +1011,56 @@ export const setupAssociations = () => {
   Students.hasMany(MembershipSubscription, {
     foreignKey: "student_id",
     as: "membershipSubscriptions",
+  });
+
+  // Membership -> Tiers
+  Membership.hasMany(MembershipTier, {
+    foreignKey: "membership_id",
+    as: "tiers",
+  });
+  MembershipTier.belongsTo(Membership, {
+    foreignKey: "membership_id",
+    as: "membership",
+  });
+
+  // Tier -> Tier Products
+  MembershipTier.hasMany(MembershipTierProduct, {
+    foreignKey: "tier_id",
+    as: "products",
+  });
+  MembershipTierProduct.belongsTo(MembershipTier, {
+    foreignKey: "tier_id",
+    as: "tier",
+  });
+
+  // Subscription -> Tier
+  MembershipSubscription.belongsTo(MembershipTier, {
+    foreignKey: "tier_id",
+    as: "tier",
+  });
+  MembershipTier.hasMany(MembershipSubscription, {
+    foreignKey: "tier_id",
+    as: "subscriptions",
+  });
+
+  // Subscription -> Tier Changes
+  MembershipSubscription.hasMany(MembershipTierChange, {
+    foreignKey: "subscription_id",
+    as: "tierChanges",
+  });
+  MembershipTierChange.belongsTo(MembershipSubscription, {
+    foreignKey: "subscription_id",
+    as: "subscription",
+  });
+
+  // Tier Change -> Old/New Tiers
+  MembershipTierChange.belongsTo(MembershipTier, {
+    foreignKey: "old_tier_id",
+    as: "oldTier",
+  });
+  MembershipTierChange.belongsTo(MembershipTier, {
+    foreignKey: "new_tier_id",
+    as: "newTier",
   });
 
   // ============================================

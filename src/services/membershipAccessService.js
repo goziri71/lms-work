@@ -6,6 +6,8 @@
 import { MembershipSubscription } from "../models/marketplace/membershipSubscription.js";
 import { MembershipProduct } from "../models/marketplace/membershipProduct.js";
 import { Membership } from "../models/marketplace/membership.js";
+import { MembershipTierProduct } from "../models/marketplace/membershipTierProduct.js";
+import { MembershipTier } from "../models/marketplace/membershipTier.js";
 import { TutorSubscription } from "../models/marketplace/tutorSubscription.js";
 import { CourseReg } from "../models/course_reg.js";
 import { EBookPurchase } from "../models/marketplace/ebookPurchase.js";
@@ -83,68 +85,161 @@ export async function checkProductAccess(studentId, productType, productId) {
       break;
   }
 
-  // Check membership access
-  let membershipProduct = await MembershipProduct.findOne({
+  // Check tier-based access first (new system)
+  let tierProduct = await MembershipTierProduct.findOne({
     where: {
       product_type: productType,
       product_id: productId,
     },
     include: [
       {
-        model: Membership,
-        as: "membership",
-        where: {
-          status: "active",
-        },
+        model: MembershipTier,
+        as: "tier",
+        include: [
+          {
+            model: Membership,
+            as: "membership",
+            where: {
+              status: "active",
+            },
+          },
+        ],
       },
     ],
   });
 
-  // Verify tutor subscription is active
-  if (membershipProduct?.membership) {
+  // Verify tutor subscription is active for tier-based access
+  if (tierProduct?.tier?.membership) {
     const tutorSubscription = await TutorSubscription.findOne({
       where: {
-        tutor_id: membershipProduct.membership.tutor_id,
-        tutor_type: membershipProduct.membership.tutor_type,
+        tutor_id: tierProduct.tier.membership.tutor_id,
+        tutor_type: tierProduct.tier.membership.tutor_type,
         status: "active",
       },
     });
 
-    // If tutor subscription is not active, membership is not accessible
     if (!tutorSubscription) {
-      membershipProduct = null;
+      tierProduct = null;
     }
   }
 
-  if (membershipProduct) {
-    // Check if student has active subscription to this membership
+  if (tierProduct && tierProduct.tier) {
+    // Check if student has active subscription to this tier
     const subscription = await MembershipSubscription.findOne({
       where: {
         student_id: studentId,
-        membership_id: membershipProduct.membership_id,
+        membership_id: tierProduct.tier.membership_id,
+        tier_id: tierProduct.tier_id,
         status: "active",
       },
     });
 
     if (subscription) {
       // Check if subscription hasn't expired (for monthly/yearly)
+      const now = new Date();
+      let isActive = false;
+
       if (subscription.end_date) {
-        const now = new Date();
         const endDate = new Date(subscription.end_date);
-        if (now <= endDate) {
+        isActive = now <= endDate;
+      } else {
+        // Lifetime subscription
+        isActive = true;
+      }
+
+      if (isActive) {
+        // Determine pricing period from subscription
+        let pricingPeriod = "monthly"; // default
+        if (subscription.end_date) {
+          const startDate = new Date(subscription.start_date);
+          const endDate = new Date(subscription.end_date);
+          const daysDiff = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+          pricingPeriod = daysDiff > 180 ? "yearly" : "monthly";
+        } else {
+          pricingPeriod = "lifetime";
+        }
+
+        // Get access level for this pricing period
+        const accessLevelField = `${pricingPeriod}_access_level`;
+        const accessLevel = tierProduct[accessLevelField];
+
+        hasMembershipAccess = true;
+        membershipInfo = {
+          membership_id: tierProduct.tier.membership_id,
+          membership_name: tierProduct.tier.membership?.name,
+          tier_id: tierProduct.tier_id,
+          tier_name: tierProduct.tier.tier_name,
+          access_level: accessLevel,
+          pricing_period: pricingPeriod,
+        };
+      }
+    }
+  }
+
+  // Fallback: Check legacy membership access (non-tier system)
+  if (!hasMembershipAccess) {
+    let membershipProduct = await MembershipProduct.findOne({
+      where: {
+        product_type: productType,
+        product_id: productId,
+      },
+      include: [
+        {
+          model: Membership,
+          as: "membership",
+          where: {
+            status: "active",
+          },
+        },
+      ],
+    });
+
+    // Verify tutor subscription is active
+    if (membershipProduct?.membership) {
+      const tutorSubscription = await TutorSubscription.findOne({
+        where: {
+          tutor_id: membershipProduct.membership.tutor_id,
+          tutor_type: membershipProduct.membership.tutor_type,
+          status: "active",
+        },
+      });
+
+      // If tutor subscription is not active, membership is not accessible
+      if (!tutorSubscription) {
+        membershipProduct = null;
+      }
+    }
+
+    if (membershipProduct) {
+      // Check if student has active subscription to this membership
+      const subscription = await MembershipSubscription.findOne({
+        where: {
+          student_id: studentId,
+          membership_id: membershipProduct.membership_id,
+          status: "active",
+        },
+      });
+
+      if (subscription) {
+        // Check if subscription hasn't expired (for monthly/yearly)
+        if (subscription.end_date) {
+          const now = new Date();
+          const endDate = new Date(subscription.end_date);
+          if (now <= endDate) {
+            hasMembershipAccess = true;
+            membershipInfo = {
+              membership_id: membershipProduct.membership_id,
+              membership_name: membershipProduct.membership?.name,
+            };
+          }
+        } else {
+          // Lifetime subscription
           hasMembershipAccess = true;
           membershipInfo = {
             membership_id: membershipProduct.membership_id,
             membership_name: membershipProduct.membership?.name,
           };
         }
-      } else {
-        // Lifetime subscription
-        hasMembershipAccess = true;
-        membershipInfo = {
-          membership_id: membershipProduct.membership_id,
-          membership_name: membershipProduct.membership?.name,
-        };
       }
     }
   }
