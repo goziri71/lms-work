@@ -11,6 +11,7 @@ import { supabase } from "../../utils/supabase.js";
 import multer from "multer";
 import { Op } from "sequelize";
 import { normalizeCategory } from "../../constants/categories.js";
+import { generateCommunitySlug } from "../../utils/productSlugHelper.js";
 
 // Configure multer for community image uploads
 const uploadCommunityImage = multer({
@@ -28,7 +29,67 @@ const uploadCommunityImage = multer({
   },
 });
 
+// Configure multer for community video uploads (intro video)
+const uploadCommunityVideo = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB max for videos
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      "video/mp4",
+      "video/webm",
+      "video/ogg",
+      "video/quicktime",
+      "video/x-msvideo", // .avi
+    ];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new ErrorClass("Only MP4, WebM, OGG, MOV, and AVI videos are allowed", 400), false);
+    }
+  },
+});
+
 export const uploadCommunityImageMiddleware = uploadCommunityImage.single("image");
+
+// Middleware for uploading both image and intro video (and thumbnail)
+export const uploadCommunityMediaMiddleware = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB max
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedImageTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    const allowedVideoTypes = [
+      "video/mp4",
+      "video/webm",
+      "video/ogg",
+      "video/quicktime",
+      "video/x-msvideo",
+    ];
+
+    if (file.fieldname === "image" && allowedImageTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else if (file.fieldname === "intro_video" && allowedVideoTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else if (file.fieldname === "intro_video_thumbnail" && allowedImageTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(
+        new ErrorClass(
+          `Invalid file type for ${file.fieldname}. Images: JPEG, PNG, WebP. Videos: MP4, WebM, OGG, MOV, AVI.`,
+          400
+        ),
+        false
+      );
+    }
+  },
+}).fields([
+  { name: "image", maxCount: 1 },
+  { name: "intro_video", maxCount: 1 },
+  { name: "intro_video_thumbnail", maxCount: 1 },
+]);
 
 /**
  * Helper to get tutor info
@@ -81,6 +142,8 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
     file_sharing_enabled = true,
     live_sessions_enabled = true,
     visibility = "public",
+    intro_video_url,
+    intro_video_thumbnail_url,
   } = req.body;
 
   if (!name || !price) {
@@ -144,10 +207,62 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
     imageUrl = urlData.publicUrl;
   }
 
+  // Handle intro video upload if provided
+  let introVideoUrl = intro_video_url || null;
+  let introVideoThumbnailUrl = intro_video_thumbnail_url || null;
+
+  // If video file is uploaded (field name: 'intro_video')
+  if (req.files && req.files.intro_video) {
+    const videoFile = Array.isArray(req.files.intro_video) ? req.files.intro_video[0] : req.files.intro_video;
+    const bucket = process.env.COMMUNITIES_BUCKET || "communities";
+    const fileExt = videoFile.originalname.split(".").pop();
+    const fileName = `communities/${tutorId}/intro-videos/${Date.now()}.${fileExt}`;
+
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(fileName, videoFile.buffer, {
+        contentType: videoFile.mimetype,
+        upsert: false,
+      });
+
+    if (error) {
+      throw new ErrorClass(`Intro video upload failed: ${error.message}`, 500);
+    }
+
+    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+    introVideoUrl = urlData.publicUrl;
+  }
+
+  // If thumbnail is uploaded (field name: 'intro_video_thumbnail')
+  if (req.files && req.files.intro_video_thumbnail) {
+    const thumbnailFile = Array.isArray(req.files.intro_video_thumbnail) ? req.files.intro_video_thumbnail[0] : req.files.intro_video_thumbnail;
+    const bucket = process.env.COMMUNITIES_BUCKET || "communities";
+    const fileExt = thumbnailFile.originalname.split(".").pop();
+    const fileName = `communities/${tutorId}/intro-thumbnails/${Date.now()}.${fileExt}`;
+
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(fileName, thumbnailFile.buffer, {
+        contentType: thumbnailFile.mimetype,
+        upsert: false,
+      });
+
+    if (error) {
+      throw new ErrorClass(`Intro video thumbnail upload failed: ${error.message}`, 500);
+    }
+
+    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+    introVideoThumbnailUrl = urlData.publicUrl;
+  }
+
+  // Generate unique slug
+  const slug = await generateCommunitySlug(name);
+
   const community = await Community.create({
     tutor_id: tutorId,
     tutor_type: tutorType,
     name,
+    slug: slug,
     description,
     category: normalizeCategory(category),
     image_url: imageUrl,
@@ -161,6 +276,8 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
     file_sharing_enabled: file_sharing_enabled !== false && file_sharing_enabled !== "false",
     live_sessions_enabled: live_sessions_enabled !== false && live_sessions_enabled !== "false",
     visibility,
+    intro_video_url: introVideoUrl,
+    intro_video_thumbnail_url: introVideoThumbnailUrl,
     status: "draft",
     commission_rate: 0, // No commission for communities
   });
@@ -352,8 +469,83 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
     community.image_url = urlData.publicUrl;
   }
 
+  // Handle intro video upload if provided
+  if (req.files && req.files.intro_video) {
+    const videoFile = Array.isArray(req.files.intro_video) ? req.files.intro_video[0] : req.files.intro_video;
+    const bucket = process.env.COMMUNITIES_BUCKET || "communities";
+    
+    // Delete old video if exists
+    if (community.intro_video_url) {
+      try {
+        const urlParts = community.intro_video_url.split("/");
+        const fileName = urlParts[urlParts.length - 1];
+        await supabase.storage.from(bucket).remove([`communities/${tutorId}/intro-videos/${fileName}`]);
+      } catch (error) {
+        console.error("Error deleting old intro video:", error);
+      }
+    }
+
+    const fileExt = videoFile.originalname.split(".").pop();
+    const fileName = `communities/${tutorId}/intro-videos/${Date.now()}.${fileExt}`;
+
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(fileName, videoFile.buffer, {
+        contentType: videoFile.mimetype,
+        upsert: false,
+      });
+
+    if (error) {
+      throw new ErrorClass(`Intro video upload failed: ${error.message}`, 500);
+    }
+
+    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+    community.intro_video_url = urlData.publicUrl;
+  }
+
+  // Handle intro video thumbnail upload if provided
+  if (req.files && req.files.intro_video_thumbnail) {
+    const thumbnailFile = Array.isArray(req.files.intro_video_thumbnail) ? req.files.intro_video_thumbnail[0] : req.files.intro_video_thumbnail;
+    const bucket = process.env.COMMUNITIES_BUCKET || "communities";
+    
+    // Delete old thumbnail if exists
+    if (community.intro_video_thumbnail_url) {
+      try {
+        const urlParts = community.intro_video_thumbnail_url.split("/");
+        const fileName = urlParts[urlParts.length - 1];
+        await supabase.storage.from(bucket).remove([`communities/${tutorId}/intro-thumbnails/${fileName}`]);
+      } catch (error) {
+        console.error("Error deleting old intro video thumbnail:", error);
+      }
+    }
+
+    const fileExt = thumbnailFile.originalname.split(".").pop();
+    const fileName = `communities/${tutorId}/intro-thumbnails/${Date.now()}.${fileExt}`;
+
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(fileName, thumbnailFile.buffer, {
+        contentType: thumbnailFile.mimetype,
+        upsert: false,
+      });
+
+    if (error) {
+      throw new ErrorClass(`Intro video thumbnail upload failed: ${error.message}`, 500);
+    }
+
+    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+    community.intro_video_thumbnail_url = urlData.publicUrl;
+  }
+
   // Update fields
-  if (name !== undefined) community.name = name;
+  if (name !== undefined) {
+    const oldName = community.name;
+    community.name = name;
+    // Regenerate slug if name changed
+    if (name !== oldName) {
+      community.slug = await generateCommunitySlug(name, community.id);
+    }
+  }
   if (description !== undefined) community.description = description;
   if (category !== undefined) community.category = normalizeCategory(category);
   if (price !== undefined) community.price = parseFloat(price);
@@ -366,6 +558,13 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
   if (file_sharing_enabled !== undefined) community.file_sharing_enabled = file_sharing_enabled !== false && file_sharing_enabled !== "false";
   if (live_sessions_enabled !== undefined) community.live_sessions_enabled = live_sessions_enabled !== false && live_sessions_enabled !== "false";
   if (visibility !== undefined) community.visibility = visibility;
+  if (intro_video_url !== undefined) {
+    // Allow setting video URL directly (for YouTube/Vimeo embeds) or clearing it
+    community.intro_video_url = intro_video_url || null;
+  }
+  if (intro_video_thumbnail_url !== undefined) {
+    community.intro_video_thumbnail_url = intro_video_thumbnail_url || null;
+  }
   // Commission rate is always 0 for communities (no commission)
   community.commission_rate = 0;
 

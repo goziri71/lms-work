@@ -45,6 +45,11 @@ import {
   getWalletTransactions,
 } from "../controllers/marketplace/tutorWallet.js";
 import {
+  convertCurrency,
+  getConversionRate,
+  getConversionHistory,
+} from "../controllers/marketplace/currencyConversion.js";
+import {
   getProfile,
   updateProfile,
   changePassword,
@@ -127,12 +132,119 @@ import {
   getDigitalDownloadStreamUrl,
   getDigitalDownloadPreviewUrl,
 } from "../controllers/marketplace/digitalDownloadAccess.js";
+import { getProductBySlug } from "../controllers/public/productLink.js";
+import {
+  createReview,
+  getProductReviews,
+  markReviewHelpful,
+  getMyReview,
+} from "../controllers/marketplace/productReview.js";
+import {
+  addToCart,
+  getCart,
+  removeFromCart,
+  updateCartItem,
+  clearCart,
+  mergeCart,
+} from "../controllers/marketplace/storeCart.js";
+import {
+  browseStoreProducts,
+  getStoreProduct,
+} from "../controllers/marketplace/storeBrowsing.js";
+import { initiateCheckout } from "../controllers/marketplace/storeCheckout.js";
 
 const router = express.Router();
 
 // ============================================
 // PUBLIC ROUTES (No authentication)
 // ============================================
+
+// Public Product Link
+router.get("/public/product/:slug", getProductBySlug);
+
+// Public Store Browsing (No authentication required)
+router.get("/store/products", browseStoreProducts);
+router.get("/store/products/:type/:id", getStoreProduct);
+
+// Public Sales Pages (No authentication required)
+import { getSalesPageBySlug } from "../controllers/public/salesPage.js";
+router.get("/public/sales/:slug", getSalesPageBySlug);
+
+// Top Products (No authentication required)
+import {
+  getFeaturedProducts,
+  getTrendingProducts,
+  getTopProducts,
+} from "../controllers/marketplace/topProducts.js";
+router.get("/products/featured", getFeaturedProducts);
+router.get("/products/trending", getTrendingProducts);
+router.get("/products/top", getTopProducts);
+
+// Donations (Public and authenticated)
+import {
+  getDonationCategories,
+  createDonation,
+  getDonationWall,
+  getMyDonations,
+  getDonationStatistics,
+} from "../controllers/marketplace/donation.js";
+
+router.get("/donations/categories", getDonationCategories); // Public
+router.get("/donations/wall", getDonationWall); // Public
+router.get("/donations/statistics", getDonationStatistics); // Public
+router.post("/donations", optionalAuthorize, createDonation); // Optional auth (for anonymous donations)
+router.get("/donations/my-donations", authorize, getMyDonations); // Requires auth
+
+// Next of Kin (Tutor authenticated)
+import {
+  getNextOfKin,
+  upsertNextOfKin,
+  deleteNextOfKin,
+} from "../controllers/marketplace/nextOfKin.js";
+
+router.get("/next-of-kin", tutorAuthorize, getNextOfKin);
+router.post("/next-of-kin", tutorAuthorize, upsertNextOfKin);
+router.put("/next-of-kin", tutorAuthorize, upsertNextOfKin);
+router.delete("/next-of-kin", tutorAuthorize, deleteNextOfKin);
+
+// Tutor KYC (Sole tutor authenticated)
+import {
+  getKycStatus,
+  submitKyc,
+} from "../controllers/marketplace/tutorKyc.js";
+
+router.get("/tutor/kyc", tutorAuthorize, getKycStatus);
+router.post("/tutor/kyc", tutorAuthorize, submitKyc);
+router.put("/tutor/kyc", tutorAuthorize, submitKyc);
+
+// Google Drive Integration (Tutor authenticated)
+import {
+  initiateGoogleDriveConnection,
+  handleGoogleDriveCallback,
+  getGoogleDriveConnection,
+  disconnectGoogleDrive,
+  listGoogleDriveFiles,
+  importGoogleDriveFiles,
+  getImportedFiles,
+  getExternalFile,
+  deleteExternalFile,
+} from "../controllers/marketplace/googleDrive.js";
+
+router.get("/google-drive/connect", tutorAuthorize, initiateGoogleDriveConnection);
+router.get("/google-drive/callback", tutorAuthorize, handleGoogleDriveCallback);
+router.get("/google-drive/connection", tutorAuthorize, getGoogleDriveConnection);
+router.delete("/google-drive/connection", tutorAuthorize, disconnectGoogleDrive);
+router.get("/google-drive/files", tutorAuthorize, listGoogleDriveFiles);
+router.post("/google-drive/import", tutorAuthorize, importGoogleDriveFiles);
+router.get("/google-drive/files/imported", tutorAuthorize, getImportedFiles);
+router.get("/google-drive/files/:id", tutorAuthorize, getExternalFile);
+router.delete("/google-drive/files/:id", tutorAuthorize, deleteExternalFile);
+
+// Product Reviews (Student authentication required)
+router.post("/reviews", authorize, createReview);
+router.get("/reviews", authorize, getProductReviews);
+router.get("/reviews/my-review", authorize, getMyReview);
+router.post("/reviews/:id/helpful", authorize, markReviewHelpful);
 
 // Registration
 router.post("/register/sole-tutor", registerSoleTutor);
@@ -216,6 +328,36 @@ router.post(
 router.get("/digital-downloads/:id/preview-url", getDigitalDownloadPreviewUrl);
 router.get("/digital-downloads/:id", authorize, getStudentDigitalDownloadById);
 
+// Read-Only Digital Downloads
+import {
+  createReadSession,
+  updateReadProgress,
+  getReadProgress,
+  streamReadOnlyDocument,
+  getMyReadSessions,
+} from "../controllers/marketplace/readOnlyDownload.js";
+
+router.post("/digital-downloads/:id/read-session", authorize, createReadSession);
+router.put("/digital-downloads/:id/read-session", authorize, updateReadProgress);
+router.get("/digital-downloads/:id/read-session", authorize, getReadProgress);
+router.get("/digital-downloads/:id/read", streamReadOnlyDocument); // Public endpoint with token
+router.get("/read-sessions", authorize, getMyReadSessions);
+
+// ============================================
+// INVOICE ROUTES (Student Authentication Required)
+// ============================================
+import {
+  getMyInvoices,
+  getInvoice,
+  downloadInvoice,
+  sendInvoiceEmail,
+} from "../controllers/marketplace/invoice.js";
+
+router.get("/invoices", authorize, getMyInvoices);
+router.get("/invoices/:id", authorize, getInvoice);
+router.get("/invoices/:id/download", authorize, downloadInvoice);
+router.post("/invoices/:id/send", authorize, sendInvoiceEmail);
+
 // ============================================
 // TUTOR DASHBOARD ROUTES (Tutor Authentication Required)
 // ============================================
@@ -263,6 +405,11 @@ router.get(
 router.get("/tutor/wallet/balance", tutorAuthorize, getWalletBalance);
 router.post("/tutor/wallet/fund", tutorAuthorize, fundWallet);
 router.get("/tutor/wallet/transactions", tutorAuthorize, getWalletTransactions);
+
+// Currency Conversion
+router.post("/tutor/wallet/convert", tutorAuthorize, convertCurrency);
+router.get("/tutor/wallet/convert/rate", tutorAuthorize, getConversionRate);
+router.get("/tutor/wallet/convert/history", tutorAuthorize, getConversionHistory);
 
 // Metadata (Faculties & Programs for course creation)
 router.get("/tutor/faculties", tutorAuthorize, getFaculties);
@@ -515,12 +662,13 @@ import {
   updateCommunity,
   deleteCommunity,
   uploadCommunityImageMiddleware,
+  uploadCommunityMediaMiddleware,
 } from "../controllers/marketplace/communityManagement.js";
 
 router.post(
   "/tutor/communities",
   tutorAuthorize,
-  uploadCommunityImageMiddleware,
+  uploadCommunityMediaMiddleware,
   createCommunity
 );
 router.get("/tutor/communities", tutorAuthorize, getMyCommunities);
@@ -803,6 +951,37 @@ router.post("/memberships/:id/change-tier", authorize, changeTier);
 router.post("/memberships/:id/cancel", authorize, cancelSubscription);
 router.get("/memberships/my-subscriptions", authorize, getMySubscriptions);
 router.get("/products/:productType/:productId/access", authorize, checkProductAccessEndpoint);
+
+// Store Cart Management (Student authentication optional for guest carts)
+router.post("/store/cart/add", optionalAuthorize, addToCart);
+router.get("/store/cart", optionalAuthorize, getCart);
+router.put("/store/cart/item/:id", optionalAuthorize, updateCartItem);
+router.delete("/store/cart/item/:id", optionalAuthorize, removeFromCart);
+router.delete("/store/cart", optionalAuthorize, clearCart);
+router.post("/store/cart/merge", authorize, mergeCart); // Requires auth to merge guest cart
+
+// Store Checkout
+router.post("/store/checkout", optionalAuthorize, initiateCheckout);
+
+// ============================================
+// SALES PAGE MANAGEMENT (TUTOR)
+// ============================================
+import {
+  createSalesPage,
+  getSalesPage,
+  getMySalesPages,
+  updateSalesPage,
+  deleteSalesPage,
+} from "../controllers/marketplace/salesPageManagement.js";
+import { getSalesPageAnalytics } from "../controllers/public/salesPage.js";
+
+router.post("/tutor/sales-pages", tutorAuthorize, createSalesPage);
+router.get("/tutor/sales-pages", tutorAuthorize, getMySalesPages);
+router.get("/tutor/sales-pages/:id", tutorAuthorize, getSalesPage);
+router.put("/tutor/sales-pages/:id", tutorAuthorize, updateSalesPage);
+router.delete("/tutor/sales-pages/:id", tutorAuthorize, deleteSalesPage);
+router.get("/tutor/sales-pages/:id/analytics", tutorAuthorize, getSalesPageAnalytics);
+
 router.get("/tutor/payouts/:id", tutorAuthorize, getPayout);
 
 // Learner Management & Activity Tracking

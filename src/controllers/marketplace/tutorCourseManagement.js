@@ -10,6 +10,7 @@ import { Sequelize as SequelizeLib } from "sequelize";
 import { db } from "../../database/database.js";
 import multer from "multer";
 import { supabase } from "../../utils/supabase.js";
+import { generateCourseSlug } from "../../utils/productSlugHelper.js";
 
 // Configure multer for course image uploads
 const uploadCourseImage = multer({
@@ -477,9 +478,13 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     // Normalize course_code: set to null if empty, undefined, or whitespace-only
     const finalCourseCode = normalizedCourseCode && normalizedCourseCode.length > 0 ? normalizedCourseCode : null;
     
+    // Generate unique slug
+    const slug = await generateCourseSlug(title.trim());
+    
     const course = await Courses.create(
       {
         title: title.trim(),
+        slug: slug,
         course_code: finalCourseCode,
         course_unit: course_unit || null,
         price: price ? String(price) : "0",
@@ -725,7 +730,13 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
 
   // Update course
   const updateData = {};
-  if (title !== undefined) updateData.title = title.trim();
+  if (title !== undefined) {
+    updateData.title = title.trim();
+    // Regenerate slug if title changed
+    if (title.trim() !== course.title) {
+      updateData.slug = await generateCourseSlug(title.trim(), course.id);
+    }
+  }
   if (course_code !== undefined) {
     // Allow setting course_code to null/empty string to remove it
     updateData.course_code = course_code && course_code.trim() ? course_code.trim() : null;

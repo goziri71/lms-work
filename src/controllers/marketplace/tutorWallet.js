@@ -14,22 +14,39 @@ import {
 import { db } from "../../database/database.js";
 
 /**
- * Get tutor wallet balance
+ * Get tutor wallet balance (multi-currency)
  * GET /api/marketplace/tutor/wallet/balance
  */
 export const getWalletBalance = TryCatchFunction(async (req, res) => {
   const tutor = req.tutor;
   const userType = req.user.userType;
 
-  const walletBalance = parseFloat(tutor.wallet_balance || 0);
-  const currency = tutor.currency || "NGN";
+  // Get all three wallet balances
+  const primaryBalance = parseFloat(tutor.wallet_balance_primary || 0);
+  const usdBalance = parseFloat(tutor.wallet_balance_usd || 0);
+  const gbpBalance = parseFloat(tutor.wallet_balance_gbp || 0);
+  const localCurrency = tutor.local_currency || "NGN";
 
   res.status(200).json({
     success: true,
     message: "Wallet balance retrieved successfully",
     data: {
-      wallet_balance: walletBalance,
-      currency: currency,
+      wallets: {
+        primary: {
+          balance: primaryBalance,
+          currency: localCurrency,
+        },
+        usd: {
+          balance: usdBalance,
+          currency: "USD",
+        },
+        gbp: {
+          balance: gbpBalance,
+          currency: "GBP",
+        },
+      },
+      local_currency: localCurrency,
+      country_code: tutor.country_code || null,
     },
   });
 });
@@ -128,23 +145,30 @@ export const fundWallet = TryCatchFunction(async (req, res) => {
   const transaction = await db.transaction();
 
   try {
-    // Get current wallet balance
-    const balanceBefore = parseFloat(tutor.wallet_balance || 0);
+    // Determine which wallet to credit based on transaction currency
+    const currency = transactionCurrency.toUpperCase();
+    let balanceBefore, balanceAfter, updateFields;
 
-    // Credit wallet
-    const balanceAfter = balanceBefore + transactionAmount;
-
-    // Update tutor wallet_balance
-    if (tutorType === "sole_tutor") {
-      await SoleTutor.update(
-        { wallet_balance: balanceAfter },
-        { where: { id: tutorId }, transaction }
-      );
+    if (currency === "USD") {
+      balanceBefore = parseFloat(tutor.wallet_balance_usd || 0);
+      balanceAfter = balanceBefore + transactionAmount;
+      updateFields = { wallet_balance_usd: balanceAfter };
+    } else if (currency === "GBP") {
+      balanceBefore = parseFloat(tutor.wallet_balance_gbp || 0);
+      balanceAfter = balanceBefore + transactionAmount;
+      updateFields = { wallet_balance_gbp: balanceAfter };
     } else {
-      await Organization.update(
-        { wallet_balance: balanceAfter },
-        { where: { id: tutorId }, transaction }
-      );
+      // Primary wallet (local currency)
+      balanceBefore = parseFloat(tutor.wallet_balance_primary || 0);
+      balanceAfter = balanceBefore + transactionAmount;
+      updateFields = { wallet_balance_primary: balanceAfter };
+    }
+
+    // Update tutor wallet balance
+    if (tutorType === "sole_tutor") {
+      await SoleTutor.update(updateFields, { where: { id: tutorId }, transaction });
+    } else {
+      await Organization.update(updateFields, { where: { id: tutorId }, transaction });
     }
 
     // Create wallet transaction record
@@ -187,6 +211,7 @@ export const fundWallet = TryCatchFunction(async (req, res) => {
           new_balance: balanceAfter,
           credited: transactionAmount,
           currency: transactionCurrency,
+          wallet_type: currency === "USD" ? "usd" : currency === "GBP" ? "gbp" : "primary",
         },
       },
     });

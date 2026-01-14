@@ -35,7 +35,9 @@ export const Community = db.define(
         "Engineering & Physical Science",
         "Health & Medicine",
         "Arts & Humanities",
-        "Personal Development & Education"
+        "Personal Development & Education",
+        "Religious and Faith",
+        "Social and Impact"
       ),
       allowNull: true,
       comment: "Community category",
@@ -138,6 +140,45 @@ export const Community = db.define(
       defaultValue: 15.0,
       comment: "WPU commission rate for community subscriptions",
     },
+    slug: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      unique: true,
+      comment: "URL-friendly slug for public product link",
+    },
+    intro_video_url: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: "URL of intro video (optional - can be uploaded or embedded from YouTube/Vimeo)",
+    },
+    intro_video_thumbnail_url: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: "Thumbnail image URL for intro video",
+    },
+    is_featured: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: "Whether product is featured",
+    },
+    featured_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "When product was featured",
+    },
+    popularity_score: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0.0,
+      comment: "Calculated popularity score (sales + reviews + views)",
+    },
+    sales_count: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+      comment: "Number of subscriptions/purchases",
+    },
     created_at: {
       type: DataTypes.DATE,
       allowNull: false,
@@ -166,6 +207,9 @@ export const Community = db.define(
       },
       {
         fields: ["category"],
+      },
+      {
+        fields: ["slug"],
       },
     ],
   }

@@ -77,6 +77,35 @@ export const Membership = db.define(
       defaultValue: 0,
       comment: "Commission rate (0 for memberships - no commission)",
     },
+    slug: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      unique: true,
+      comment: "URL-friendly slug for public product link",
+    },
+    is_featured: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: "Whether product is featured",
+    },
+    featured_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "When product was featured",
+    },
+    popularity_score: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0.0,
+      comment: "Calculated popularity score (sales + reviews + views)",
+    },
+    sales_count: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+      comment: "Number of subscriptions",
+    },
   },
   {
     tableName: "memberships",
@@ -92,6 +121,9 @@ export const Membership = db.define(
       },
       {
         fields: ["pricing_type"],
+      },
+      {
+        fields: ["slug"],
       },
     ],
   }

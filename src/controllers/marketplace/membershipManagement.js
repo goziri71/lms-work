@@ -16,6 +16,7 @@ import { EBooks } from "../../models/marketplace/ebooks.js";
 import { DigitalDownloads } from "../../models/marketplace/digitalDownloads.js";
 import { CoachingSession } from "../../models/marketplace/coachingSession.js";
 import { Community } from "../../models/marketplace/community.js";
+import { generateMembershipSlug } from "../../utils/productSlugHelper.js";
 
 // Configure multer for membership image uploads
 const uploadMembershipImage = multer({
@@ -165,11 +166,15 @@ export const createMembership = TryCatchFunction(async (req, res) => {
     imageUrl = urlData.publicUrl;
   }
 
+  // Generate unique slug
+  const slug = await generateMembershipSlug(name);
+
   // Create membership
   const membership = await Membership.create({
     tutor_id: tutorId,
     tutor_type: tutorType,
     name,
+    slug: slug,
     description: description || null,
     category: category ? normalizeCategory(category) : null,
     image_url: imageUrl,
@@ -455,6 +460,11 @@ export const updateMembership = TryCatchFunction(async (req, res) => {
     price,
     currency,
   } = req.body;
+
+  // Regenerate slug if name changed
+  if (name !== undefined && name !== membership.name) {
+    membership.slug = await generateMembershipSlug(name, membership.id);
+  }
 
   // Upload new image if provided
   if (req.file) {

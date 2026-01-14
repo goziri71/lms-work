@@ -45,4 +45,30 @@ export { MembershipPayment } from "./membershipPayment.js";
 export { MembershipTier } from "./membershipTier.js";
 export { MembershipTierProduct } from "./membershipTierProduct.js";
 export { MembershipTierChange } from "./membershipTierChange.js";
+export { CurrencyExchangeRate } from "./currencyExchangeRate.js";
+export { CurrencyConversion } from "./currencyConversion.js";
+// Product Reviews exports
+export { ProductReview } from "./productReview.js";
+export { ReviewHelpfulVote } from "./reviewHelpfulVote.js";
+// Store exports
+export { StoreCart } from "./storeCart.js";
+export { StoreCartItem } from "./storeCartItem.js";
+// Sales Page exports
+export { ProductSalesPage } from "./productSalesPage.js";
+export { SalesPageView } from "./salesPageView.js";
+// Read Session exports
+export { ReadSession } from "./readSession.js";
+// Invoice exports
+export { Invoice } from "./invoice.js";
+// Donation exports
+export { Donation } from "./donation.js";
+export { DonationCategory } from "./donationCategory.js";
+// Next of Kin exports
+export { TutorNextOfKin } from "./tutorNextOfKin.js";
+export { FundTransfer } from "./fundTransfer.js";
+// KYC exports
+export { TutorKyc } from "./tutorKyc.js";
+// External File Storage exports
+export { GoogleDriveConnection } from "./googleDriveConnection.js";
+export { ExternalFile } from "./externalFile.js";
 

@@ -261,6 +261,108 @@ connectDB().then(async (success) => {
     } catch (error) {
       console.warn("⚠️ Could not setup community subscription checker:", error.message);
     }
+
+    // Exchange rate update job (runs hourly)
+    try {
+      const { runExchangeRateUpdate } = await import("./src/scripts/updateExchangeRates.js");
+      
+      // Run immediately on startup (optional, can be removed if you want to wait for first hour)
+      setTimeout(async () => {
+        console.log("🔄 Running initial exchange rate update...");
+        try {
+          await runExchangeRateUpdate();
+        } catch (error) {
+          console.error("❌ Error in initial exchange rate update:", error);
+        }
+      }, 5000); // Wait 5 seconds after server starts
+
+      // Schedule hourly updates
+      setInterval(async () => {
+        try {
+          await runExchangeRateUpdate();
+        } catch (error) {
+          console.error("❌ Error updating exchange rates:", error);
+        }
+      }, 60 * 60 * 1000); // Every hour
+
+      console.log("⏰ Exchange rate update job started (hourly)");
+    } catch (error) {
+      console.warn("⚠️ Could not setup exchange rate update job:", error.message);
+    }
+
+    // Expired cart cleanup job (runs daily)
+    try {
+      const { cleanupExpiredCarts } = await import("./src/scripts/cleanupExpiredCarts.js");
+      
+      // Run immediately on startup (optional)
+      setTimeout(async () => {
+        console.log("🔄 Running initial expired cart cleanup...");
+        try {
+          await cleanupExpiredCarts();
+        } catch (error) {
+          console.error("❌ Error in initial cart cleanup:", error);
+        }
+      }, 10000); // Wait 10 seconds after server starts
+
+      // Schedule daily cleanup (runs at 3 AM)
+      let lastCartCleanup = new Date(0);
+      setInterval(async () => {
+        const now = new Date();
+        const hoursSinceLastCleanup = (now - lastCartCleanup) / (1000 * 60 * 60);
+        
+        // Run if it's been at least 24 hours and it's around 3 AM
+        if (hoursSinceLastCleanup >= 24 && now.getHours() >= 3 && now.getHours() < 4) {
+          console.log("🔄 Cleaning up expired guest carts...");
+          try {
+            await cleanupExpiredCarts();
+            lastCartCleanup = new Date();
+          } catch (error) {
+            console.error("❌ Error cleaning up expired carts:", error);
+          }
+        }
+      }, 60 * 60 * 1000); // Check every hour
+
+      console.log("⏰ Expired cart cleanup job started (daily at 3 AM)");
+    } catch (error) {
+      console.warn("⚠️ Could not setup expired cart cleanup job:", error.message);
+    }
+
+    // Product popularity score update job (runs daily)
+    try {
+      const { runProductPopularityUpdate } = await import("./src/scripts/updateProductPopularity.js");
+      
+      // Run immediately on startup (optional)
+      setTimeout(async () => {
+        console.log("🔄 Running initial product popularity update...");
+        try {
+          await runProductPopularityUpdate();
+        } catch (error) {
+          console.error("❌ Error in initial popularity update:", error);
+        }
+      }, 15000); // Wait 15 seconds after server starts
+
+      // Schedule daily update (runs at 2 AM)
+      let lastPopularityUpdate = new Date(0);
+      setInterval(async () => {
+        const now = new Date();
+        const hoursSinceLastUpdate = (now - lastPopularityUpdate) / (1000 * 60 * 60);
+        
+        // Run if it's been at least 24 hours and it's around 2 AM
+        if (hoursSinceLastUpdate >= 24 && now.getHours() >= 2 && now.getHours() < 3) {
+          console.log("🔄 Updating product popularity scores...");
+          try {
+            await runProductPopularityUpdate();
+            lastPopularityUpdate = new Date();
+          } catch (error) {
+            console.error("❌ Error updating popularity scores:", error);
+          }
+        }
+      }, 60 * 60 * 1000); // Check every hour
+
+      console.log("⏰ Product popularity update job started (daily at 2 AM)");
+    } catch (error) {
+      console.warn("⚠️ Could not setup product popularity update job:", error.message);
+    }
     
     server.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);

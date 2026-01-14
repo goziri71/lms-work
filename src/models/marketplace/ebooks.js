@@ -78,6 +78,29 @@ export const EBooks = db.define(
       defaultValue: 0,
       comment: "Number of times this e-book has been purchased",
     },
+    slug: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      unique: true,
+      comment: "URL-friendly slug for public product link",
+    },
+    is_featured: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: "Whether product is featured",
+    },
+    featured_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "When product was featured",
+    },
+    popularity_score: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0.0,
+      comment: "Calculated popularity score (sales + reviews + views)",
+    },
     created_at: {
       type: DataTypes.DATE,
       allowNull: false,
@@ -104,6 +127,9 @@ export const EBooks = db.define(
       },
       {
         fields: ["category"],
+      },
+      {
+        fields: ["slug"],
       },
     ],
   }

@@ -107,6 +107,29 @@ export const DigitalDownloads = db.define(
       defaultValue: 0,
       comment: "Number of times this product has been purchased",
     },
+    slug: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      unique: true,
+      comment: "URL-friendly slug for public product link",
+    },
+    is_featured: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: "Whether product is featured",
+    },
+    featured_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "When product was featured",
+    },
+    popularity_score: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0.0,
+      comment: "Calculated popularity score (sales + reviews + views)",
+    },
     duration: {
       type: DataTypes.INTEGER,
       allowNull: true,
@@ -133,6 +156,12 @@ export const DigitalDownloads = db.define(
       allowNull: false,
       defaultValue: true,
       comment: "Whether download is enabled",
+    },
+    is_read_only: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: "Whether this is a read-only document (view in browser, no download)",
     },
     created_at: {
       type: DataTypes.DATE,
@@ -163,6 +192,9 @@ export const DigitalDownloads = db.define(
       },
       {
         fields: ["product_type"],
+      },
+      {
+        fields: ["slug"],
       },
     ],
   }

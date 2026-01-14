@@ -5,6 +5,7 @@ import { Op } from "sequelize";
 import multer from "multer";
 import { supabase } from "../../utils/supabase.js";
 import { normalizeCategory, CATEGORIES } from "../../constants/categories.js";
+import { generateDigitalDownloadSlug } from "../../utils/productSlugHelper.js";
 
 // Product type configurations
 const PRODUCT_TYPES = {
@@ -521,9 +522,13 @@ export const createDigitalDownload = TryCatchFunction(async (req, res) => {
     console.warn("Subscription check failed:", error.message);
   }
 
+  // Generate unique slug
+  const slug = await generateDigitalDownloadSlug(title.trim());
+
   // Create digital download
   const download = await DigitalDownloads.create({
     title: title.trim(),
+    slug: slug,
     description: description || null,
     author: author || null,
     pages: pages ? parseInt(pages) : null,
@@ -620,7 +625,13 @@ export const updateDigitalDownload = TryCatchFunction(async (req, res) => {
 
   // Update digital download
   const updateData = {};
-  if (title !== undefined) updateData.title = title.trim();
+  if (title !== undefined) {
+    updateData.title = title.trim();
+    // Regenerate slug if title changed
+    if (title.trim() !== download.title) {
+      updateData.slug = await generateDigitalDownloadSlug(title.trim(), download.id);
+    }
+  }
   if (description !== undefined) updateData.description = description;
   if (author !== undefined) updateData.author = author;
   if (pages !== undefined) updateData.pages = pages ? parseInt(pages) : null;

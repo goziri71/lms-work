@@ -77,7 +77,25 @@ export const SoleTutor = db.define(
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
       defaultValue: 0.0,
-      comment: "Available balance for payouts",
+      comment: "Available balance for payouts - legacy field (use wallet_balance_primary)",
+    },
+    wallet_balance_primary: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0.0,
+      comment: "Primary wallet balance (local currency)",
+    },
+    wallet_balance_usd: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0.0,
+      comment: "USD wallet balance",
+    },
+    wallet_balance_gbp: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0.0,
+      comment: "GBP wallet balance",
     },
     total_earnings: {
       type: DataTypes.DECIMAL(10, 2),
@@ -129,11 +147,22 @@ export const SoleTutor = db.define(
       type: DataTypes.STRING(100),
       allowNull: true,
     },
+    country_code: {
+      type: DataTypes.STRING(2),
+      allowNull: true,
+      comment: "ISO 3166-1 alpha-2 country code (e.g., 'NG', 'GB', 'US')",
+    },
     currency: {
       type: DataTypes.STRING(10),
       allowNull: true,
       defaultValue: "NGN",
-      comment: "Currency code (e.g., 'NGN', 'USD', 'GHS')",
+      comment: "Currency code (e.g., 'NGN', 'USD', 'GHS') - legacy field",
+    },
+    local_currency: {
+      type: DataTypes.STRING(3),
+      allowNull: true,
+      defaultValue: "NGN",
+      comment: "Tutor's local currency (primary wallet currency)",
     },
     timezone: {
       type: DataTypes.STRING(50),

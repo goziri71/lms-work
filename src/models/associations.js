@@ -71,6 +71,21 @@ import {
   MembershipTier,
   MembershipTierProduct,
   MembershipTierChange,
+  ProductReview,
+  ReviewHelpfulVote,
+  StoreCart,
+  StoreCartItem,
+  ProductSalesPage,
+  SalesPageView,
+  ReadSession,
+  Invoice,
+  Donation,
+  DonationCategory,
+  TutorNextOfKin,
+  FundTransfer,
+  TutorKyc,
+  GoogleDriveConnection,
+  ExternalFile,
 } from "./marketplace/index.js";
 
 export const setupAssociations = () => {
@@ -1115,5 +1130,190 @@ export const setupAssociations = () => {
   LearnerLoginHistory.belongsTo(Students, {
     foreignKey: "student_id",
     as: "student",
+  });
+
+  // Product Reviews associations
+  // Students -> Product Reviews
+  Students.hasMany(ProductReview, {
+    foreignKey: "student_id",
+    as: "reviews",
+  });
+  ProductReview.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Product Reviews -> Helpful Votes
+  ProductReview.hasMany(ReviewHelpfulVote, {
+    foreignKey: "review_id",
+    as: "helpfulVotes",
+  });
+  ReviewHelpfulVote.belongsTo(ProductReview, {
+    foreignKey: "review_id",
+    as: "review",
+  });
+
+  // Students -> Helpful Votes
+  Students.hasMany(ReviewHelpfulVote, {
+    foreignKey: "student_id",
+    as: "helpfulVotes",
+  });
+  ReviewHelpfulVote.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Store Cart associations
+  // Students -> Store Carts
+  Students.hasMany(StoreCart, {
+    foreignKey: "user_id",
+    as: "storeCarts",
+  });
+  StoreCart.belongsTo(Students, {
+    foreignKey: "user_id",
+    as: "user",
+  });
+
+  // Store Carts -> Cart Items
+  StoreCart.hasMany(StoreCartItem, {
+    foreignKey: "cart_id",
+    as: "items",
+    onDelete: "CASCADE",
+  });
+  StoreCartItem.belongsTo(StoreCart, {
+    foreignKey: "cart_id",
+    as: "cart",
+  });
+
+  // Sales Page associations
+  // Product Sales Pages -> Sales Page Views
+  ProductSalesPage.hasMany(SalesPageView, {
+    foreignKey: "sales_page_id",
+    as: "views",
+    onDelete: "CASCADE",
+  });
+  SalesPageView.belongsTo(ProductSalesPage, {
+    foreignKey: "sales_page_id",
+    as: "salesPage",
+  });
+
+  // Students -> Sales Page Views (optional, for logged-in users)
+  Students.hasMany(SalesPageView, {
+    foreignKey: "user_id",
+    as: "salesPageViews",
+  });
+  SalesPageView.belongsTo(Students, {
+    foreignKey: "user_id",
+    as: "user",
+  });
+
+  // Read Session associations
+  // Digital Downloads -> Read Sessions
+  DigitalDownloads.hasMany(ReadSession, {
+    foreignKey: "digital_download_id",
+    as: "readSessions",
+    onDelete: "CASCADE",
+  });
+  ReadSession.belongsTo(DigitalDownloads, {
+    foreignKey: "digital_download_id",
+    as: "download",
+  });
+
+  // Students -> Read Sessions
+  Students.hasMany(ReadSession, {
+    foreignKey: "student_id",
+    as: "readSessions",
+    onDelete: "CASCADE",
+  });
+  ReadSession.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Invoice associations
+  // Students -> Invoices
+  Students.hasMany(Invoice, {
+    foreignKey: "student_id",
+    as: "invoices",
+    onDelete: "CASCADE",
+  });
+  Invoice.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  // Donation associations
+  // Students -> Donations
+  Students.hasMany(Donation, {
+    foreignKey: "donor_id",
+    as: "donations",
+    onDelete: "SET NULL",
+  });
+  Donation.belongsTo(Students, {
+    foreignKey: "donor_id",
+    as: "donor",
+  });
+
+  // Donation Categories -> Donations
+  DonationCategory.hasMany(Donation, {
+    foreignKey: "category_id",
+    as: "donations",
+    onDelete: "SET NULL",
+  });
+  Donation.belongsTo(DonationCategory, {
+    foreignKey: "category_id",
+    as: "category",
+  });
+
+  // Invoices -> Donations
+  Invoice.hasOne(Donation, {
+    foreignKey: "invoice_id",
+    as: "donation",
+    onDelete: "SET NULL",
+  });
+  Donation.belongsTo(Invoice, {
+    foreignKey: "invoice_id",
+    as: "invoice",
+  });
+
+  // KYC associations
+  // Sole Tutors -> KYC (one-to-one)
+  SoleTutor.hasOne(TutorKyc, {
+    foreignKey: "tutor_id",
+    as: "kyc",
+    onDelete: "CASCADE",
+  });
+  TutorKyc.belongsTo(SoleTutor, {
+    foreignKey: "tutor_id",
+    as: "tutor",
+  });
+
+  // External File Storage associations
+  // Google Drive Connections -> Tutors
+  GoogleDriveConnection.belongsTo(SoleTutor, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: {
+      tutor_type: "sole_tutor",
+    },
+  });
+
+  GoogleDriveConnection.belongsTo(Organization, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: {
+      tutor_type: "organization",
+    },
+  });
+
+  // Google Drive Connections -> External Files
+  GoogleDriveConnection.hasMany(ExternalFile, {
+    foreignKey: "google_drive_connection_id",
+    as: "external_files",
+    onDelete: "SET NULL",
+  });
+  ExternalFile.belongsTo(GoogleDriveConnection, {
+    foreignKey: "google_drive_connection_id",
+    as: "google_drive_connection",
   });
 };

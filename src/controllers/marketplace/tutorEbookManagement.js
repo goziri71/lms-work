@@ -4,6 +4,7 @@ import { EBooks } from "../../models/marketplace/ebooks.js";
 import { Op } from "sequelize";
 import multer from "multer";
 import { supabase } from "../../utils/supabase.js";
+import { generateEbookSlug } from "../../utils/productSlugHelper.js";
 
 // Configure multer for PDF uploads
 const uploadPDF = multer({
@@ -199,9 +200,13 @@ export const createEBook = TryCatchFunction(async (req, res) => {
   const ownerType = userType === "sole_tutor" ? "sole_tutor" : "organization";
   const ownerId = tutorId;
 
+  // Generate unique slug
+  const slug = await generateEbookSlug(title.trim());
+
   // Create e-book
   const ebook = await EBooks.create({
     title: title.trim(),
+    slug: slug,
     description: description || null,
     author: author || null,
     pages: pages ? parseInt(pages) : null,
@@ -280,7 +285,13 @@ export const updateEBook = TryCatchFunction(async (req, res) => {
 
   // Update e-book
   const updateData = {};
-  if (title !== undefined) updateData.title = title.trim();
+  if (title !== undefined) {
+    updateData.title = title.trim();
+    // Regenerate slug if title changed
+    if (title.trim() !== ebook.title) {
+      updateData.slug = await generateEbookSlug(title.trim(), ebook.id);
+    }
+  }
   if (description !== undefined) updateData.description = description;
   if (author !== undefined) updateData.author = author;
   if (pages !== undefined) updateData.pages = pages ? parseInt(pages) : null;
