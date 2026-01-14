@@ -259,12 +259,21 @@ router.post("/login/organization", organizationLogin);
 router.post("/login/organization-user", organizationUserLogin);
 
 // Password Reset
+// Support both URL formats for backward compatibility
 router.post(
   "/password/reset-request/sole-tutor",
   requestPasswordResetSoleTutor
 );
 router.post(
+  "/password/reset/request/sole-tutor",
+  requestPasswordResetSoleTutor
+);
+router.post(
   "/password/reset-request/organization",
+  requestPasswordResetOrganization
+);
+router.post(
+  "/password/reset/request/organization",
   requestPasswordResetOrganization
 );
 router.post("/password/reset/sole-tutor", resetPasswordSoleTutor);
