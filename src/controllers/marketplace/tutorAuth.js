@@ -929,7 +929,7 @@ export const requestPasswordResetSoleTutor = TryCatchFunction(
 
     // Send password reset email
     try {
-      await emailService.sendPasswordResetEmail(
+      const emailResult = await emailService.sendPasswordResetEmail(
         {
           email: tutor.email,
           name: `${tutor.fname || ""} ${tutor.lname || ""}`.trim(),
@@ -937,9 +937,24 @@ export const requestPasswordResetSoleTutor = TryCatchFunction(
         resetToken,
         resetUrl
       );
+      
+      if (!emailResult || !emailResult.success) {
+        console.error("❌ Password reset email failed to send:", {
+          email: tutor.email,
+          error: emailResult?.message || "Unknown error",
+          details: emailResult?.error,
+        });
+      } else {
+        console.log(`✅ Password reset email sent successfully to ${tutor.email}`);
+      }
     } catch (error) {
-      console.error("Error sending password reset email:", error);
+      console.error("❌ Error sending password reset email:", {
+        email: tutor.email,
+        error: error.message,
+        stack: error.stack,
+      });
       // Don't throw error - still return success to prevent email enumeration
+      // But log it clearly for debugging
     }
 
     res.status(200).json({
@@ -992,7 +1007,7 @@ export const requestPasswordResetOrganization = TryCatchFunction(
 
     // Send password reset email
     try {
-      await emailService.sendPasswordResetEmail(
+      const emailResult = await emailService.sendPasswordResetEmail(
         {
           email: organization.email,
           name: organization.name || "Organization",
@@ -1000,9 +1015,24 @@ export const requestPasswordResetOrganization = TryCatchFunction(
         resetToken,
         resetUrl
       );
+      
+      if (!emailResult || !emailResult.success) {
+        console.error("❌ Password reset email failed to send:", {
+          email: organization.email,
+          error: emailResult?.message || "Unknown error",
+          details: emailResult?.error,
+        });
+      } else {
+        console.log(`✅ Password reset email sent successfully to ${organization.email}`);
+      }
     } catch (error) {
-      console.error("Error sending password reset email:", error);
+      console.error("❌ Error sending password reset email:", {
+        email: organization.email,
+        error: error.message,
+        stack: error.stack,
+      });
       // Don't throw error - still return success to prevent email enumeration
+      // But log it clearly for debugging
     }
 
     res.status(200).json({
