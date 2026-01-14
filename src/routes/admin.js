@@ -218,7 +218,8 @@ router.post("/password/reset", resetAdminPassword);
 // ============================================
 // DASHBOARD (Super Admin Only)
 // ============================================
-router.get("/dashboard", adminAuthorize, requireSuperAdmin, getDashboardStats);
+router.get("/dashboard/stats", adminAuthorize, requireSuperAdmin, getDashboardStats);
+router.get("/dashboard", adminAuthorize, requireSuperAdmin, getDashboardStats); // Alias for backward compatibility
 
 // ============================================
 // STUDENT MANAGEMENT (Super Admin Only)
@@ -382,6 +383,16 @@ router.get("/tutors/stats", adminAuthorize, requireSuperAdmin, getTutorStats);
 // ============================================
 // STUDENT KYC MANAGEMENT (Super Admin Only)
 // ============================================
+// Support both URL formats for backward compatibility
+router.get("/students/kyc/pending", adminAuthorize, requireSuperAdmin, getPendingDocuments);
+router.get("/students/kyc/approved", adminAuthorize, requireSuperAdmin, getFullyApprovedStudents);
+router.get("/students/kyc/documents", adminAuthorize, requireSuperAdmin, getStudentKycDocuments);
+router.get("/students/kyc/documents/:id/signed-url", adminAuthorize, requireSuperAdmin, getStudentDocumentSignedUrl);
+router.get("/students/kyc/status", adminAuthorize, requireSuperAdmin, getAllStudentsKycStatus);
+router.post("/students/kyc/documents/:id/approve", adminAuthorize, requireSuperAdmin, approveStudentDocument);
+router.post("/students/kyc/documents/:id/reject", adminAuthorize, requireSuperAdmin, rejectStudentDocument);
+
+// Alternative paths (for backward compatibility)
 router.get("/student-kyc/documents", adminAuthorize, requireSuperAdmin, getStudentKycDocuments);
 router.get("/student-kyc/documents/:id/signed-url", adminAuthorize, requireSuperAdmin, getStudentDocumentSignedUrl);
 router.get("/student-kyc/status", adminAuthorize, requireSuperAdmin, getAllStudentsKycStatus);
@@ -399,8 +410,10 @@ router.put("/settings", adminAuthorize, requireSuperAdmin, updateSystemSettings)
 // ============================================
 // REVENUE MANAGEMENT (Super Admin Only)
 // ============================================
-router.get("/revenue/marketplace-transactions", adminAuthorize, requireSuperAdmin, getAllMarketplaceTransactions);
-router.get("/revenue/wsp-statistics", adminAuthorize, requireSuperAdmin, getWspRevenueStatistics);
+router.get("/revenue/transactions", adminAuthorize, requireSuperAdmin, getAllMarketplaceTransactions);
+router.get("/revenue/marketplace-transactions", adminAuthorize, requireSuperAdmin, getAllMarketplaceTransactions); // Alias
+router.get("/revenue/wsp-stats", adminAuthorize, requireSuperAdmin, getWspRevenueStatistics);
+router.get("/revenue/wsp-statistics", adminAuthorize, requireSuperAdmin, getWspRevenueStatistics); // Alias
 router.get("/revenue/tutor/:tutorId", adminAuthorize, requireSuperAdmin, getTutorRevenueDetails);
 
 // ============================================
