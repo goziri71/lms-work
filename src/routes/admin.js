@@ -9,6 +9,10 @@ import {
   requireSuperAdmin,
 } from "../middlewares/adminAuthorize.js";
 import {
+  adminLogin,
+  adminLogout,
+} from "../controllers/admin/adminAuth.js";
+import {
   initiateFundTransfer,
   completeFundTransfer,
   getAllFundTransfers,
@@ -25,6 +29,12 @@ import {
 } from "../controllers/admin/tutorKycManagement.js";
 
 const router = express.Router();
+
+// ============================================
+// ADMIN AUTHENTICATION (Public - No auth required)
+// ============================================
+router.post("/login", adminLogin);
+router.post("/logout", adminAuthorize, adminLogout);
 
 // ============================================
 // FUND TRANSFER MANAGEMENT (Super Admin Only)
