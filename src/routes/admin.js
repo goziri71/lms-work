@@ -412,7 +412,8 @@ router.put("/settings", adminAuthorize, requireSuperAdmin, updateSystemSettings)
 // ============================================
 router.get("/revenue/transactions", adminAuthorize, requireSuperAdmin, getAllMarketplaceTransactions);
 router.get("/revenue/marketplace-transactions", adminAuthorize, requireSuperAdmin, getAllMarketplaceTransactions); // Alias
-router.get("/revenue/wsp-stats", adminAuthorize, requireSuperAdmin, getWspRevenueStatistics);
+router.get("/revenue/wpu-stats", adminAuthorize, requireSuperAdmin, getWspRevenueStatistics);
+router.get("/revenue/wsp-stats", adminAuthorize, requireSuperAdmin, getWspRevenueStatistics); // Alias
 router.get("/revenue/wsp-statistics", adminAuthorize, requireSuperAdmin, getWspRevenueStatistics); // Alias
 router.get("/revenue/tutor/:tutorId", adminAuthorize, requireSuperAdmin, getTutorRevenueDetails);
 

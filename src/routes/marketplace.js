@@ -152,6 +152,180 @@ import {
   getStoreProduct,
 } from "../controllers/marketplace/storeBrowsing.js";
 import { initiateCheckout } from "../controllers/marketplace/storeCheckout.js";
+import { getSalesPageBySlug, getSalesPageAnalytics } from "../controllers/public/salesPage.js";
+import {
+  getFeaturedProducts,
+  getTrendingProducts,
+  getTopProducts,
+} from "../controllers/marketplace/topProducts.js";
+import {
+  getDonationCategories,
+  createDonation,
+  getDonationWall,
+  getMyDonations,
+  getDonationStatistics,
+} from "../controllers/marketplace/donation.js";
+import {
+  getNextOfKin,
+  upsertNextOfKin,
+  deleteNextOfKin,
+} from "../controllers/marketplace/nextOfKin.js";
+import {
+  getKycStatus,
+  submitKyc,
+} from "../controllers/marketplace/tutorKyc.js";
+import {
+  initiateGoogleDriveConnection,
+  handleGoogleDriveCallback,
+  getGoogleDriveConnection,
+  disconnectGoogleDrive,
+  listGoogleDriveFiles,
+  importGoogleDriveFiles,
+  getImportedFiles,
+  getExternalFile,
+  deleteExternalFile,
+} from "../controllers/marketplace/googleDrive.js";
+import {
+  createReadSession,
+  updateReadProgress,
+  getReadProgress,
+  streamReadOnlyDocument,
+  getMyReadSessions,
+} from "../controllers/marketplace/readOnlyDownload.js";
+import {
+  getMyInvoices,
+  getInvoice,
+  downloadInvoice,
+  sendInvoiceEmail,
+} from "../controllers/marketplace/invoice.js";
+import {
+  getSubscription,
+  subscribe,
+  getSubscriptionLimits,
+} from "../controllers/marketplace/tutorSubscription.js";
+import {
+  getHoursBalance,
+  purchaseHours,
+  getPurchaseHistory,
+} from "../controllers/marketplace/coachingHours.js";
+import {
+  createSession,
+  listSessions,
+  getSession,
+  inviteStudents,
+  startSession,
+  endSession,
+  getJoinToken,
+  cancelSession,
+  uploadCoachingImageMiddleware,
+} from "../controllers/marketplace/coachingSession.js";
+import {
+  browseSessions,
+  getSessionDetails,
+  getMySessions,
+} from "../controllers/marketplace/coachingSessionBrowsing.js";
+import { purchaseSessionAccess } from "../controllers/marketplace/coachingSessionPurchase.js";
+import { getStudentJoinToken } from "../controllers/marketplace/coachingSession.js";
+import {
+  getSessionMessages,
+  markMessagesAsRead,
+} from "../controllers/marketplace/coachingMessaging.js";
+import {
+  createCommunity,
+  getMyCommunities,
+  getCommunity,
+  updateCommunity,
+  deleteCommunity,
+  uploadCommunityImageMiddleware,
+  uploadCommunityMediaMiddleware,
+} from "../controllers/marketplace/communityManagement.js";
+import { purchaseCommunitySubscription } from "../controllers/marketplace/communitySubscriptionPurchase.js";
+import {
+  createPost,
+  getPosts,
+  getPost,
+  updatePost,
+  deletePost,
+  createComment,
+  getComments,
+  uploadFile,
+  getFiles,
+  deleteFile,
+  uploadCommunityFileMiddleware,
+  uploadPostImageMiddleware,
+} from "../controllers/marketplace/communityContent.js";
+import {
+  addReaction,
+  getReactions,
+} from "../controllers/marketplace/communityReactions.js";
+import {
+  createAudioSession,
+  getTutorAudioSessions,
+  getAudioSessions,
+  getAudioSession,
+  startAudioSession,
+  endAudioSession,
+  getJoinToken as getCommunityAudioJoinToken,
+  cancelAudioSession,
+} from "../controllers/marketplace/communityAudioSessions.js";
+import {
+  getMembers,
+  getMember,
+  updateMemberRole,
+  blockMember,
+  unblockMember,
+  removeMember,
+} from "../controllers/marketplace/communityMemberManagement.js";
+import {
+  getBanksList,
+  addBankAccount,
+  listBankAccounts,
+  verifyAccount,
+  updateBankAccount,
+  setPrimaryAccount,
+  deleteBankAccount,
+} from "../controllers/marketplace/tutorBankAccount.js";
+import {
+  requestPayout,
+  listPayouts,
+  getPayout,
+} from "../controllers/marketplace/tutorPayout.js";
+import {
+  createMembership,
+  getMyMemberships,
+  getMembership,
+  updateMembership,
+  addProductToMembership,
+  removeProductFromMembership,
+  deleteMembership,
+  uploadMembershipImageMiddleware,
+} from "../controllers/marketplace/membershipManagement.js";
+import {
+  createTier,
+  getMembershipTiers,
+  getTier,
+  updateTier,
+  deleteTier,
+  bulkAssignProductsToTiers,
+  addProductToTier,
+  removeProductFromTier,
+} from "../controllers/marketplace/membershipTierManagement.js";
+import {
+  browseMemberships,
+  getMembershipDetails,
+  subscribeToMembership,
+  cancelSubscription,
+  getMySubscriptions,
+  checkProductAccessEndpoint,
+  changeTier,
+} from "../controllers/marketplace/membershipSubscription.js";
+import {
+  createSalesPage,
+  getSalesPage,
+  getMySalesPages,
+  updateSalesPage,
+  deleteSalesPage,
+} from "../controllers/marketplace/salesPageManagement.js";
 
 const router = express.Router();
 
@@ -167,28 +341,14 @@ router.get("/store/products", browseStoreProducts);
 router.get("/store/products/:type/:id", getStoreProduct);
 
 // Public Sales Pages (No authentication required)
-import { getSalesPageBySlug } from "../controllers/public/salesPage.js";
 router.get("/public/sales/:slug", getSalesPageBySlug);
 
 // Top Products (No authentication required)
-import {
-  getFeaturedProducts,
-  getTrendingProducts,
-  getTopProducts,
-} from "../controllers/marketplace/topProducts.js";
 router.get("/products/featured", getFeaturedProducts);
 router.get("/products/trending", getTrendingProducts);
 router.get("/products/top", getTopProducts);
 
 // Donations (Public and authenticated)
-import {
-  getDonationCategories,
-  createDonation,
-  getDonationWall,
-  getMyDonations,
-  getDonationStatistics,
-} from "../controllers/marketplace/donation.js";
-
 router.get("/donations/categories", getDonationCategories); // Public
 router.get("/donations/wall", getDonationWall); // Public
 router.get("/donations/statistics", getDonationStatistics); // Public
@@ -196,40 +356,17 @@ router.post("/donations", optionalAuthorize, createDonation); // Optional auth (
 router.get("/donations/my-donations", authorize, getMyDonations); // Requires auth
 
 // Next of Kin (Tutor authenticated)
-import {
-  getNextOfKin,
-  upsertNextOfKin,
-  deleteNextOfKin,
-} from "../controllers/marketplace/nextOfKin.js";
-
 router.get("/next-of-kin", tutorAuthorize, getNextOfKin);
 router.post("/next-of-kin", tutorAuthorize, upsertNextOfKin);
 router.put("/next-of-kin", tutorAuthorize, upsertNextOfKin);
 router.delete("/next-of-kin", tutorAuthorize, deleteNextOfKin);
 
 // Tutor KYC (Sole tutor authenticated)
-import {
-  getKycStatus,
-  submitKyc,
-} from "../controllers/marketplace/tutorKyc.js";
-
 router.get("/tutor/kyc", tutorAuthorize, getKycStatus);
 router.post("/tutor/kyc", tutorAuthorize, submitKyc);
 router.put("/tutor/kyc", tutorAuthorize, submitKyc);
 
 // Google Drive Integration (Tutor authenticated)
-import {
-  initiateGoogleDriveConnection,
-  handleGoogleDriveCallback,
-  getGoogleDriveConnection,
-  disconnectGoogleDrive,
-  listGoogleDriveFiles,
-  importGoogleDriveFiles,
-  getImportedFiles,
-  getExternalFile,
-  deleteExternalFile,
-} from "../controllers/marketplace/googleDrive.js";
-
 router.get("/google-drive/connect", tutorAuthorize, initiateGoogleDriveConnection);
 router.get("/google-drive/callback", tutorAuthorize, handleGoogleDriveCallback);
 router.get("/google-drive/connection", tutorAuthorize, getGoogleDriveConnection);
@@ -338,14 +475,6 @@ router.get("/digital-downloads/:id/preview-url", getDigitalDownloadPreviewUrl);
 router.get("/digital-downloads/:id", authorize, getStudentDigitalDownloadById);
 
 // Read-Only Digital Downloads
-import {
-  createReadSession,
-  updateReadProgress,
-  getReadProgress,
-  streamReadOnlyDocument,
-  getMyReadSessions,
-} from "../controllers/marketplace/readOnlyDownload.js";
-
 router.post("/digital-downloads/:id/read-session", authorize, createReadSession);
 router.put("/digital-downloads/:id/read-session", authorize, updateReadProgress);
 router.get("/digital-downloads/:id/read-session", authorize, getReadProgress);
@@ -355,13 +484,6 @@ router.get("/read-sessions", authorize, getMyReadSessions);
 // ============================================
 // INVOICE ROUTES (Student Authentication Required)
 // ============================================
-import {
-  getMyInvoices,
-  getInvoice,
-  downloadInvoice,
-  sendInvoiceEmail,
-} from "../controllers/marketplace/invoice.js";
-
 router.get("/invoices", authorize, getMyInvoices);
 router.get("/invoices/:id", authorize, getInvoice);
 router.get("/invoices/:id/download", authorize, downloadInvoice);
@@ -559,12 +681,6 @@ router.post(
 // ============================================
 // SUBSCRIPTION MANAGEMENT
 // ============================================
-import {
-  getSubscription,
-  subscribe,
-  getSubscriptionLimits,
-} from "../controllers/marketplace/tutorSubscription.js";
-
 router.get("/tutor/subscription", tutorAuthorize, getSubscription);
 router.post("/tutor/subscription", tutorAuthorize, subscribe);
 router.get("/tutor/subscription/limits", tutorAuthorize, getSubscriptionLimits);
@@ -572,12 +688,6 @@ router.get("/tutor/subscription/limits", tutorAuthorize, getSubscriptionLimits);
 // ============================================
 // COACHING HOURS MANAGEMENT
 // ============================================
-import {
-  getHoursBalance,
-  purchaseHours,
-  getPurchaseHistory,
-} from "../controllers/marketplace/coachingHours.js";
-
 router.get("/tutor/coaching/hours-balance", tutorAuthorize, getHoursBalance);
 router.post("/tutor/coaching/purchase-hours", tutorAuthorize, purchaseHours);
 router.get(
@@ -589,18 +699,6 @@ router.get(
 // ============================================
 // COACHING SESSIONS MANAGEMENT
 // ============================================
-import {
-  createSession,
-  listSessions,
-  getSession,
-  inviteStudents,
-  startSession,
-  endSession,
-  getJoinToken,
-  cancelSession,
-  uploadCoachingImageMiddleware,
-} from "../controllers/marketplace/coachingSession.js";
-
 router.post(
   "/tutor/coaching/sessions",
   tutorAuthorize,
@@ -622,14 +720,6 @@ router.delete("/tutor/coaching/sessions/:id", tutorAuthorize, cancelSession);
 // ============================================
 // STUDENT COACHING SESSION ENDPOINTS
 // ============================================
-import {
-  browseSessions,
-  getSessionDetails,
-  getMySessions,
-} from "../controllers/marketplace/coachingSessionBrowsing.js";
-import { purchaseSessionAccess } from "../controllers/marketplace/coachingSessionPurchase.js";
-import { getStudentJoinToken } from "../controllers/marketplace/coachingSession.js";
-
 // Browse sessions - optional auth (public can browse, authenticated students see purchase status)
 router.get("/coaching/sessions", optionalAuthorize, browseSessions);
 router.get("/coaching/sessions/:id", optionalAuthorize, getSessionDetails);
@@ -647,11 +737,6 @@ router.post(
 router.get("/coaching/my-sessions", authorize, getMySessions);
 
 // COACHING MESSAGING (One-on-One Scheduling)
-import {
-  getSessionMessages,
-  markMessagesAsRead,
-} from "../controllers/marketplace/coachingMessaging.js";
-
 router.get(
   "/coaching/sessions/:sessionId/messages",
   authorize,
@@ -664,16 +749,6 @@ router.put(
 );
 
 // COMMUNITY MANAGEMENT
-import {
-  createCommunity,
-  getMyCommunities,
-  getCommunity,
-  updateCommunity,
-  deleteCommunity,
-  uploadCommunityImageMiddleware,
-  uploadCommunityMediaMiddleware,
-} from "../controllers/marketplace/communityManagement.js";
-
 router.post(
   "/tutor/communities",
   tutorAuthorize,
@@ -691,8 +766,6 @@ router.put(
 router.delete("/tutor/communities/:id", tutorAuthorize, deleteCommunity);
 
 // COMMUNITY SUBSCRIPTION PURCHASE
-import { purchaseCommunitySubscription } from "../controllers/marketplace/communitySubscriptionPurchase.js";
-
 router.post(
   "/communities/:id/subscribe",
   authorize,
@@ -700,21 +773,6 @@ router.post(
 );
 
 // COMMUNITY CONTENT (Posts, Comments, Files)
-import {
-  createPost,
-  getPosts,
-  getPost,
-  updatePost,
-  deletePost,
-  createComment,
-  getComments,
-  uploadFile,
-  getFiles,
-  deleteFile,
-  uploadCommunityFileMiddleware,
-  uploadPostImageMiddleware,
-} from "../controllers/marketplace/communityContent.js";
-
 router.post(
   "/communities/:id/posts",
   authorize,
@@ -750,26 +808,10 @@ router.get("/communities/:id/files", authorize, getFiles);
 router.delete("/communities/:id/files/:fileId", authorize, deleteFile);
 
 // COMMUNITY REACTIONS
-import {
-  addReaction,
-  getReactions,
-} from "../controllers/marketplace/communityReactions.js";
-
 router.post("/communities/:id/reactions", authorize, addReaction);
 router.get("/communities/:id/reactions", optionalAuthorize, getReactions);
 
 // COMMUNITY AUDIO SESSIONS
-import {
-  createAudioSession,
-  getTutorAudioSessions,
-  getAudioSessions,
-  getAudioSession,
-  startAudioSession,
-  endAudioSession,
-  getJoinToken as getCommunityAudioJoinToken,
-  cancelAudioSession,
-} from "../controllers/marketplace/communityAudioSessions.js";
-
 router.post(
   "/tutor/communities/:id/audio-sessions",
   tutorAuthorize,
@@ -812,15 +854,6 @@ router.delete(
 );
 
 // COMMUNITY MEMBER MANAGEMENT
-import {
-  getMembers,
-  getMember,
-  updateMemberRole,
-  blockMember,
-  unblockMember,
-  removeMember,
-} from "../controllers/marketplace/communityMemberManagement.js";
-
 router.get("/tutor/communities/:id/members", tutorAuthorize, getMembers);
 router.get(
   "/tutor/communities/:id/members/:memberId",
@@ -851,16 +884,6 @@ router.delete(
 // ============================================
 // TUTOR BANK ACCOUNT MANAGEMENT
 // ============================================
-import {
-  getBanksList,
-  addBankAccount,
-  listBankAccounts,
-  verifyAccount,
-  updateBankAccount,
-  setPrimaryAccount,
-  deleteBankAccount,
-} from "../controllers/marketplace/tutorBankAccount.js";
-
 router.get("/tutor/bank-accounts/banks", tutorAuthorize, getBanksList);
 router.post("/tutor/bank-accounts", tutorAuthorize, addBankAccount);
 router.get("/tutor/bank-accounts", tutorAuthorize, listBankAccounts);
@@ -876,29 +899,12 @@ router.delete("/tutor/bank-accounts/:id", tutorAuthorize, deleteBankAccount);
 // ============================================
 // TUTOR PAYOUT MANAGEMENT
 // ============================================
-import {
-  requestPayout,
-  listPayouts,
-  getPayout,
-} from "../controllers/marketplace/tutorPayout.js";
-
 router.post("/tutor/payouts/request", tutorAuthorize, requestPayout);
 router.get("/tutor/payouts", tutorAuthorize, listPayouts);
 
 // ============================================
 // MEMBERSHIP MANAGEMENT (TUTOR)
 // ============================================
-import {
-  createMembership,
-  getMyMemberships,
-  getMembership,
-  updateMembership,
-  addProductToMembership,
-  removeProductFromMembership,
-  deleteMembership,
-  uploadMembershipImageMiddleware,
-} from "../controllers/marketplace/membershipManagement.js";
-
 router.post(
   "/tutor/memberships",
   tutorAuthorize,
@@ -920,17 +926,6 @@ router.delete("/tutor/memberships/:id", tutorAuthorize, deleteMembership);
 // ============================================
 // MEMBERSHIP TIER MANAGEMENT (TUTOR)
 // ============================================
-import {
-  createTier,
-  getMembershipTiers,
-  getTier,
-  updateTier,
-  deleteTier,
-  bulkAssignProductsToTiers,
-  addProductToTier,
-  removeProductFromTier,
-} from "../controllers/marketplace/membershipTierManagement.js";
-
 router.post("/tutor/memberships/:id/tiers", tutorAuthorize, createTier);
 router.get("/tutor/memberships/:id/tiers", tutorAuthorize, getMembershipTiers);
 router.get("/tutor/memberships/:id/tiers/:tierId", tutorAuthorize, getTier);
@@ -943,16 +938,6 @@ router.delete("/tutor/memberships/:id/tiers/:tierId/products/:productId", tutorA
 // ============================================
 // MEMBERSHIP SUBSCRIPTION (LEARNER)
 // ============================================
-import {
-  browseMemberships,
-  getMembershipDetails,
-  subscribeToMembership,
-  cancelSubscription,
-  getMySubscriptions,
-  checkProductAccessEndpoint,
-  changeTier,
-} from "../controllers/marketplace/membershipSubscription.js";
-
 router.get("/memberships", authorize, browseMemberships);
 router.get("/memberships/:id", authorize, getMembershipDetails);
 router.post("/memberships/:id/subscribe", authorize, subscribeToMembership);
@@ -975,15 +960,6 @@ router.post("/store/checkout", optionalAuthorize, initiateCheckout);
 // ============================================
 // SALES PAGE MANAGEMENT (TUTOR)
 // ============================================
-import {
-  createSalesPage,
-  getSalesPage,
-  getMySalesPages,
-  updateSalesPage,
-  deleteSalesPage,
-} from "../controllers/marketplace/salesPageManagement.js";
-import { getSalesPageAnalytics } from "../controllers/public/salesPage.js";
-
 router.post("/tutor/sales-pages", tutorAuthorize, createSalesPage);
 router.get("/tutor/sales-pages", tutorAuthorize, getMySalesPages);
 router.get("/tutor/sales-pages/:id", tutorAuthorize, getSalesPage);
