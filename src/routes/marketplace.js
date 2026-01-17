@@ -533,7 +533,8 @@ router.get(
 );
 
 // Wallet Management
-router.get("/tutor/wallet/balance", tutorAuthorize, getWalletBalance);
+router.get("/tutor/wallet", tutorAuthorize, getWalletBalance); // General wallet endpoint
+router.get("/tutor/wallet/balance", tutorAuthorize, getWalletBalance); // Alias
 router.post("/tutor/wallet/fund", tutorAuthorize, fundWallet);
 router.get("/tutor/wallet/transactions", tutorAuthorize, getWalletTransactions);
 
