@@ -16,9 +16,9 @@ import { verifyBVN, validateBVNFormat } from "../../services/bvnVerificationServ
  */
 export const getKycStatus = TryCatchFunction(async (req, res) => {
   const tutorId = req.tutor?.id;
-  const tutorType = req.tutor?.tutorType;
+  const userType = req.user?.userType;
 
-  if (tutorType !== "sole_tutor") {
+  if (userType !== "sole_tutor") {
     throw new ErrorClass("KYC is only available for sole tutors", 403);
   }
 
@@ -71,9 +71,9 @@ export const getKycStatus = TryCatchFunction(async (req, res) => {
  */
 export const submitKyc = TryCatchFunction(async (req, res) => {
   const tutorId = req.tutor?.id;
-  const tutorType = req.tutor?.tutorType;
+  const userType = req.user?.userType;
 
-  if (tutorType !== "sole_tutor") {
+  if (userType !== "sole_tutor") {
     throw new ErrorClass("KYC is only available for sole tutors", 403);
   }
 
