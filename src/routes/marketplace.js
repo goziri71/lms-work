@@ -325,6 +325,10 @@ import {
   getMySalesPages,
   updateSalesPage,
   deleteSalesPage,
+  uploadHeroImage,
+  uploadHeroVideo,
+  uploadHeroImageMiddleware,
+  uploadHeroVideoMiddleware,
 } from "../controllers/marketplace/salesPageManagement.js";
 
 const router = express.Router();
@@ -961,6 +965,21 @@ router.post("/store/checkout", optionalAuthorize, initiateCheckout);
 // ============================================
 // SALES PAGE MANAGEMENT (TUTOR)
 // ============================================
+// Sales Page File Uploads (must come before /tutor/sales-pages/:id routes)
+router.post(
+  "/tutor/sales-pages/upload-hero-image",
+  tutorAuthorize,
+  uploadHeroImageMiddleware,
+  uploadHeroImage
+);
+router.post(
+  "/tutor/sales-pages/upload-hero-video",
+  tutorAuthorize,
+  uploadHeroVideoMiddleware,
+  uploadHeroVideo
+);
+
+// Sales Page CRUD
 router.post("/tutor/sales-pages", tutorAuthorize, createSalesPage);
 router.get("/tutor/sales-pages", tutorAuthorize, getMySalesPages);
 router.get("/tutor/sales-pages/:id", tutorAuthorize, getSalesPage);

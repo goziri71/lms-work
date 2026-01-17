@@ -13,6 +13,50 @@ import { Community } from "../../models/marketplace/community.js";
 import { Membership } from "../../models/marketplace/membership.js";
 import { generateSlug, generateUniqueSlug } from "../../utils/slugGenerator.js";
 import { Op } from "sequelize";
+import multer from "multer";
+import { supabase } from "../../utils/supabase.js";
+
+// Configure multer for hero image uploads
+const uploadHeroImage = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB max
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new ErrorClass("Only JPEG, PNG, and WebP images are allowed", 400), false);
+    }
+  },
+});
+
+// Configure multer for hero video uploads
+const uploadHeroVideo = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB max for videos
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      "video/mp4",
+      "video/webm",
+      "video/ogg",
+      "video/quicktime",
+      "video/x-msvideo", // .avi
+    ];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new ErrorClass("Only MP4, WebM, OGG, MOV, and AVI videos are allowed", 400), false);
+    }
+  },
+});
+
+// Middleware exports
+export const uploadHeroImageMiddleware = uploadHeroImage.single("hero_image");
+export const uploadHeroVideoMiddleware = uploadHeroVideo.single("hero_video");
 
 /**
  * Check if product exists and belongs to tutor
@@ -115,7 +159,7 @@ export const createSalesPage = TryCatchFunction(async (req, res) => {
   }
 
   // Verify product ownership
-  const ownsProduct = await verifyProductOwnership(productType, parseInt(product_id), tutorId, tutorType);
+  const ownsProduct = await verifyProductOwnership(product_type, parseInt(product_id), tutorId, tutorType);
   if (!ownsProduct) {
     throw new ErrorClass("Product not found or you don't have permission to create a sales page for it", 403);
   }
@@ -379,5 +423,118 @@ export const deleteSalesPage = TryCatchFunction(async (req, res) => {
   res.status(200).json({
     success: true,
     message: "Sales page deleted successfully",
+  });
+});
+
+/**
+ * Upload hero image for sales page
+ * POST /api/marketplace/tutor/sales-pages/upload-hero-image
+ * Returns the image URL that can be used in hero_image_url field
+ */
+export const uploadHeroImage = TryCatchFunction(async (req, res) => {
+  const tutor = req.tutor;
+  const tutorId = tutor.id;
+
+  if (!req.file) {
+    throw new ErrorClass("Hero image file is required", 400);
+  }
+
+  const bucket = process.env.SALES_PAGES_BUCKET || "sales-pages";
+  const timestamp = Date.now();
+  const sanitizedFileName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
+  const ext = req.file.mimetype?.split("/")[1] || "jpg";
+  const objectPath = `tutors/${tutorId}/hero-images/${timestamp}_${sanitizedFileName}`;
+
+  // Upload to Supabase
+  const { error: uploadError } = await supabase.storage
+    .from(bucket)
+    .upload(objectPath, req.file.buffer, {
+      contentType: req.file.mimetype,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new ErrorClass(`Upload failed: ${uploadError.message}`, 500);
+  }
+
+  // Generate signed URL for private bucket (expires in 1 year)
+  // For private buckets, signed URLs are required; for public buckets, this still works
+  const { data: signedUrlData, error: urlError } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(objectPath, 31536000); // 1 year expiration
+
+  let fileUrl;
+  if (urlError) {
+    // Fallback to public URL if signed URL fails (for public buckets)
+    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(objectPath);
+    fileUrl = urlData.publicUrl;
+  } else {
+    // Use signed URL for private bucket
+    fileUrl = signedUrlData.signedUrl;
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Hero image uploaded successfully",
+    data: {
+      hero_image_url: fileUrl,
+      file_path: objectPath,
+    },
+  });
+});
+
+/**
+ * Upload hero video for sales page
+ * POST /api/marketplace/tutor/sales-pages/upload-hero-video
+ * Returns the video URL that can be used in hero_video_url field
+ */
+export const uploadHeroVideo = TryCatchFunction(async (req, res) => {
+  const tutor = req.tutor;
+  const tutorId = tutor.id;
+
+  if (!req.file) {
+    throw new ErrorClass("Hero video file is required", 400);
+  }
+
+  const bucket = process.env.SALES_PAGES_BUCKET || "sales-pages";
+  const timestamp = Date.now();
+  const sanitizedFileName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
+  const objectPath = `tutors/${tutorId}/hero-videos/${timestamp}_${sanitizedFileName}`;
+
+  // Upload to Supabase
+  const { error: uploadError } = await supabase.storage
+    .from(bucket)
+    .upload(objectPath, req.file.buffer, {
+      contentType: req.file.mimetype,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new ErrorClass(`Upload failed: ${uploadError.message}`, 500);
+  }
+
+  // Generate signed URL for private bucket (expires in 1 year)
+  // For private buckets, signed URLs are required; for public buckets, this still works
+  const { data: signedUrlData, error: urlError } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(objectPath, 31536000); // 1 year expiration
+
+  let fileUrl;
+  if (urlError) {
+    // Fallback to public URL if signed URL fails (for public buckets)
+    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(objectPath);
+    fileUrl = urlData.publicUrl;
+  } else {
+    // Use signed URL for private bucket
+    fileUrl = signedUrlData.signedUrl;
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Hero video uploaded successfully",
+    data: {
+      hero_video_url: fileUrl,
+      file_path: objectPath,
+    },
   });
 });
