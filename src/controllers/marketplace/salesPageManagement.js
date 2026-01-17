@@ -17,7 +17,7 @@ import multer from "multer";
 import { supabase } from "../../utils/supabase.js";
 
 // Configure multer for hero image uploads
-const uploadHeroImage = multer({
+const heroImageUploader = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB max
@@ -33,7 +33,7 @@ const uploadHeroImage = multer({
 });
 
 // Configure multer for hero video uploads
-const uploadHeroVideo = multer({
+const heroVideoUploader = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 100 * 1024 * 1024, // 100MB max for videos
@@ -55,8 +55,8 @@ const uploadHeroVideo = multer({
 });
 
 // Middleware exports
-export const uploadHeroImageMiddleware = uploadHeroImage.single("hero_image");
-export const uploadHeroVideoMiddleware = uploadHeroVideo.single("hero_video");
+export const uploadHeroImageMiddleware = heroImageUploader.single("hero_image");
+export const uploadHeroVideoMiddleware = heroVideoUploader.single("hero_video");
 
 /**
  * Check if product exists and belongs to tutor
