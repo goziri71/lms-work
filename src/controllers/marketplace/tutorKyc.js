@@ -9,6 +9,43 @@ import { TutorKyc } from "../../models/marketplace/tutorKyc.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { supabase } from "../../utils/supabase.js";
 import { verifyBVN, validateBVNFormat } from "../../services/bvnVerificationService.js";
+import multer from "multer";
+
+// Configure multer for KYC document uploads
+const kycDocumentUploader = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit per file
+  },
+  fileFilter: (req, file, cb) => {
+    // Allow images and PDFs
+    const allowedMimes = [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/webp",
+      "application/pdf",
+    ];
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(
+        new ErrorClass(
+          `Invalid file type. Allowed types: ${allowedMimes.join(", ")}`,
+          400
+        ),
+        false
+      );
+    }
+  },
+});
+
+// Middleware for KYC document uploads (multiple files)
+export const uploadKycDocumentsMiddleware = kycDocumentUploader.fields([
+  { name: "national_id", maxCount: 1 },
+  { name: "proof_of_address", maxCount: 1 },
+  { name: "passport_photo", maxCount: 1 },
+]);
 
 /**
  * Get KYC status for current tutor
@@ -77,12 +114,14 @@ export const submitKyc = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("KYC is only available for sole tutors", 403);
   }
 
+  // Handle both JSON and multipart/form-data requests
+  const body = req.body || {};
   const {
     bvn,
     national_id_type,
     national_id_number,
     additional_documents: additionalDocsJson,
-  } = req.body;
+  } = body;
 
   // Validate BVN if provided
   if (bvn && !validateBVNFormat(bvn)) {
@@ -145,16 +184,16 @@ export const submitKyc = TryCatchFunction(async (req, res) => {
   const bucket = process.env.TUTOR_DOCUMENTS_BUCKET || "tutor-documents";
   const uploadPromises = [];
 
-  // National ID upload
-  if (req.files && req.files.national_id) {
-    const file = req.files.national_id;
-    const fileExt = file.name.split(".").pop().toLowerCase();
+  // National ID upload (multer fields returns arrays)
+  if (req.files && req.files.national_id && req.files.national_id.length > 0) {
+    const file = req.files.national_id[0];
+    const fileExt = file.originalname.split(".").pop().toLowerCase();
     const fileName = `kyc/${tutorId}/national_id_${Date.now()}.${fileExt}`;
 
     uploadPromises.push(
       supabase.storage
         .from(bucket)
-        .upload(fileName, file.buffer || file.data, {
+        .upload(fileName, file.buffer, {
           contentType: file.mimetype,
           upsert: false,
         })
@@ -174,15 +213,15 @@ export const submitKyc = TryCatchFunction(async (req, res) => {
   }
 
   // Proof of address upload
-  if (req.files && req.files.proof_of_address) {
-    const file = req.files.proof_of_address;
-    const fileExt = file.name.split(".").pop().toLowerCase();
+  if (req.files && req.files.proof_of_address && req.files.proof_of_address.length > 0) {
+    const file = req.files.proof_of_address[0];
+    const fileExt = file.originalname.split(".").pop().toLowerCase();
     const fileName = `kyc/${tutorId}/proof_of_address_${Date.now()}.${fileExt}`;
 
     uploadPromises.push(
       supabase.storage
         .from(bucket)
-        .upload(fileName, file.buffer || file.data, {
+        .upload(fileName, file.buffer, {
           contentType: file.mimetype,
           upsert: false,
         })
@@ -202,15 +241,15 @@ export const submitKyc = TryCatchFunction(async (req, res) => {
   }
 
   // Passport photo upload
-  if (req.files && req.files.passport_photo) {
-    const file = req.files.passport_photo;
-    const fileExt = file.name.split(".").pop().toLowerCase();
+  if (req.files && req.files.passport_photo && req.files.passport_photo.length > 0) {
+    const file = req.files.passport_photo[0];
+    const fileExt = file.originalname.split(".").pop().toLowerCase();
     const fileName = `kyc/${tutorId}/passport_photo_${Date.now()}.${fileExt}`;
 
     uploadPromises.push(
       supabase.storage
         .from(bucket)
-        .upload(fileName, file.buffer || file.data, {
+        .upload(fileName, file.buffer, {
           contentType: file.mimetype,
           upsert: false,
         })
