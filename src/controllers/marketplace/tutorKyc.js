@@ -182,6 +182,37 @@ export const submitKyc = TryCatchFunction(async (req, res) => {
 
   // Handle document uploads
   const bucket = process.env.TUTOR_DOCUMENTS_BUCKET || "tutor-documents";
+  
+  // Check if bucket exists, create if it doesn't
+  try {
+    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+    if (!listError) {
+      const bucketExists = buckets?.some((b) => b.name === bucket);
+      if (!bucketExists) {
+        // Try to create the bucket
+        const { error: createError } = await supabase.storage.createBucket(bucket, {
+          public: false, // Private bucket for sensitive documents
+          allowedMimeTypes: ['image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'application/pdf'],
+        });
+        if (createError) {
+          console.error(`Failed to create bucket "${bucket}":`, createError.message);
+          throw new ErrorClass(
+            `Storage bucket "${bucket}" does not exist. Please create it in Supabase Storage settings. Error: ${createError.message}`,
+            500
+          );
+        } else {
+          console.log(`✅ Created bucket "${bucket}"`);
+        }
+      }
+    }
+  } catch (error) {
+    if (error instanceof ErrorClass) {
+      throw error;
+    }
+    // If bucket check fails, continue and let upload error handle it
+    console.warn("Could not verify bucket existence:", error.message);
+  }
+  
   const uploadPromises = [];
 
   // National ID upload (multer fields returns arrays)
@@ -198,7 +229,15 @@ export const submitKyc = TryCatchFunction(async (req, res) => {
           upsert: false,
         })
         .then(async ({ data, error }) => {
-          if (error) throw new ErrorClass(`National ID upload failed: ${error.message}`, 500);
+          if (error) {
+            if (error.message?.includes("Bucket not found") || error.message?.includes("not found")) {
+              throw new ErrorClass(
+                `Storage bucket "${bucket}" does not exist. Please create a bucket named "${bucket}" in your Supabase Storage settings.`,
+                500
+              );
+            }
+            throw new ErrorClass(`National ID upload failed: ${error.message}`, 500);
+          }
           
           const { data: signedUrlData } = await supabase.storage
             .from(bucket)
@@ -226,7 +265,15 @@ export const submitKyc = TryCatchFunction(async (req, res) => {
           upsert: false,
         })
         .then(async ({ data, error }) => {
-          if (error) throw new ErrorClass(`Proof of address upload failed: ${error.message}`, 500);
+          if (error) {
+            if (error.message?.includes("Bucket not found") || error.message?.includes("not found")) {
+              throw new ErrorClass(
+                `Storage bucket "${bucket}" does not exist. Please create a bucket named "${bucket}" in your Supabase Storage settings.`,
+                500
+              );
+            }
+            throw new ErrorClass(`Proof of address upload failed: ${error.message}`, 500);
+          }
           
           const { data: signedUrlData } = await supabase.storage
             .from(bucket)
@@ -254,7 +301,15 @@ export const submitKyc = TryCatchFunction(async (req, res) => {
           upsert: false,
         })
         .then(async ({ data, error }) => {
-          if (error) throw new ErrorClass(`Passport photo upload failed: ${error.message}`, 500);
+          if (error) {
+            if (error.message?.includes("Bucket not found") || error.message?.includes("not found")) {
+              throw new ErrorClass(
+                `Storage bucket "${bucket}" does not exist. Please create a bucket named "${bucket}" in your Supabase Storage settings.`,
+                500
+              );
+            }
+            throw new ErrorClass(`Passport photo upload failed: ${error.message}`, 500);
+          }
           
           const { data: signedUrlData } = await supabase.storage
             .from(bucket)
