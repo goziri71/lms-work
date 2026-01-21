@@ -83,6 +83,7 @@ export const createMembership = TryCatchFunction(async (req, res) => {
     description,
     category,
     pricing_type, // Legacy field - kept for backward compatibility
+    pricing_plan, // Alternative field name (for frontend compatibility)
     price, // Legacy field - kept for backward compatibility
     currency = "NGN",
     products = [], // Legacy field - Array of { product_type, product_id }
@@ -93,20 +94,30 @@ export const createMembership = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Name is required", 400);
   }
 
+  // Normalize pricing_type (handle both pricing_type and pricing_plan)
+  const normalizedPricingType = pricing_type || pricing_plan;
+
   // If tiers are provided, use tier system. Otherwise, use legacy pricing
   const useTierSystem = Array.isArray(tiers) && tiers.length > 0;
 
   if (!useTierSystem) {
     // Legacy validation for backward compatibility
-    if (!pricing_type || !["free", "monthly", "yearly", "lifetime"].includes(pricing_type)) {
-      throw new ErrorClass("pricing_type must be one of: free, monthly, yearly, lifetime", 400);
+    if (!normalizedPricingType) {
+      throw new ErrorClass("pricing_type is required. Must be one of: free, monthly, yearly, lifetime", 400);
     }
 
-    if (pricing_type !== "free" && (!price || parseFloat(price) <= 0)) {
+    // Normalize the value (lowercase, trim)
+    const pricingTypeValue = String(normalizedPricingType).toLowerCase().trim();
+    
+    if (!["free", "monthly", "yearly", "lifetime"].includes(pricingTypeValue)) {
+      throw new ErrorClass(`pricing_type must be one of: free, monthly, yearly, lifetime. Received: "${normalizedPricingType}"`, 400);
+    }
+
+    if (pricingTypeValue !== "free" && (!price || parseFloat(price) <= 0)) {
       throw new ErrorClass("Price is required for paid memberships", 400);
     }
 
-    if (pricing_type === "free" && parseFloat(price) !== 0) {
+    if (pricingTypeValue === "free" && parseFloat(price) !== 0) {
       throw new ErrorClass("Price must be 0 for free memberships", 400);
     }
   }
@@ -170,6 +181,8 @@ export const createMembership = TryCatchFunction(async (req, res) => {
   const slug = await generateMembershipSlug(name);
 
   // Create membership
+  // When using tiers, use default pricing_type (monthly) since the field is NOT NULL
+  // The actual pricing is stored in the tiers table
   const membership = await Membership.create({
     tutor_id: tutorId,
     tutor_type: tutorType,
@@ -178,8 +191,8 @@ export const createMembership = TryCatchFunction(async (req, res) => {
     description: description || null,
     category: category ? normalizeCategory(category) : null,
     image_url: imageUrl,
-    pricing_type: useTierSystem ? null : pricing_type, // null if using tiers
-    price: useTierSystem ? null : (parseFloat(price) || 0), // null if using tiers
+    pricing_type: useTierSystem ? "monthly" : (String(normalizedPricingType).toLowerCase().trim() || "monthly"), // Use default if using tiers
+    price: useTierSystem ? 0 : (parseFloat(price) || 0), // Use 0 if using tiers (pricing is in tiers)
     currency,
     status: "active",
     commission_rate: 0, // No commission for memberships
