@@ -440,6 +440,37 @@ export const uploadHeroImage = TryCatchFunction(async (req, res) => {
   }
 
   const bucket = process.env.SALES_PAGES_BUCKET || "sales-pages";
+  
+  // Check if bucket exists, create if it doesn't
+  try {
+    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+    if (!listError) {
+      const bucketExists = buckets?.some((b) => b.name === bucket);
+      if (!bucketExists) {
+        // Try to create the bucket
+        const { error: createError } = await supabase.storage.createBucket(bucket, {
+          public: true, // Public bucket for sales page media
+          allowedMimeTypes: ['image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo'],
+        });
+        if (createError) {
+          console.error(`Failed to create bucket "${bucket}":`, createError.message);
+          throw new ErrorClass(
+            `Storage bucket "${bucket}" does not exist. Please create it in Supabase Storage settings. Error: ${createError.message}`,
+            500
+          );
+        } else {
+          console.log(`✅ Created bucket "${bucket}"`);
+        }
+      }
+    }
+  } catch (error) {
+    if (error instanceof ErrorClass) {
+      throw error;
+    }
+    // If bucket check fails, continue and let upload error handle it
+    console.warn("Could not verify bucket existence:", error.message);
+  }
+
   const timestamp = Date.now();
   const sanitizedFileName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
   const ext = req.file.mimetype?.split("/")[1] || "jpg";
@@ -454,6 +485,12 @@ export const uploadHeroImage = TryCatchFunction(async (req, res) => {
     });
 
   if (uploadError) {
+    if (uploadError.message?.includes("Bucket not found") || uploadError.message?.includes("not found")) {
+      throw new ErrorClass(
+        `Storage bucket "${bucket}" does not exist. Please create a bucket named "${bucket}" in your Supabase Storage settings.`,
+        500
+      );
+    }
     throw new ErrorClass(`Upload failed: ${uploadError.message}`, 500);
   }
 
@@ -497,6 +534,37 @@ export const uploadHeroVideo = TryCatchFunction(async (req, res) => {
   }
 
   const bucket = process.env.SALES_PAGES_BUCKET || "sales-pages";
+  
+  // Check if bucket exists, create if it doesn't
+  try {
+    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+    if (!listError) {
+      const bucketExists = buckets?.some((b) => b.name === bucket);
+      if (!bucketExists) {
+        // Try to create the bucket
+        const { error: createError } = await supabase.storage.createBucket(bucket, {
+          public: true, // Public bucket for sales page media
+          allowedMimeTypes: ['image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo'],
+        });
+        if (createError) {
+          console.error(`Failed to create bucket "${bucket}":`, createError.message);
+          throw new ErrorClass(
+            `Storage bucket "${bucket}" does not exist. Please create it in Supabase Storage settings. Error: ${createError.message}`,
+            500
+          );
+        } else {
+          console.log(`✅ Created bucket "${bucket}"`);
+        }
+      }
+    }
+  } catch (error) {
+    if (error instanceof ErrorClass) {
+      throw error;
+    }
+    // If bucket check fails, continue and let upload error handle it
+    console.warn("Could not verify bucket existence:", error.message);
+  }
+
   const timestamp = Date.now();
   const sanitizedFileName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
   const objectPath = `tutors/${tutorId}/hero-videos/${timestamp}_${sanitizedFileName}`;
@@ -510,6 +578,12 @@ export const uploadHeroVideo = TryCatchFunction(async (req, res) => {
     });
 
   if (uploadError) {
+    if (uploadError.message?.includes("Bucket not found") || uploadError.message?.includes("not found")) {
+      throw new ErrorClass(
+        `Storage bucket "${bucket}" does not exist. Please create a bucket named "${bucket}" in your Supabase Storage settings.`,
+        500
+      );
+    }
     throw new ErrorClass(`Upload failed: ${uploadError.message}`, 500);
   }
 
