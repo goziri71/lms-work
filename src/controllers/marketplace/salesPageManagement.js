@@ -158,6 +158,13 @@ export const createSalesPage = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Invalid product_type", 400);
   }
 
+  // Validate status value
+  const validStatuses = ["draft", "published"];
+  const normalizedStatus = status ? String(status).toLowerCase().trim() : "draft";
+  if (!validStatuses.includes(normalizedStatus)) {
+    throw new ErrorClass(`Invalid status. Must be one of: ${validStatuses.join(", ")}`, 400);
+  }
+
   // Verify product ownership
   const ownsProduct = await verifyProductOwnership(product_type, parseInt(product_id), tutorId, tutorType);
   if (!ownsProduct) {
@@ -199,7 +206,7 @@ export const createSalesPage = TryCatchFunction(async (req, res) => {
     call_to_action_url: call_to_action_url || null,
     meta_title: meta_title || null,
     meta_description: meta_description || null,
-    status: status,
+    status: normalizedStatus,
   });
 
   res.status(201).json({
@@ -377,7 +384,15 @@ export const updateSalesPage = TryCatchFunction(async (req, res) => {
   if (call_to_action_url !== undefined) updateData.call_to_action_url = call_to_action_url;
   if (meta_title !== undefined) updateData.meta_title = meta_title;
   if (meta_description !== undefined) updateData.meta_description = meta_description;
-  if (status !== undefined) updateData.status = status;
+  if (status !== undefined) {
+    // Validate status value
+    const validStatuses = ["draft", "published"];
+    const normalizedStatus = String(status).toLowerCase().trim();
+    if (!validStatuses.includes(normalizedStatus)) {
+      throw new ErrorClass(`Invalid status. Must be one of: ${validStatuses.join(", ")}`, 400);
+    }
+    updateData.status = normalizedStatus;
+  }
 
   await salesPage.update(updateData);
 
