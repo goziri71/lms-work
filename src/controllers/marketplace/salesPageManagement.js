@@ -59,6 +59,43 @@ export const uploadHeroImageMiddleware = heroImageUploader.single("hero_image");
 export const uploadHeroVideoMiddleware = heroVideoUploader.single("hero_video");
 
 /**
+ * Normalize and validate status value
+ * Maps common status values to valid database values
+ */
+function normalizeStatus(status) {
+  if (!status) return "draft";
+  
+  const normalized = String(status).toLowerCase().trim();
+  
+  // Map common variations to valid values
+  const statusMap = {
+    "draft": "draft",
+    "published": "published",
+    "active": "published",      // Map "active" to "published"
+    "inactive": "draft",         // Map "inactive" to "draft"
+  };
+  
+  return statusMap[normalized] || normalized;
+}
+
+/**
+ * Validate status value
+ */
+function validateStatus(status) {
+  const validStatuses = ["draft", "published"];
+  const normalized = normalizeStatus(status);
+  
+  if (!validStatuses.includes(normalized)) {
+    throw new ErrorClass(
+      `Invalid status "${status}". Must be one of: draft, inactive, active, or published. (active -> published, inactive -> draft)`,
+      400
+    );
+  }
+  
+  return normalized;
+}
+
+/**
  * Check if product exists and belongs to tutor
  */
 async function verifyProductOwnership(productType, productId, tutorId, tutorType) {
@@ -158,12 +195,8 @@ export const createSalesPage = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Invalid product_type", 400);
   }
 
-  // Validate status value
-  const validStatuses = ["draft", "published"];
-  const normalizedStatus = status ? String(status).toLowerCase().trim() : "draft";
-  if (!validStatuses.includes(normalizedStatus)) {
-    throw new ErrorClass(`Invalid status. Must be one of: ${validStatuses.join(", ")}`, 400);
-  }
+  // Validate and normalize status value
+  const normalizedStatus = validateStatus(status);
 
   // Verify product ownership
   const ownsProduct = await verifyProductOwnership(product_type, parseInt(product_id), tutorId, tutorType);
@@ -385,13 +418,8 @@ export const updateSalesPage = TryCatchFunction(async (req, res) => {
   if (meta_title !== undefined) updateData.meta_title = meta_title;
   if (meta_description !== undefined) updateData.meta_description = meta_description;
   if (status !== undefined) {
-    // Validate status value
-    const validStatuses = ["draft", "published"];
-    const normalizedStatus = String(status).toLowerCase().trim();
-    if (!validStatuses.includes(normalizedStatus)) {
-      throw new ErrorClass(`Invalid status. Must be one of: ${validStatuses.join(", ")}`, 400);
-    }
-    updateData.status = normalizedStatus;
+    // Validate and normalize status value
+    updateData.status = validateStatus(status);
   }
 
   await salesPage.update(updateData);
