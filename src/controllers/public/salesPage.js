@@ -15,7 +15,7 @@ import { Membership } from "../../models/marketplace/membership.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { getProductReviewStats } from "../../services/productReviewService.js";
-import { Op } from "sequelize";
+import { Op, QueryTypes } from "sequelize";
 import { db } from "../../database/database.js";
 
 /**
@@ -279,8 +279,13 @@ export const getSalesPageAnalytics = TryCatchFunction(async (req, res) => {
   const tutorId = tutor.id;
   const tutorType = userType === "sole_tutor" ? "sole_tutor" : "organization";
   const { id } = req.params;
+  const salesPageId = parseInt(id);
 
-  const salesPage = await ProductSalesPage.findByPk(id);
+  if (!salesPageId || isNaN(salesPageId)) {
+    throw new ErrorClass("Invalid sales page ID", 400);
+  }
+
+  const salesPage = await ProductSalesPage.findByPk(salesPageId);
 
   if (!salesPage) {
     throw new ErrorClass("Sales page not found", 404);
@@ -300,18 +305,22 @@ export const getSalesPageAnalytics = TryCatchFunction(async (req, res) => {
 
   // Get view statistics
   const totalViews = await SalesPageView.count({
-    where: { sales_page_id: id },
+    where: { sales_page_id: salesPageId },
   });
 
-  const uniqueViews = await SalesPageView.count({
-    where: { sales_page_id: id },
-    distinct: true,
-    col: "ip_address",
-  });
+  // Get unique views (distinct IP addresses)
+  const uniqueViewsResult = await db.query(
+    `SELECT COUNT(DISTINCT ip_address) as count FROM sales_page_views WHERE sales_page_id = :salesPageId`,
+    {
+      replacements: { salesPageId },
+      type: QueryTypes.SELECT,
+    }
+  );
+  const uniqueViews = uniqueViewsResult[0]?.count || 0;
 
   const conversions = await SalesPageView.count({
     where: {
-      sales_page_id: id,
+      sales_page_id: salesPageId,
       converted: true,
     },
   });
@@ -322,21 +331,17 @@ export const getSalesPageAnalytics = TryCatchFunction(async (req, res) => {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  const viewsByDate = await SalesPageView.findAll({
-    where: {
-      sales_page_id: id,
-      viewed_at: {
-        [Op.gte]: thirtyDaysAgo,
-      },
-    },
-    attributes: [
-      [db.fn("DATE", db.col("viewed_at")), "date"],
-      [db.fn("COUNT", db.col("id")), "count"],
-    ],
-    group: [db.fn("DATE", db.col("viewed_at"))],
-    order: [[db.fn("DATE", db.col("viewed_at")), "ASC"]],
-    raw: true,
-  });
+  const viewsByDateResult = await db.query(
+    `SELECT DATE(viewed_at) as date, COUNT(*) as count 
+     FROM sales_page_views 
+     WHERE sales_page_id = :salesPageId AND viewed_at >= :thirtyDaysAgo
+     GROUP BY DATE(viewed_at)
+     ORDER BY DATE(viewed_at) ASC`,
+    {
+      replacements: { salesPageId, thirtyDaysAgo },
+      type: QueryTypes.SELECT,
+    }
+  );
 
   res.status(200).json({
     success: true,
@@ -350,10 +355,10 @@ export const getSalesPageAnalytics = TryCatchFunction(async (req, res) => {
       },
       analytics: {
         total_views: totalViews,
-        unique_views: uniqueViews,
+        unique_views: parseInt(uniqueViews),
         conversions: conversions,
         conversion_rate: parseFloat(conversionRate),
-        views_by_date: viewsByDate.map((v) => ({
+        views_by_date: viewsByDateResult.map((v) => ({
           date: v.date,
           count: parseInt(v.count || 0),
         })),

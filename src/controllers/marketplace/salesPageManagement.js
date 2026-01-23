@@ -98,7 +98,7 @@ function validateStatus(status) {
 /**
  * Check if product exists and belongs to tutor
  */
-async function verifyProductOwnership(productType, productId, tutorId, tutorType) {
+export async function verifyProductOwnership(productType, productId, tutorId, tutorType) {
   const ownerType = tutorType === "sole_tutor" ? "sole_tutor" : "organization";
   const ownerId = tutorId;
 
