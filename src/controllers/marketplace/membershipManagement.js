@@ -100,6 +100,9 @@ export const createMembership = TryCatchFunction(async (req, res) => {
   // If tiers are provided, use tier system. Otherwise, use legacy pricing
   const useTierSystem = Array.isArray(tiers) && tiers.length > 0;
 
+  // Normalize price value (handle free memberships without price)
+  let normalizedPrice = price;
+
   if (!useTierSystem) {
     // Legacy validation for backward compatibility
     if (!normalizedPricingType) {
@@ -113,12 +116,19 @@ export const createMembership = TryCatchFunction(async (req, res) => {
       throw new ErrorClass(`pricing_type must be one of: free, monthly, yearly, lifetime. Received: "${normalizedPricingType}"`, 400);
     }
 
-    if (pricingTypeValue !== "free" && (!price || parseFloat(price) <= 0)) {
-      throw new ErrorClass("Price is required for paid memberships", 400);
-    }
-
-    if (pricingTypeValue === "free" && parseFloat(price) !== 0) {
-      throw new ErrorClass("Price must be 0 for free memberships", 400);
+    // For free memberships: if price is not provided, default to 0
+    // If price is provided, it must be 0
+    if (pricingTypeValue === "free") {
+      if (normalizedPrice !== undefined && normalizedPrice !== null && normalizedPrice !== "" && parseFloat(normalizedPrice) !== 0) {
+        throw new ErrorClass("Price must be 0 for free memberships", 400);
+      }
+      // Default to 0 if not provided
+      normalizedPrice = 0;
+    } else {
+      // For paid memberships, price is required
+      if (!normalizedPrice || parseFloat(normalizedPrice) <= 0) {
+        throw new ErrorClass("Price is required for paid memberships", 400);
+      }
     }
   }
 
@@ -192,7 +202,7 @@ export const createMembership = TryCatchFunction(async (req, res) => {
     category: category ? normalizeCategory(category) : null,
     image_url: imageUrl,
     pricing_type: useTierSystem ? "monthly" : (String(normalizedPricingType).toLowerCase().trim() || "monthly"), // Use default if using tiers
-    price: useTierSystem ? 0 : (parseFloat(price) || 0), // Use 0 if using tiers (pricing is in tiers)
+    price: useTierSystem ? 0 : (parseFloat(normalizedPrice) || 0), // Use 0 if using tiers (pricing is in tiers)
     currency,
     status: "active",
     commission_rate: 0, // No commission for memberships

@@ -286,9 +286,40 @@ export const createPost = TryCatchFunction(async (req, res) => {
   // Upload image if provided
   let imageUrl = null;
   if (req.file) {
+    const bucket = process.env.COMMUNITIES_BUCKET || "communities";
+    
+    // Check if bucket exists, create if it doesn't
+    try {
+      const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+      if (!listError) {
+        const bucketExists = buckets?.some((b) => b.name === bucket);
+        if (!bucketExists) {
+          // Try to create the bucket
+          const { error: createError } = await supabase.storage.createBucket(bucket, {
+            public: true,
+            allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+          });
+          if (createError) {
+            console.error(`Failed to create bucket "${bucket}":`, createError.message);
+            throw new ErrorClass(
+              `Storage bucket "${bucket}" does not exist. Please create it in Supabase Storage settings. Error: ${createError.message}`,
+              500
+            );
+          } else {
+            console.log(`✅ Created bucket "${bucket}"`);
+          }
+        }
+      }
+    } catch (error) {
+      if (error instanceof ErrorClass) {
+        throw error;
+      }
+      // If bucket check fails, continue and let upload error handle it
+      console.warn("Could not verify bucket existence:", error.message);
+    }
+
     const fileExt = req.file.originalname.split(".").pop();
     const fileName = `communities/${communityId}/posts/${userId}_${Date.now()}.${fileExt}`;
-    const bucket = process.env.COMMUNITIES_BUCKET || "communities";
 
     const { data, error } = await supabase.storage
       .from(bucket)
@@ -298,6 +329,12 @@ export const createPost = TryCatchFunction(async (req, res) => {
       });
 
     if (error) {
+      if (error.message?.includes("Bucket not found") || error.message?.includes("not found")) {
+        throw new ErrorClass(
+          `Storage bucket "${bucket}" does not exist. Please create a bucket named "${bucket}" in your Supabase Storage settings.`,
+          500
+        );
+      }
       throw new ErrorClass(`Image upload failed: ${error.message}`, 500);
     }
 
@@ -305,6 +342,8 @@ export const createPost = TryCatchFunction(async (req, res) => {
       .from(bucket)
       .getPublicUrl(fileName);
     imageUrl = urlData.publicUrl;
+    
+    console.log(`✅ Image uploaded successfully: ${imageUrl}`);
   }
 
   // Determine author ID - for tutors, use their ID; for students, use student ID
@@ -340,13 +379,18 @@ export const createPost = TryCatchFunction(async (req, res) => {
     content_type,
     category: category || null,
     tags: tags ? (Array.isArray(tags) ? tags : JSON.parse(tags)) : null,
-    image_url: imageUrl,
+    image_url: imageUrl || null,
     status: postStatus,
     scheduled_at: scheduledDate,
     is_featured: featured,
     featured_at: featured ? new Date() : null,
     mentions: mentionedUserIds.length > 0 ? mentionedUserIds : null,
   });
+
+  // Log for debugging
+  if (imageUrl) {
+    console.log(`✅ Post created with image_url: ${imageUrl}`);
+  }
 
   // Increment post count only if published
   if (postStatus === "published") {
@@ -471,12 +515,16 @@ export const createPost = TryCatchFunction(async (req, res) => {
     authorName = "Unknown";
   }
 
+  // Ensure image_url is included in response
+  const postData = post.toJSON();
+  
   res.status(201).json({
     status: true,
     code: 201,
     message: "Post created successfully",
     data: {
-      ...post.toJSON(),
+      ...postData,
+      image_url: postData.image_url || imageUrl || null, // Explicitly include image_url
       author: {
         id: author.id,
         name: authorName,
