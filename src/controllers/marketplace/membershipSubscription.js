@@ -5,7 +5,7 @@
 
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
-import { Membership, MembershipProduct, MembershipSubscription, MembershipPayment, MembershipTier, MembershipTierChange } from "../../models/marketplace/index.js";
+import { Membership, MembershipProduct, MembershipSubscription, MembershipPayment, MembershipTier, MembershipTierProduct, MembershipTierChange } from "../../models/marketplace/index.js";
 import { Students } from "../../models/auth/student.js";
 import { Funding } from "../../models/payment/index.js";
 import { getWalletBalance } from "../../services/walletBalanceService.js";
@@ -194,7 +194,7 @@ export const getMembershipDetails = TryCatchFunction(async (req, res) => {
 
   const membership = await Membership.findOne({
     where: {
-      id,
+      id: parseInt(id, 10),
       status: "active",
     },
     include: [
@@ -213,13 +213,17 @@ export const getMembershipDetails = TryCatchFunction(async (req, res) => {
             as: "products",
           },
         ],
-        order: [["display_order", "ASC"]],
       },
     ],
   });
 
   if (!membership) {
     throw new ErrorClass("Membership not found", 404);
+  }
+
+  // Sort tiers by display_order (Sequelize order in nested include can be unreliable)
+  if (membership.tiers?.length) {
+    membership.tiers.sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
   }
 
   // Check tutor subscription is active
@@ -239,15 +243,15 @@ export const getMembershipDetails = TryCatchFunction(async (req, res) => {
   let tutorName = null;
   if (membership.tutor_type === "sole_tutor") {
     const tutor = await SoleTutor.findByPk(membership.tutor_id);
-    tutorName = tutor?.name || null;
+    tutorName = tutor ? `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || null : null;
   } else if (membership.tutor_type === "organization") {
     const org = await Organization.findByPk(membership.tutor_id);
     tutorName = org?.name || null;
   }
 
-  // Get product details and check ownership
+  // Get product details and check ownership (guard: products may be undefined)
   const productsWithDetails = await Promise.all(
-    membership.products.map(async (product) => {
+    (membership.products || []).map(async (product) => {
       let productDetails = null;
       let isOwned = false;
 
@@ -299,7 +303,7 @@ export const getMembershipDetails = TryCatchFunction(async (req, res) => {
             productDetails = {
               id: download.id,
               title: download.title,
-              image_url: download.image_url,
+              image_url: download.cover_image || download.image_url,
               price: download.price,
             };
             if (studentId) {
@@ -401,10 +405,89 @@ export const getMembershipDetails = TryCatchFunction(async (req, res) => {
         currency: membership.currency,
         status: membership.status,
         products: productsWithDetails,
+        tiers: membership.tiers || [],
         is_subscribed: isSubscribed,
         subscription: subscription,
         created_at: membership.created_at,
       },
+    },
+  });
+});
+
+/**
+ * Get tiers for a membership (student-facing)
+ * GET /api/marketplace/memberships/:id/tiers
+ */
+export const getMembershipTiersForStudent = TryCatchFunction(async (req, res) => {
+  const { id } = req.params;
+  const membershipId = parseInt(id, 10);
+
+  if (!membershipId || isNaN(membershipId)) {
+    throw new ErrorClass("Invalid membership ID", 400);
+  }
+
+  const membership = await Membership.findOne({
+    where: {
+      id: membershipId,
+      status: "active",
+    },
+    attributes: ["id", "name", "tutor_id", "tutor_type", "currency"],
+  });
+
+  if (!membership) {
+    throw new ErrorClass("Membership not found", 404);
+  }
+
+  // Check tutor subscription is active
+  const tutorSubscription = await TutorSubscription.findOne({
+    where: {
+      tutor_id: membership.tutor_id,
+      tutor_type: membership.tutor_type,
+      status: "active",
+    },
+  });
+
+  if (!tutorSubscription) {
+    throw new ErrorClass("This membership is currently unavailable", 403);
+  }
+
+  const tiers = await MembershipTier.findAll({
+    where: {
+      membership_id: membershipId,
+      status: "active",
+    },
+    include: [
+      {
+        model: MembershipTierProduct,
+        as: "products",
+        attributes: ["id", "product_type", "product_id", "monthly_access_level", "yearly_access_level", "lifetime_access_level"],
+      },
+    ],
+    order: [
+      ["display_order", "ASC"],
+      ["created_at", "ASC"],
+    ],
+  });
+
+  res.json({
+    status: true,
+    code: 200,
+    message: "Tiers retrieved successfully",
+    data: {
+      membership_id: membershipId,
+      membership_name: membership.name,
+      currency: membership.currency,
+      tiers: tiers.map((t) => ({
+        id: t.id,
+        tier_name: t.tier_name,
+        description: t.description,
+        monthly_price: t.monthly_price,
+        yearly_price: t.yearly_price,
+        lifetime_price: t.lifetime_price,
+        currency: t.currency,
+        display_order: t.display_order,
+        products: t.products || [],
+      })),
     },
   });
 });
@@ -721,6 +804,10 @@ export const getMySubscriptions = TryCatchFunction(async (req, res) => {
 
   if (req.user?.userType !== "student") {
     throw new ErrorClass("Only students can view subscriptions", 403);
+  }
+
+  if (!studentId) {
+    throw new ErrorClass("Student ID not found in token", 401);
   }
 
   const where = {

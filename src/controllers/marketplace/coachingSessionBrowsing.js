@@ -14,25 +14,17 @@ import { Op } from "sequelize";
 export const browseSessions = TryCatchFunction(async (req, res) => {
   const { category, pricing_type, page = 1, limit = 20, search } = req.query;
   // Optional auth - req.user may be undefined for public browsing
-  const studentId = req.user?.userType === "student" ? req.user.id : null;
+  const studentId = req.user?.userType === "student" ? req.user?.id : null;
 
   const now = new Date();
   const tenMinutesFromNow = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes from now
 
+  // Base filter: status scheduled/active AND (starts > 10min from now OR already active)
   const where = {
-    status: {
-      [Op.in]: ["scheduled", "active"], // Only show available sessions
-    },
-    // Only show sessions that start more than 10 minutes from now (or are already active)
+    status: { [Op.in]: ["scheduled", "active"] },
     [Op.or]: [
-      {
-        start_time: {
-          [Op.gt]: tenMinutesFromNow, // Starts more than 10 minutes from now
-        },
-      },
-      {
-        status: "active", // Already active sessions can be shown
-      },
+      { start_time: { [Op.gt]: tenMinutesFromNow } },
+      { status: "active" },
     ],
   };
 
@@ -44,14 +36,30 @@ export const browseSessions = TryCatchFunction(async (req, res) => {
     where.pricing_type = pricing_type;
   }
 
-  if (search) {
-    where[Op.or] = [
-      { title: { [Op.iLike]: `%${search}%` } },
-      { description: { [Op.iLike]: `%${search}%` } },
+  if (search && typeof search === "string" && search.trim()) {
+    // Combine availability with search using Op.and (don't overwrite Op.or)
+    where[Op.and] = [
+      { status: { [Op.in]: ["scheduled", "active"] } },
+      {
+        [Op.or]: [
+          { start_time: { [Op.gt]: tenMinutesFromNow } },
+          { status: "active" },
+        ],
+      },
+      {
+        [Op.or]: [
+          { title: { [Op.iLike]: `%${search.trim()}%` } },
+          { description: { [Op.iLike]: `%${search.trim()}%` } },
+        ],
+      },
     ];
+    delete where.status;
+    delete where[Op.or];
   }
 
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+  const offset = (pageNum - 1) * limitNum;
 
   const { count, rows: sessions } = await CoachingSession.findAndCountAll({
     where,
@@ -70,50 +78,58 @@ export const browseSessions = TryCatchFunction(async (req, res) => {
       },
     ],
     order: [["start_time", "ASC"]],
-    limit: parseInt(limit),
+    limit: limitNum,
     offset,
   });
 
   // Check if student has purchased (if authenticated)
-  const purchasedSessionIds = studentId
-    ? (
-        await CoachingSessionPurchase.findAll({
-          where: {
-            student_id: studentId,
-            session_id: {
-              [Op.in]: sessions.map((s) => s.id),
+  const sessionIds = Array.isArray(sessions) ? sessions.map((s) => s.id).filter((id) => id != null) : [];
+  const purchasedSessionIds =
+    studentId && sessionIds.length > 0
+      ? (
+          await CoachingSessionPurchase.findAll({
+            where: {
+              student_id: studentId,
+              session_id: { [Op.in]: sessionIds },
             },
-          },
-          attributes: ["session_id"],
-        })
-      ).map((p) => p.session_id)
-    : [];
+            attributes: ["session_id"],
+          })
+        ).map((p) => p.session_id)
+      : [];
 
   const tenMinutesInMs = 10 * 60 * 1000;
+  const sessionsList = Array.isArray(sessions) ? sessions : [];
 
   res.json({
     success: true,
     data: {
-      sessions: sessions.map((s) => {
-        const startTime = new Date(s.start_time);
-        const timeUntilStart = startTime.getTime() - now.getTime();
-        
+      sessions: sessionsList.map((s) => {
+        const startTime = s.start_time ? new Date(s.start_time) : null;
+        const timeUntilStart =
+          startTime && !isNaN(startTime.getTime())
+            ? startTime.getTime() - now.getTime()
+            : Infinity;
+
         // Determine display status
-        let displayStatus = s.status;
+        let displayStatus = s.status || "scheduled";
         let canPurchase = true;
-        
+
         if (s.status === "active") {
           displayStatus = "in_session";
           canPurchase = false;
         } else if (timeUntilStart <= 0) {
-          // Session has started but not marked as active yet
           displayStatus = "in_session";
           canPurchase = false;
         } else if (timeUntilStart <= tenMinutesInMs) {
-          // Within 10 minutes of start
           displayStatus = "starting_soon";
           canPurchase = false;
         }
+
+        const tutorName = s.soleTutorOwner
+          ? `${s.soleTutorOwner.fname || ""} ${s.soleTutorOwner.lname || ""}`.trim() || null
+          : s.organizationOwner
+          ? s.organizationOwner.name || null
+          : null;
 
         return {
           id: s.id,
@@ -123,35 +139,33 @@ export const browseSessions = TryCatchFunction(async (req, res) => {
           end_time: s.end_time,
           duration_minutes: s.duration_minutes,
           pricing_type: s.pricing_type,
-          price: s.price ? parseFloat(s.price) : null,
+          price: s.price != null ? parseFloat(s.price) : null,
           currency: s.currency,
           category: s.category,
           image_url: s.image_url,
-          tags: s.tags,
-          tutor: s.soleTutorOwner
-            ? {
-                id: s.soleTutorOwner.id,
-                name: `${s.soleTutorOwner.fname || ""} ${s.soleTutorOwner.lname || ""}`.trim(),
-                type: "sole_tutor",
-              }
-            : s.organizationOwner
-            ? {
-                id: s.organizationOwner.id,
-                name: s.organizationOwner.name,
-                type: "organization",
-              }
-            : null,
+          tags: s.tags || null,
+          tutor:
+            s.soleTutorOwner || s.organizationOwner
+              ? {
+                  id: (s.soleTutorOwner || s.organizationOwner).id,
+                  name: tutorName,
+                  type: s.soleTutorOwner ? "sole_tutor" : "organization",
+                }
+              : null,
           purchased: studentId ? purchasedSessionIds.includes(s.id) : false,
           status: s.status,
-          display_status: displayStatus, // "scheduled", "starting_soon", "in_session", "ended", "cancelled"
-          can_purchase: canPurchase && s.pricing_type === "paid" && !(studentId ? purchasedSessionIds.includes(s.id) : false),
+          display_status: displayStatus,
+          can_purchase:
+            canPurchase &&
+            s.pricing_type === "paid" &&
+            !(studentId ? purchasedSessionIds.includes(s.id) : false),
         };
       }),
       pagination: {
-        total: count,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        pages: Math.ceil(count / parseInt(limit)),
+        total: Number(count) || 0,
+        page: pageNum,
+        limit: limitNum,
+        pages: limitNum > 0 ? Math.ceil((Number(count) || 0) / limitNum) : 0,
       },
     },
   });
