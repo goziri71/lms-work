@@ -4,7 +4,7 @@ import { CoachingSession } from "../../models/marketplace/coachingSession.js";
 import { CoachingSessionPurchase } from "../../models/marketplace/coachingSessionPurchase.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
-import { Op } from "sequelize";
+import { Op, Sequelize } from "sequelize";
 
 /**
  * Browse available coaching sessions
@@ -37,7 +37,19 @@ export const browseSessions = TryCatchFunction(async (req, res) => {
   }
 
   if (search && typeof search === "string" && search.trim()) {
-    // Combine availability with search using Op.and (don't overwrite Op.or)
+    const term = search.trim();
+    const pattern = `%${term.toLowerCase()}%`;
+    // Dialect-safe case-insensitive search (works on PostgreSQL and MySQL)
+    const searchCondition = {
+      [Op.or]: [
+        Sequelize.where(Sequelize.fn("LOWER", Sequelize.col("title")), {
+          [Op.like]: pattern,
+        }),
+        Sequelize.where(Sequelize.fn("LOWER", Sequelize.col("description")), {
+          [Op.like]: pattern,
+        }),
+      ],
+    };
     where[Op.and] = [
       { status: { [Op.in]: ["scheduled", "active"] } },
       {
@@ -46,12 +58,7 @@ export const browseSessions = TryCatchFunction(async (req, res) => {
           { status: "active" },
         ],
       },
-      {
-        [Op.or]: [
-          { title: { [Op.iLike]: `%${search.trim()}%` } },
-          { description: { [Op.iLike]: `%${search.trim()}%` } },
-        ],
-      },
+      searchCondition,
     ];
     delete where.status;
     delete where[Op.or];
@@ -83,7 +90,9 @@ export const browseSessions = TryCatchFunction(async (req, res) => {
   });
 
   // Check if student has purchased (if authenticated)
-  const sessionIds = Array.isArray(sessions) ? sessions.map((s) => s.id).filter((id) => id != null) : [];
+  const sessionIds = Array.isArray(sessions)
+    ? sessions.map((s) => s.id).filter((id) => id != null)
+    : [];
   const purchasedSessionIds =
     studentId && sessionIds.length > 0
       ? (
@@ -126,10 +135,11 @@ export const browseSessions = TryCatchFunction(async (req, res) => {
         }
 
         const tutorName = s.soleTutorOwner
-          ? `${s.soleTutorOwner.fname || ""} ${s.soleTutorOwner.lname || ""}`.trim() || null
+          ? `${s.soleTutorOwner.fname || ""} ${s.soleTutorOwner.lname || ""}`.trim() ||
+            null
           : s.organizationOwner
-          ? s.organizationOwner.name || null
-          : null;
+            ? s.organizationOwner.name || null
+            : null;
 
         return {
           id: s.id,
@@ -263,18 +273,19 @@ export const getSessionDetails = TryCatchFunction(async (req, res) => {
             type: "sole_tutor",
           }
         : session.organizationOwner
-        ? {
-            id: session.organizationOwner.id,
-            name: session.organizationOwner.name,
-            email: session.organizationOwner.email,
-            logo: session.organizationOwner.logo,
-            description: session.organizationOwner.description,
-            type: "organization",
-          }
-        : null,
+          ? {
+              id: session.organizationOwner.id,
+              name: session.organizationOwner.name,
+              email: session.organizationOwner.email,
+              logo: session.organizationOwner.logo,
+              description: session.organizationOwner.description,
+              type: "organization",
+            }
+          : null,
       has_purchased: hasPurchased,
       can_join: session.pricing_type === "free" || hasPurchased,
-      can_purchase: canPurchase && session.pricing_type === "paid" && !hasPurchased,
+      can_purchase:
+        canPurchase && session.pricing_type === "paid" && !hasPurchased,
     },
   });
 });
@@ -299,33 +310,34 @@ export const getMySessions = TryCatchFunction(async (req, res) => {
 
   const offset = (parseInt(page) - 1) * parseInt(limit);
 
-  const { count, rows: purchases } = await CoachingSessionPurchase.findAndCountAll({
-    where,
-    include: [
-      {
-        model: CoachingSession,
-        as: "coachingSession",
-        where: status ? { status } : {},
-        include: [
-          {
-            model: SoleTutor,
-            as: "soleTutorOwner",
-            attributes: ["id", "fname", "lname", "email"],
-            required: false,
-          },
-          {
-            model: Organization,
-            as: "organizationOwner",
-            attributes: ["id", "name", "email"],
-            required: false,
-          },
-        ],
-      },
-    ],
-    order: [["purchased_at", "DESC"]],
-    limit: parseInt(limit),
-    offset,
-  });
+  const { count, rows: purchases } =
+    await CoachingSessionPurchase.findAndCountAll({
+      where,
+      include: [
+        {
+          model: CoachingSession,
+          as: "coachingSession",
+          where: status ? { status } : {},
+          include: [
+            {
+              model: SoleTutor,
+              as: "soleTutorOwner",
+              attributes: ["id", "fname", "lname", "email"],
+              required: false,
+            },
+            {
+              model: Organization,
+              as: "organizationOwner",
+              attributes: ["id", "name", "email"],
+              required: false,
+            },
+          ],
+        },
+      ],
+      order: [["purchased_at", "DESC"]],
+      limit: parseInt(limit),
+      offset,
+    });
 
   res.json({
     success: true,
@@ -350,12 +362,12 @@ export const getMySessions = TryCatchFunction(async (req, res) => {
                     type: "sole_tutor",
                   }
                 : p.coachingSession.organizationOwner
-                ? {
-                    id: p.coachingSession.organizationOwner.id,
-                    name: p.coachingSession.organizationOwner.name,
-                    type: "organization",
-                  }
-                : null,
+                  ? {
+                      id: p.coachingSession.organizationOwner.id,
+                      name: p.coachingSession.organizationOwner.name,
+                      type: "organization",
+                    }
+                  : null,
             }
           : null,
         price_paid: parseFloat(p.price_paid),
@@ -371,4 +383,3 @@ export const getMySessions = TryCatchFunction(async (req, res) => {
     },
   });
 });
-

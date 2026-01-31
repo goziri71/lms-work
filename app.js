@@ -19,7 +19,11 @@ import webhookRoutes from "./src/routes/webhooks.js";
 import walletRoutes from "./src/routes/wallet.js";
 import noticeRoutes from "./src/routes/notice.js";
 import kycRoutes from "./src/routes/kyc.js";
-import { getProgramById, getFacultyById } from "./src/controllers/public/programFacultyController.js";
+import {
+  getProgramById,
+  getFacultyById,
+} from "./src/controllers/public/programFacultyController.js";
+import { getSalesPageBySlug } from "./src/controllers/public/salesPage.js";
 import { authorize } from "./src/middlewares/authorize.js";
 import { setupAssociations } from "./src/models/associations.js";
 import { setupExamAssociations } from "./src/models/exams/index.js";
@@ -39,8 +43,8 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 // Increase body size limit to handle large unit content (50MB)
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // Performance monitoring
 app.use(performanceMonitor);
@@ -64,6 +68,10 @@ app.use("/api/webhooks", webhookRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/notices", noticeRoutes);
 app.use("/api/student/kyc", kycRoutes);
+
+// Public sales page by slug (so /api/public/sales/:slug works without /marketplace)
+app.get("/api/public/sales/:slug", getSalesPageBySlug);
+
 app.use("/api", modulesRoutes);
 
 // ============================================
@@ -125,7 +133,7 @@ connectDB().then(async (success) => {
           AND table_name = 'email_logs'
         )
       `);
-      
+
       if (!tableExists[0].exists) {
         console.log("📧 Creating email_logs table...");
         // Use force: false to create table without dropping existing data
@@ -134,16 +142,24 @@ connectDB().then(async (success) => {
       } else {
         // Table exists - just verify it's accessible (don't alter to avoid errors)
         try {
-          await db.query('SELECT 1 FROM email_logs LIMIT 1');
+          await db.query("SELECT 1 FROM email_logs LIMIT 1");
           console.log("✅ email_logs table verified");
         } catch (verifyError) {
-          console.warn("⚠️ email_logs table exists but may have issues:", verifyError.message);
+          console.warn(
+            "⚠️ email_logs table exists but may have issues:",
+            verifyError.message,
+          );
         }
       }
     } catch (error) {
-      console.error("⚠️ Warning: Could not verify/create email_logs table:", error.message);
+      console.error(
+        "⚠️ Warning: Could not verify/create email_logs table:",
+        error.message,
+      );
       if (error.message.includes("USING") || error.message.includes("syntax")) {
-        console.error("   This is likely a Sequelize sync issue. Trying alternative method...");
+        console.error(
+          "   This is likely a Sequelize sync issue. Trying alternative method...",
+        );
         try {
           // Try creating table with raw SQL as fallback
           await db.query(`
@@ -171,22 +187,30 @@ connectDB().then(async (success) => {
           `);
           console.log("✅ email_logs table created using raw SQL");
         } catch (fallbackError) {
-          console.error("❌ Fallback creation also failed:", fallbackError.message);
-          console.error("   Please run 'node setup-email-logs-table.js' manually");
+          console.error(
+            "❌ Fallback creation also failed:",
+            fallbackError.message,
+          );
+          console.error(
+            "   Please run 'node setup-email-logs-table.js' manually",
+          );
         }
       } else {
-        console.error("   Run 'node setup-email-logs-table.js' manually to create the table");
+        console.error(
+          "   Run 'node setup-email-logs-table.js' manually to create the table",
+        );
       }
     }
 
     setupDiscussionsSocket(io);
     setupDirectChatSocket(io);
     setupCoachingMessagingSocket(io);
-    
+
     // Setup background jobs for subscriptions
     try {
-      const { processAutoRenewals, expireSubscriptions } = await import("./src/services/subscriptionRenewalService.js");
-      
+      const { processAutoRenewals, expireSubscriptions } =
+        await import("./src/services/subscriptionRenewalService.js");
+
       // Helper to check if it's time to run daily job (2 AM)
       const shouldRunDailyJob = () => {
         const now = new Date();
@@ -194,78 +218,102 @@ connectDB().then(async (success) => {
         const minute = now.getMinutes();
         return hour === 2 && minute === 0;
       };
-      
+
       let lastDailyRun = new Date();
       lastDailyRun.setHours(0, 0, 0, 0); // Reset to start of day
-      
+
       // Check every hour if it's time to run daily jobs
-      setInterval(async () => {
-        const now = new Date();
-        const hoursSinceLastRun = (now - lastDailyRun) / (1000 * 60 * 60);
-        
-        // Run if it's been at least 24 hours since last run and it's around 2-3 AM
-        if (hoursSinceLastRun >= 24 && now.getHours() >= 2 && now.getHours() < 4) {
-          console.log("🔄 Processing subscription auto-renewals...");
-          try {
-            const results = await processAutoRenewals();
-            console.log(`✅ Auto-renewal completed: ${results.successful} successful, ${results.failed} failed`);
-            if (results.errors.length > 0) {
-              console.error("❌ Renewal errors:", results.errors);
-            }
-          } catch (error) {
-            console.error("❌ Error processing auto-renewals:", error);
-          }
-          
-          // Wait a bit before expiring subscriptions
-          setTimeout(async () => {
-            console.log("⏰ Expiring subscriptions...");
+      setInterval(
+        async () => {
+          const now = new Date();
+          const hoursSinceLastRun = (now - lastDailyRun) / (1000 * 60 * 60);
+
+          // Run if it's been at least 24 hours since last run and it's around 2-3 AM
+          if (
+            hoursSinceLastRun >= 24 &&
+            now.getHours() >= 2 &&
+            now.getHours() < 4
+          ) {
+            console.log("🔄 Processing subscription auto-renewals...");
             try {
-              const results = await expireSubscriptions();
-              console.log(`✅ Expired ${results.expired} subscriptions`);
+              const results = await processAutoRenewals();
+              console.log(
+                `✅ Auto-renewal completed: ${results.successful} successful, ${results.failed} failed`,
+              );
+              if (results.errors.length > 0) {
+                console.error("❌ Renewal errors:", results.errors);
+              }
             } catch (error) {
-              console.error("❌ Error expiring subscriptions:", error);
+              console.error("❌ Error processing auto-renewals:", error);
             }
-          }, 60000); // Wait 1 minute after renewals
-          
-          lastDailyRun = new Date();
-        }
-      }, 60 * 60 * 1000); // Check every hour
-      
+
+            // Wait a bit before expiring subscriptions
+            setTimeout(async () => {
+              console.log("⏰ Expiring subscriptions...");
+              try {
+                const results = await expireSubscriptions();
+                console.log(`✅ Expired ${results.expired} subscriptions`);
+              } catch (error) {
+                console.error("❌ Error expiring subscriptions:", error);
+              }
+            }, 60000); // Wait 1 minute after renewals
+
+            lastDailyRun = new Date();
+          }
+        },
+        60 * 60 * 1000,
+      ); // Check every hour
+
       console.log("⏰ Subscription renewal background jobs started");
     } catch (error) {
-      console.warn("⚠️ Could not setup subscription renewal jobs:", error.message);
+      console.warn(
+        "⚠️ Could not setup subscription renewal jobs:",
+        error.message,
+      );
     }
 
     // Community subscription expiration checker (runs daily)
     try {
       let lastCommunityCheck = new Date(0);
-      setInterval(async () => {
-        const now = new Date();
-        const hoursSinceLastCheck = (now - lastCommunityCheck) / (1000 * 60 * 60);
-        
-        // Run once per day (check hourly, execute only once)
-        if (hoursSinceLastCheck >= 24) {
-          console.log("🔄 Checking community subscription expirations...");
-          try {
-            const { checkAndProcessCommunitySubscriptions } = await import("./src/services/communitySubscriptionExpirationService.js");
-            await checkAndProcessCommunitySubscriptions();
-            console.log("✅ Community subscription check completed");
-          } catch (error) {
-            console.error("❌ Error checking community subscriptions:", error);
+      setInterval(
+        async () => {
+          const now = new Date();
+          const hoursSinceLastCheck =
+            (now - lastCommunityCheck) / (1000 * 60 * 60);
+
+          // Run once per day (check hourly, execute only once)
+          if (hoursSinceLastCheck >= 24) {
+            console.log("🔄 Checking community subscription expirations...");
+            try {
+              const { checkAndProcessCommunitySubscriptions } =
+                await import("./src/services/communitySubscriptionExpirationService.js");
+              await checkAndProcessCommunitySubscriptions();
+              console.log("✅ Community subscription check completed");
+            } catch (error) {
+              console.error(
+                "❌ Error checking community subscriptions:",
+                error,
+              );
+            }
+            lastCommunityCheck = new Date();
           }
-          lastCommunityCheck = new Date();
-        }
-      }, 60 * 60 * 1000); // Check hourly
-      
+        },
+        60 * 60 * 1000,
+      ); // Check hourly
+
       console.log("⏰ Community subscription expiration checker started");
     } catch (error) {
-      console.warn("⚠️ Could not setup community subscription checker:", error.message);
+      console.warn(
+        "⚠️ Could not setup community subscription checker:",
+        error.message,
+      );
     }
 
     // Exchange rate update job (runs hourly)
     try {
-      const { runExchangeRateUpdate } = await import("./src/scripts/updateExchangeRates.js");
-      
+      const { runExchangeRateUpdate } =
+        await import("./src/scripts/updateExchangeRates.js");
+
       // Run immediately on startup (optional, can be removed if you want to wait for first hour)
       setTimeout(async () => {
         console.log("🔄 Running initial exchange rate update...");
@@ -277,23 +325,30 @@ connectDB().then(async (success) => {
       }, 5000); // Wait 5 seconds after server starts
 
       // Schedule hourly updates
-      setInterval(async () => {
-        try {
-          await runExchangeRateUpdate();
-        } catch (error) {
-          console.error("❌ Error updating exchange rates:", error);
-        }
-      }, 60 * 60 * 1000); // Every hour
+      setInterval(
+        async () => {
+          try {
+            await runExchangeRateUpdate();
+          } catch (error) {
+            console.error("❌ Error updating exchange rates:", error);
+          }
+        },
+        60 * 60 * 1000,
+      ); // Every hour
 
       console.log("⏰ Exchange rate update job started (hourly)");
     } catch (error) {
-      console.warn("⚠️ Could not setup exchange rate update job:", error.message);
+      console.warn(
+        "⚠️ Could not setup exchange rate update job:",
+        error.message,
+      );
     }
 
     // Expired cart cleanup job (runs daily)
     try {
-      const { cleanupExpiredCarts } = await import("./src/scripts/cleanupExpiredCarts.js");
-      
+      const { cleanupExpiredCarts } =
+        await import("./src/scripts/cleanupExpiredCarts.js");
+
       // Run immediately on startup (optional)
       setTimeout(async () => {
         console.log("🔄 Running initial expired cart cleanup...");
@@ -306,31 +361,43 @@ connectDB().then(async (success) => {
 
       // Schedule daily cleanup (runs at 3 AM)
       let lastCartCleanup = new Date(0);
-      setInterval(async () => {
-        const now = new Date();
-        const hoursSinceLastCleanup = (now - lastCartCleanup) / (1000 * 60 * 60);
-        
-        // Run if it's been at least 24 hours and it's around 3 AM
-        if (hoursSinceLastCleanup >= 24 && now.getHours() >= 3 && now.getHours() < 4) {
-          console.log("🔄 Cleaning up expired guest carts...");
-          try {
-            await cleanupExpiredCarts();
-            lastCartCleanup = new Date();
-          } catch (error) {
-            console.error("❌ Error cleaning up expired carts:", error);
+      setInterval(
+        async () => {
+          const now = new Date();
+          const hoursSinceLastCleanup =
+            (now - lastCartCleanup) / (1000 * 60 * 60);
+
+          // Run if it's been at least 24 hours and it's around 3 AM
+          if (
+            hoursSinceLastCleanup >= 24 &&
+            now.getHours() >= 3 &&
+            now.getHours() < 4
+          ) {
+            console.log("🔄 Cleaning up expired guest carts...");
+            try {
+              await cleanupExpiredCarts();
+              lastCartCleanup = new Date();
+            } catch (error) {
+              console.error("❌ Error cleaning up expired carts:", error);
+            }
           }
-        }
-      }, 60 * 60 * 1000); // Check every hour
+        },
+        60 * 60 * 1000,
+      ); // Check every hour
 
       console.log("⏰ Expired cart cleanup job started (daily at 3 AM)");
     } catch (error) {
-      console.warn("⚠️ Could not setup expired cart cleanup job:", error.message);
+      console.warn(
+        "⚠️ Could not setup expired cart cleanup job:",
+        error.message,
+      );
     }
 
     // Product popularity score update job (runs daily)
     try {
-      const { runProductPopularityUpdate } = await import("./src/scripts/updateProductPopularity.js");
-      
+      const { runProductPopularityUpdate } =
+        await import("./src/scripts/updateProductPopularity.js");
+
       // Run immediately on startup (optional)
       setTimeout(async () => {
         console.log("🔄 Running initial product popularity update...");
@@ -343,27 +410,38 @@ connectDB().then(async (success) => {
 
       // Schedule daily update (runs at 2 AM)
       let lastPopularityUpdate = new Date(0);
-      setInterval(async () => {
-        const now = new Date();
-        const hoursSinceLastUpdate = (now - lastPopularityUpdate) / (1000 * 60 * 60);
-        
-        // Run if it's been at least 24 hours and it's around 2 AM
-        if (hoursSinceLastUpdate >= 24 && now.getHours() >= 2 && now.getHours() < 3) {
-          console.log("🔄 Updating product popularity scores...");
-          try {
-            await runProductPopularityUpdate();
-            lastPopularityUpdate = new Date();
-          } catch (error) {
-            console.error("❌ Error updating popularity scores:", error);
+      setInterval(
+        async () => {
+          const now = new Date();
+          const hoursSinceLastUpdate =
+            (now - lastPopularityUpdate) / (1000 * 60 * 60);
+
+          // Run if it's been at least 24 hours and it's around 2 AM
+          if (
+            hoursSinceLastUpdate >= 24 &&
+            now.getHours() >= 2 &&
+            now.getHours() < 3
+          ) {
+            console.log("🔄 Updating product popularity scores...");
+            try {
+              await runProductPopularityUpdate();
+              lastPopularityUpdate = new Date();
+            } catch (error) {
+              console.error("❌ Error updating popularity scores:", error);
+            }
           }
-        }
-      }, 60 * 60 * 1000); // Check every hour
+        },
+        60 * 60 * 1000,
+      ); // Check every hour
 
       console.log("⏰ Product popularity update job started (daily at 2 AM)");
     } catch (error) {
-      console.warn("⚠️ Could not setup product popularity update job:", error.message);
+      console.warn(
+        "⚠️ Could not setup product popularity update job:",
+        error.message,
+      );
     }
-    
+
     server.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log("📊 Connected to both LMS and Library databases");

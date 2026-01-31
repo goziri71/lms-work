@@ -5,28 +5,51 @@
 
 import axios from "axios";
 
+// In-memory cache to reduce API calls and avoid rate limits (429)
+// Key: ipAddress, Value: { data, expiry }
+const geolocationCache = new Map();
+const CACHE_TTL_SUCCESS_MS = 60 * 60 * 1000; // 1 hour for success
+const CACHE_TTL_RATE_LIMIT_MS = 5 * 60 * 1000; // 5 min for 429 so we don't retry immediately
+
+function getDefaultResult(message = "Geolocation service unavailable") {
+  return {
+    country: null,
+    city: null,
+    region: null,
+    latitude: null,
+    longitude: null,
+    timezone: null,
+    isp: null,
+    success: false,
+    message,
+  };
+}
+
 /**
  * Get geolocation information from IP address
  * Uses ip-api.com (free, no API key required, 45 requests/minute limit)
- * Falls back to ipapi.co if needed
- * 
+ * Falls back to ipapi.co if needed. Caches results to avoid 429 rate limits.
+ *
  * @param {string} ipAddress - IP address to geolocate
  * @returns {Promise<Object>} Geolocation data
  */
 export async function getIPGeolocation(ipAddress) {
-  if (!ipAddress || ipAddress === "::1" || ipAddress === "127.0.0.1" || ipAddress.startsWith("192.168.") || ipAddress.startsWith("10.") || ipAddress.startsWith("172.")) {
-    // Local/private IP addresses
+  if (
+    !ipAddress ||
+    ipAddress === "::1" ||
+    ipAddress === "127.0.0.1" ||
+    ipAddress.startsWith("192.168.") ||
+    ipAddress.startsWith("10.") ||
+    ipAddress.startsWith("172.")
+  ) {
     return {
-      country: null,
-      city: null,
-      region: null,
-      latitude: null,
-      longitude: null,
-      timezone: null,
-      isp: null,
-      success: false,
-      message: "Local or private IP address",
+      ...getDefaultResult("Local or private IP address"),
     };
+  }
+
+  const cached = geolocationCache.get(ipAddress);
+  if (cached && cached.expiry > Date.now()) {
+    return cached.data;
   }
 
   try {
@@ -39,7 +62,7 @@ export async function getIPGeolocation(ipAddress) {
     });
 
     if (response.data.status === "success") {
-      return {
+      const data = {
         country: response.data.country || null,
         city: response.data.city || null,
         region: response.data.regionName || null,
@@ -50,19 +73,37 @@ export async function getIPGeolocation(ipAddress) {
         success: true,
         source: "ip-api.com",
       };
+      geolocationCache.set(ipAddress, {
+        data,
+        expiry: Date.now() + CACHE_TTL_SUCCESS_MS,
+      });
+      return data;
     } else {
-      // Try fallback service
       return await getIPGeolocationFallback(ipAddress);
     }
   } catch (error) {
-    console.error("IP geolocation error (ip-api.com):", error.message);
-    // Try fallback service
-    return await getIPGeolocationFallback(ipAddress);
+    const status = error.response?.status;
+    if (status === 429) {
+      const data = getDefaultResult("Rate limit exceeded (429)");
+      geolocationCache.set(ipAddress, {
+        data,
+        expiry: Date.now() + CACHE_TTL_RATE_LIMIT_MS,
+      });
+      return data;
+    }
+    const data = await getIPGeolocationFallback(ipAddress);
+    if (!data.success) {
+      geolocationCache.set(ipAddress, {
+        data,
+        expiry: Date.now() + CACHE_TTL_RATE_LIMIT_MS,
+      });
+    }
+    return data;
   }
 }
 
 /**
- * Fallback geolocation service using ipapi.co
+ * Fallback geolocation service using ipapi.co (rate limited: ~1000/day free)
  * @param {string} ipAddress - IP address to geolocate
  * @returns {Promise<Object>} Geolocation data
  */
@@ -86,21 +127,18 @@ async function getIPGeolocationFallback(ipAddress) {
       };
     }
   } catch (error) {
-    console.error("IP geolocation error (ipapi.co):", error.message);
+    const status = error.response?.status;
+    if (status === 429) {
+      // Rate limited - avoid logging as error; cache failure to reduce retries
+      return getDefaultResult("Rate limit exceeded (429)");
+    }
+    // Only log non-429 errors to reduce noise
+    if (status !== 429) {
+      console.warn("IP geolocation (ipapi.co):", error.message);
+    }
   }
 
-  // Return default if all services fail
-  return {
-    country: null,
-    city: null,
-    region: null,
-    latitude: null,
-    longitude: null,
-    timezone: null,
-    isp: null,
-    success: false,
-    message: "Geolocation service unavailable",
-  };
+  return getDefaultResult();
 }
 
 /**
@@ -118,10 +156,14 @@ export function parseUserAgent(userAgent) {
   }
 
   const ua = userAgent.toLowerCase();
-  
+
   // Detect device type
   let deviceType = "desktop";
-  if (ua.includes("mobile") || ua.includes("android") || ua.includes("iphone")) {
+  if (
+    ua.includes("mobile") ||
+    ua.includes("android") ||
+    ua.includes("iphone")
+  ) {
     deviceType = "mobile";
   } else if (ua.includes("tablet") || ua.includes("ipad")) {
     deviceType = "tablet";
@@ -151,7 +193,11 @@ export function parseUserAgent(userAgent) {
     os = "Linux";
   } else if (ua.includes("android")) {
     os = "Android";
-  } else if (ua.includes("ios") || ua.includes("iphone") || ua.includes("ipad")) {
+  } else if (
+    ua.includes("ios") ||
+    ua.includes("iphone") ||
+    ua.includes("ipad")
+  ) {
     os = "iOS";
   }
 
@@ -161,4 +207,3 @@ export function parseUserAgent(userAgent) {
     operating_system: os,
   };
 }
-

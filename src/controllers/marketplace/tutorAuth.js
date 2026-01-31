@@ -2,12 +2,19 @@ import crypto from "crypto";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { OrganizationUser } from "../../models/marketplace/organizationUser.js";
-import { TutorSubscription, SUBSCRIPTION_TIERS } from "../../models/marketplace/tutorSubscription.js";
+import {
+  TutorSubscription,
+  SUBSCRIPTION_TIERS,
+} from "../../models/marketplace/tutorSubscription.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { authService } from "../../service/authservice.js";
 import { emailService } from "../../services/emailService.js";
-import { detectUserCurrency, getCurrencyFromCountry } from "../../services/currencyService.js";
+import {
+  detectUserCurrency,
+  getCurrencyFromCountry,
+} from "../../services/currencyService.js";
+import { EmailLog } from "../../models/email/emailLog.js";
 
 /**
  * Sole Tutor Registration
@@ -31,7 +38,7 @@ export const registerSoleTutor = TryCatchFunction(async (req, res) => {
   if (!email || !password || !fname || !lname) {
     throw new ErrorClass(
       "Email, password, first name, and last name are required",
-      400
+      400,
     );
   }
 
@@ -173,28 +180,28 @@ export const soleTutorLogin = TryCatchFunction(async (req, res) => {
   if (tutor.status === "pending") {
     throw new ErrorClass(
       "Your account is pending approval. Please wait for admin approval.",
-      403
+      403,
     );
   }
 
   if (tutor.status === "rejected") {
     throw new ErrorClass(
       "Your account has been rejected. Please contact support.",
-      403
+      403,
     );
   }
 
   if (tutor.status === "suspended") {
     throw new ErrorClass(
       "Your account has been suspended. Please contact support.",
-      403
+      403,
     );
   }
 
   // Verify password
   const isPasswordValid = await authService.comparePassword(
     password,
-    tutor.password
+    tutor.password,
   );
 
   if (!isPasswordValid) {
@@ -215,7 +222,8 @@ export const soleTutorLogin = TryCatchFunction(async (req, res) => {
 
   // Check and auto-expire subscriptions if needed
   try {
-    const { checkSubscriptionExpiration } = await import("./tutorSubscription.js");
+    const { checkSubscriptionExpiration } =
+      await import("./tutorSubscription.js");
     await checkSubscriptionExpiration(tutor.id, "sole_tutor");
   } catch (error) {
     // If subscription tables don't exist, continue without checking
@@ -233,10 +241,11 @@ export const soleTutorLogin = TryCatchFunction(async (req, res) => {
         status: "active",
       },
     });
-    
+
     if (subscription) {
       subscriptionTier = subscription.subscription_tier;
-      const tierInfo = SUBSCRIPTION_TIERS[subscriptionTier] || SUBSCRIPTION_TIERS.free;
+      const tierInfo =
+        SUBSCRIPTION_TIERS[subscriptionTier] || SUBSCRIPTION_TIERS.free;
       subscriptionInfo = {
         tier: subscriptionTier,
         tier_name: tierInfo.name,
@@ -329,28 +338,28 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
   if (organization.status === "pending") {
     throw new ErrorClass(
       "Your organization account is pending approval. Please wait for admin approval.",
-      403
+      403,
     );
   }
 
   if (organization.status === "rejected") {
     throw new ErrorClass(
       "Your organization account has been rejected. Please contact support.",
-      403
+      403,
     );
   }
 
   if (organization.status === "suspended") {
     throw new ErrorClass(
       "Your organization account has been suspended. Please contact support.",
-      403
+      403,
     );
   }
 
   // Verify password
   const isPasswordValid = await authService.comparePassword(
     password,
-    organization.password
+    organization.password,
   );
 
   if (!isPasswordValid) {
@@ -371,7 +380,8 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
 
   // Check and auto-expire subscriptions if needed
   try {
-    const { checkSubscriptionExpiration } = await import("./tutorSubscription.js");
+    const { checkSubscriptionExpiration } =
+      await import("./tutorSubscription.js");
     await checkSubscriptionExpiration(organization.id, "organization");
   } catch (error) {
     // If subscription tables don't exist, continue without checking
@@ -388,9 +398,11 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
         status: "active",
       },
     });
-    
+
     if (subscription) {
-      const tierInfo = SUBSCRIPTION_TIERS[subscription.subscription_tier] || SUBSCRIPTION_TIERS.free;
+      const tierInfo =
+        SUBSCRIPTION_TIERS[subscription.subscription_tier] ||
+        SUBSCRIPTION_TIERS.free;
       subscriptionInfo = {
         tier: subscription.subscription_tier,
         tier_name: tierInfo.name,
@@ -451,7 +463,9 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
         wallet_balance: organization.wallet_balance,
         rating: organization.rating,
         country: organization.country,
-        currency: organization.currency || getCurrencyFromCountry(organization.country || "USD"),
+        currency:
+          organization.currency ||
+          getCurrencyFromCountry(organization.country || "USD"),
       },
       subscription: subscriptionInfo,
       accessToken,
@@ -490,7 +504,7 @@ export const organizationUserLogin = TryCatchFunction(async (req, res) => {
   if (orgUser.organization.status !== "active") {
     throw new ErrorClass(
       "Your organization account is not active. Please contact your organization admin.",
-      403
+      403,
     );
   }
 
@@ -498,21 +512,21 @@ export const organizationUserLogin = TryCatchFunction(async (req, res) => {
   if (orgUser.status === "suspended") {
     throw new ErrorClass(
       "Your account has been suspended. Please contact your organization admin.",
-      403
+      403,
     );
   }
 
   if (orgUser.status === "inactive") {
     throw new ErrorClass(
       "Your account is inactive. Please contact your organization admin.",
-      403
+      403,
     );
   }
 
   // Verify password
   const isPasswordValid = await authService.comparePassword(
     password,
-    orgUser.password
+    orgUser.password,
   );
 
   if (!isPasswordValid) {
@@ -532,9 +546,11 @@ export const organizationUserLogin = TryCatchFunction(async (req, res) => {
         status: "active",
       },
     });
-    
+
     if (subscription) {
-      const tierInfo = SUBSCRIPTION_TIERS[subscription.subscription_tier] || SUBSCRIPTION_TIERS.free;
+      const tierInfo =
+        SUBSCRIPTION_TIERS[subscription.subscription_tier] ||
+        SUBSCRIPTION_TIERS.free;
       subscriptionInfo = {
         tier: subscription.subscription_tier,
         tier_name: tierInfo.name,
@@ -628,28 +644,28 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
     if (tutor.status === "pending") {
       throw new ErrorClass(
         "Your account is pending approval. Please wait for admin approval.",
-        403
+        403,
       );
     }
 
     if (tutor.status === "rejected") {
       throw new ErrorClass(
         "Your account has been rejected. Please contact support.",
-        403
+        403,
       );
     }
 
     if (tutor.status === "suspended") {
       throw new ErrorClass(
         "Your account has been suspended. Please contact support.",
-        403
+        403,
       );
     }
 
     // Verify password
     const isPasswordValid = await authService.comparePassword(
       password,
-      tutor.password
+      tutor.password,
     );
 
     if (!isPasswordValid) {
@@ -661,7 +677,8 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
 
     // Check and auto-expire subscriptions if needed
     try {
-      const { checkSubscriptionExpiration } = await import("./tutorSubscription.js");
+      const { checkSubscriptionExpiration } =
+        await import("./tutorSubscription.js");
       await checkSubscriptionExpiration(tutor.id, "sole_tutor");
     } catch (error) {
       // If subscription tables don't exist, continue without checking
@@ -678,9 +695,11 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
           status: "active",
         },
       });
-      
+
       if (subscription) {
-        const tierInfo = SUBSCRIPTION_TIERS[subscription.subscription_tier] || SUBSCRIPTION_TIERS.free;
+        const tierInfo =
+          SUBSCRIPTION_TIERS[subscription.subscription_tier] ||
+          SUBSCRIPTION_TIERS.free;
         subscriptionInfo = {
           tier: subscription.subscription_tier,
           tier_name: tierInfo.name,
@@ -761,28 +780,28 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
     if (organization.status === "pending") {
       throw new ErrorClass(
         "Your organization account is pending approval. Please wait for admin approval.",
-        403
+        403,
       );
     }
 
     if (organization.status === "rejected") {
       throw new ErrorClass(
         "Your organization account has been rejected. Please contact support.",
-        403
+        403,
       );
     }
 
     if (organization.status === "suspended") {
       throw new ErrorClass(
         "Your organization account has been suspended. Please contact support.",
-        403
+        403,
       );
     }
 
     // Verify password
     const isPasswordValid = await authService.comparePassword(
       password,
-      organization.password
+      organization.password,
     );
 
     if (!isPasswordValid) {
@@ -794,7 +813,8 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
 
     // Check and auto-expire subscriptions if needed
     try {
-      const { checkSubscriptionExpiration } = await import("./tutorSubscription.js");
+      const { checkSubscriptionExpiration } =
+        await import("./tutorSubscription.js");
       await checkSubscriptionExpiration(organization.id, "organization");
     } catch (error) {
       // If subscription tables don't exist, continue without checking
@@ -811,9 +831,11 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
           status: "active",
         },
       });
-      
+
       if (subscription) {
-        const tierInfo = SUBSCRIPTION_TIERS[subscription.subscription_tier] || SUBSCRIPTION_TIERS.free;
+        const tierInfo =
+          SUBSCRIPTION_TIERS[subscription.subscription_tier] ||
+          SUBSCRIPTION_TIERS.free;
         subscriptionInfo = {
           tier: subscription.subscription_tier,
           tier_name: tierInfo.name,
@@ -887,6 +909,77 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
 });
 
 /**
+ * Helper: send tutor password reset email and log to EmailLog
+ */
+async function sendTutorPasswordResetEmailAndLog(
+  account,
+  resetToken,
+  resetUrl,
+  accountType,
+) {
+  const recipientEmail = account.email;
+  const recipientName =
+    accountType === "sole_tutor"
+      ? `${account.fname || ""} ${account.lname || ""}`.trim()
+      : account.name || "Organization";
+  const subject = "Password Reset Request - LenerMe by WPUN";
+
+  let result;
+  try {
+    result = await emailService.sendPasswordResetEmail(
+      { email: recipientEmail, name: recipientName },
+      resetToken,
+      resetUrl,
+    );
+  } catch (error) {
+    console.error("❌ Error sending tutor password reset email:", {
+      email: recipientEmail,
+      error: error.message,
+      stack: error.stack,
+    });
+    result = { success: false, message: error.message, error: error.message };
+  }
+
+  if (!result || !result.success) {
+    console.error("❌ Password reset email failed to send:", {
+      email: recipientEmail,
+      error: result?.message || "Unknown error",
+      details: result?.error,
+    });
+  } else {
+    console.log(
+      `✅ Password reset email sent successfully to ${recipientEmail}`,
+    );
+  }
+
+  try {
+    await EmailLog.create({
+      user_id: account.id,
+      user_type: "other",
+      recipient_email: recipientEmail,
+      recipient_name: recipientName,
+      email_type: "password_reset",
+      subject,
+      status: result?.success ? "sent" : "failed",
+      error_message: result?.success
+        ? null
+        : result?.message || (result?.error && String(result.error)),
+      sent_at: result?.success ? new Date() : null,
+      metadata: result?.success
+        ? null
+        : { accountType, error_details: result?.error },
+    });
+  } catch (logErr) {
+    console.error(
+      "Failed to log tutor password reset email to EmailLog:",
+      logErr.message,
+    );
+  }
+
+  return result;
+}
+
+/**
  * Request Password Reset - Sole Tutor
  */
 export const requestPasswordResetSoleTutor = TryCatchFunction(
@@ -897,12 +990,10 @@ export const requestPasswordResetSoleTutor = TryCatchFunction(
       throw new ErrorClass("Email is required", 400);
     }
 
-    // Find tutor
     const tutor = await SoleTutor.findOne({
       where: { email: email.toLowerCase() },
     });
 
-    // Don't reveal if user exists or not (security best practice)
     if (!tutor) {
       return res.status(200).json({
         success: true,
@@ -910,58 +1001,32 @@ export const requestPasswordResetSoleTutor = TryCatchFunction(
       });
     }
 
-    // Generate secure reset token
     const resetToken = crypto.randomBytes(32).toString("hex");
     const hashedToken = crypto
       .createHash("sha256")
       .update(resetToken)
       .digest("hex");
 
-    // Save hashed token to tutor
     await tutor.update({
       password_reset_token: hashedToken,
     });
 
-    // Create reset URL
     const resetUrl = `${
       process.env.FRONTEND_URL || "https://app.lenerme.com"
     }/reset-password?token=${resetToken}&type=sole_tutor`;
 
-    // Send password reset email
-    try {
-      const emailResult = await emailService.sendPasswordResetEmail(
-        {
-          email: tutor.email,
-          name: `${tutor.fname || ""} ${tutor.lname || ""}`.trim(),
-        },
-        resetToken,
-        resetUrl
-      );
-      
-      if (!emailResult || !emailResult.success) {
-        console.error("❌ Password reset email failed to send:", {
-          email: tutor.email,
-          error: emailResult?.message || "Unknown error",
-          details: emailResult?.error,
-        });
-      } else {
-        console.log(`✅ Password reset email sent successfully to ${tutor.email}`);
-      }
-    } catch (error) {
-      console.error("❌ Error sending password reset email:", {
-        email: tutor.email,
-        error: error.message,
-        stack: error.stack,
-      });
-      // Don't throw error - still return success to prevent email enumeration
-      // But log it clearly for debugging
-    }
+    await sendTutorPasswordResetEmailAndLog(
+      tutor,
+      resetToken,
+      resetUrl,
+      "sole_tutor",
+    );
 
     res.status(200).json({
       success: true,
       message: "If the email exists, a password reset link has been sent.",
     });
-  }
+  },
 );
 
 /**
@@ -975,12 +1040,10 @@ export const requestPasswordResetOrganization = TryCatchFunction(
       throw new ErrorClass("Email is required", 400);
     }
 
-    // Find organization
     const organization = await Organization.findOne({
       where: { email: email.toLowerCase() },
     });
 
-    // Don't reveal if user exists or not (security best practice)
     if (!organization) {
       return res.status(200).json({
         success: true,
@@ -988,59 +1051,93 @@ export const requestPasswordResetOrganization = TryCatchFunction(
       });
     }
 
-    // Generate secure reset token
     const resetToken = crypto.randomBytes(32).toString("hex");
     const hashedToken = crypto
       .createHash("sha256")
       .update(resetToken)
       .digest("hex");
 
-    // Save hashed token to organization
     await organization.update({
       password_reset_token: hashedToken,
     });
 
-    // Create reset URL
     const resetUrl = `${
       process.env.FRONTEND_URL || "https://app.lenerme.com"
     }/reset-password?token=${resetToken}&type=organization`;
 
-    // Send password reset email
-    try {
-      const emailResult = await emailService.sendPasswordResetEmail(
-        {
-          email: organization.email,
-          name: organization.name || "Organization",
-        },
-        resetToken,
-        resetUrl
-      );
-      
-      if (!emailResult || !emailResult.success) {
-        console.error("❌ Password reset email failed to send:", {
-          email: organization.email,
-          error: emailResult?.message || "Unknown error",
-          details: emailResult?.error,
-        });
-      } else {
-        console.log(`✅ Password reset email sent successfully to ${organization.email}`);
-      }
-    } catch (error) {
-      console.error("❌ Error sending password reset email:", {
-        email: organization.email,
-        error: error.message,
-        stack: error.stack,
-      });
-      // Don't throw error - still return success to prevent email enumeration
-      // But log it clearly for debugging
-    }
+    await sendTutorPasswordResetEmailAndLog(
+      organization,
+      resetToken,
+      resetUrl,
+      "organization",
+    );
 
     res.status(200).json({
       success: true,
       message: "If the email exists, a password reset link has been sent.",
     });
-  }
+  },
 );
+
+/**
+ * Request Password Reset - Tutor (unified: sole tutor OR organization)
+ * Use this when the user might be either type; checks both and sends one email.
+ * POST /api/marketplace/password/reset-request  body: { email }
+ */
+export const requestPasswordResetTutor = TryCatchFunction(async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    throw new ErrorClass("Email is required", 400);
+  }
+
+  const normalizedEmail = email.toLowerCase();
+
+  const [soleTutor, organization] = await Promise.all([
+    SoleTutor.findOne({ where: { email: normalizedEmail } }),
+    Organization.findOne({ where: { email: normalizedEmail } }),
+  ]);
+
+  if (!soleTutor && !organization) {
+    return res.status(200).json({
+      success: true,
+      message: "If the email exists, a password reset link has been sent.",
+    });
+  }
+
+  const resetToken = crypto.randomBytes(32).toString("hex");
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
+
+  const frontendUrl = process.env.FRONTEND_URL || "https://app.lenerme.com";
+
+  if (soleTutor) {
+    await soleTutor.update({ password_reset_token: hashedToken });
+    const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}&type=sole_tutor`;
+    await sendTutorPasswordResetEmailAndLog(
+      soleTutor,
+      resetToken,
+      resetUrl,
+      "sole_tutor",
+    );
+  } else {
+    await organization.update({ password_reset_token: hashedToken });
+    const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}&type=organization`;
+    await sendTutorPasswordResetEmailAndLog(
+      organization,
+      resetToken,
+      resetUrl,
+      "organization",
+    );
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "If the email exists, a password reset link has been sent.",
+  });
+});
 
 /**
  * Reset Password - Sole Tutor
@@ -1063,7 +1160,7 @@ export const resetPasswordSoleTutor = TryCatchFunction(async (req, res) => {
   if (!tutor) {
     throw new ErrorClass(
       "Invalid or expired reset token. Please request a new password reset.",
-      400
+      400,
     );
   }
 
@@ -1104,7 +1201,7 @@ export const resetPasswordOrganization = TryCatchFunction(async (req, res) => {
   if (!organization) {
     throw new ErrorClass(
       "Invalid or expired reset token. Please request a new password reset.",
-      400
+      400,
     );
   }
 
@@ -1127,7 +1224,7 @@ export const resetPasswordOrganization = TryCatchFunction(async (req, res) => {
 /**
  * Tutor Logout
  * POST /api/marketplace/logout
- * 
+ *
  * Since we're using stateless JWT tokens, logout is primarily handled client-side
  * by removing the token from storage. This endpoint provides a consistent API
  * for logout operations and can be used for future activity logging if needed.
@@ -1142,4 +1239,3 @@ export const tutorLogout = TryCatchFunction(async (req, res) => {
     message: "Logout successful",
   });
 });
-
