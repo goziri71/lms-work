@@ -23,13 +23,13 @@ const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 function getCachedRate(cacheKey) {
   const cached = rateCache.get(cacheKey);
   if (!cached) return null;
-  
+
   const now = Date.now();
   if (now - cached.timestamp > CACHE_DURATION) {
     rateCache.delete(cacheKey);
     return null;
   }
-  
+
   return cached.data;
 }
 
@@ -59,7 +59,7 @@ export async function getExchangeRate(
 ) {
   const source = normalizeCurrency(sourceCurrency);
   const destination = normalizeCurrency(destinationCurrency);
-  
+
   // Same currency, no conversion needed
   if (source === destination) {
     return {
@@ -74,21 +74,23 @@ export async function getExchangeRate(
       },
     };
   }
-  
+
   // Check cache
-  const cacheKey = `${source}_${destination}${destinationAmount ? `_${destinationAmount}` : ""}`;
+  const cacheKey = `${source}_${destination}${
+    destinationAmount ? `_${destinationAmount}` : ""
+  }`;
   const cached = getCachedRate(cacheKey);
   if (cached) {
     return cached;
   }
-  
+
   // Validate Flutterwave key
   if (!FLUTTERWAVE_SECRET_KEY) {
     console.warn("⚠️  FLUTTERWAVE_SECRET_KEY not set, using fallback rate");
     // Return a fallback rate (can be configured)
     return getFallbackRate(source, destination, destinationAmount);
   }
-  
+
   try {
     // Prepare query parameters for GET request
     // Flutterwave API uses GET with query params
@@ -97,15 +99,15 @@ export async function getExchangeRate(
     const params = new URLSearchParams();
     params.append("source_currency", source);
     params.append("destination_currency", destination);
-    
+
     // Flutterwave requires amount parameter - use provided amount or default to 1
     const amountToUse = destinationAmount || 1;
     params.append("amount", amountToUse.toString());
-    
+
     // Call Flutterwave Rates API (GET request)
     // Endpoint: GET /v3/transfers/rates
     const ratesUrl = `${FLUTTERWAVE_BASE_URL}/transfers/rates?${params.toString()}`;
-    
+
     const response = await axios.get(ratesUrl, {
       headers: {
         Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
@@ -113,10 +115,10 @@ export async function getExchangeRate(
       },
       timeout: 10000, // 10 second timeout
     });
-    
+
     if (response.data.status === "success" && response.data.data) {
       const data = response.data.data;
-      
+
       // Flutterwave returns rate data in this format:
       // { rate: number, source: { currency, amount }, destination: { currency, amount } }
       const rateData = {
@@ -131,13 +133,13 @@ export async function getExchangeRate(
         },
         cached: false,
       };
-      
+
       // Cache the rate
       setCachedRate(cacheKey, rateData);
-      
+
       return rateData;
     }
-    
+
     throw new Error("Invalid response from Flutterwave rates API");
   } catch (error) {
     // Log detailed error information for debugging
@@ -149,20 +151,24 @@ export async function getExchangeRate(
         url: error.config?.url,
         message: error.message,
       });
-      
+
       // If 404, the endpoint might be wrong or API key doesn't have access
       if (error.response.status === 404) {
-        console.error("⚠️  Flutterwave rates endpoint returned 404. Possible issues:");
+        console.error(
+          "⚠️  Flutterwave rates endpoint returned 404. Possible issues:"
+        );
         console.error("   1. Endpoint URL might be incorrect");
         console.error("   2. API key might not have access to this endpoint");
         console.error("   3. Endpoint might require different authentication");
         console.error(`   Attempted URL: ${error.config?.url}`);
-        console.error(`   API Key present: ${FLUTTERWAVE_SECRET_KEY ? "Yes" : "No"}`);
+        console.error(
+          `   API Key present: ${FLUTTERWAVE_SECRET_KEY ? "Yes" : "No"}`
+        );
       }
     } else {
       console.error("FX Conversion Error:", error.message);
     }
-    
+
     // Return fallback rate on error
     return getFallbackRate(source, destination, destinationAmount);
   }
@@ -185,10 +191,10 @@ export async function convertCurrency(amount, fromCurrency, toCurrency) {
       rate: 1,
     };
   }
-  
+
   const from = normalizeCurrency(fromCurrency);
   const to = normalizeCurrency(toCurrency);
-  
+
   // Same currency
   if (from === to) {
     return {
@@ -199,11 +205,11 @@ export async function convertCurrency(amount, fromCurrency, toCurrency) {
       rate: 1,
     };
   }
-  
+
   // Get exchange rate - pass the amount since Flutterwave requires it
   // Flutterwave will return the converted amount directly
   const rateInfo = await getExchangeRate(from, to, amount);
-  
+
   // Calculate converted amount
   let convertedAmount;
   if (rateInfo.destination.amount && rateInfo.source.amount) {
@@ -214,10 +220,10 @@ export async function convertCurrency(amount, fromCurrency, toCurrency) {
     // Fallback: Use rate directly if amounts not provided
     convertedAmount = amount * rateInfo.rate;
   }
-  
+
   // Round to 2 decimal places
   convertedAmount = Math.round(convertedAmount * 100) / 100;
-  
+
   return {
     originalAmount: amount,
     convertedAmount,
@@ -232,10 +238,14 @@ export async function convertCurrency(amount, fromCurrency, toCurrency) {
  * Get fallback exchange rate (when Flutterwave API is unavailable)
  * @param {string} sourceCurrency - Source currency
  * @param {string} destinationCurrency - Destination currency
- * @param {number} destinationAmount - Optional destination amount
- * @returns {Object} Fallback rate
+ * @param {number} sourceAmountParam - Amount in SOURCE currency (what we're converting from)
+ * @returns {Object} Fallback rate with source/destination amounts
  */
-function getFallbackRate(sourceCurrency, destinationCurrency, destinationAmount = null) {
+function getFallbackRate(
+  sourceCurrency,
+  destinationCurrency,
+  sourceAmountParam = null
+) {
   // Common fallback rates (should be updated periodically)
   // These are approximate rates - real rates should come from Flutterwave
   const fallbackRates = {
@@ -254,33 +264,31 @@ function getFallbackRate(sourceCurrency, destinationCurrency, destinationAmount 
     USD_CAD: 1.35,
     CAD_USD: 1 / 1.35,
   };
-  
+
   const source = normalizeCurrency(sourceCurrency);
   const destination = normalizeCurrency(destinationCurrency);
   const rateKey = `${source}_${destination}`;
-  
+
   let rate = fallbackRates[rateKey] || 1;
-  
+
   // If no direct rate, try reverse
   if (rate === 1 && fallbackRates[`${destination}_${source}`]) {
     rate = 1 / fallbackRates[`${destination}_${source}`];
   }
-  
-  let sourceAmount = null;
-  let destAmount = destinationAmount;
-  
-  if (destinationAmount) {
-    sourceAmount = destinationAmount / rate;
-  }
-  
+
+  // Amount passed is in SOURCE currency (e.g. 39 USD). Convert to destination (e.g. 39 * 1500 = 58500 NGN).
+  const sourceAmount =
+    sourceAmountParam != null ? Number(sourceAmountParam) : null;
+  const destAmount = sourceAmount != null ? sourceAmount * rate : null;
+
   return {
     rate,
     source: {
-      amount: sourceAmount || 0,
+      amount: sourceAmount ?? 0,
       currency: source,
     },
     destination: {
-      amount: destAmount || 0,
+      amount: destAmount ?? 0,
       currency: destination,
     },
     cached: false,
@@ -305,4 +313,3 @@ export function getCacheStats() {
     keys: Array.from(rateCache.keys()),
   };
 }
-
