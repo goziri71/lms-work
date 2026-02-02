@@ -25,7 +25,10 @@ async function getAuthorInfo(authorId, community) {
     if (student) {
       return {
         id: student.id,
-        name: `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim() || student.email,
+        name:
+          `${student.fname || ""} ${student.mname || ""} ${
+            student.lname || ""
+          }`.trim() || student.email,
         email: student.email,
       };
     }
@@ -40,19 +43,24 @@ async function getAuthorInfo(authorId, community) {
   if (Number(community.tutor_id) === Number(authorId)) {
     // Author is the tutor
     if (community.tutor_type === "sole_tutor") {
-      const { SoleTutor } = await import("../../models/marketplace/soleTutor.js");
+      const { SoleTutor } = await import(
+        "../../models/marketplace/soleTutor.js"
+      );
       const tutor = await SoleTutor.findByPk(authorId, {
         attributes: ["id", "fname", "lname", "email"],
       });
       if (tutor) {
         return {
           id: tutor.id,
-          name: `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || tutor.email,
+          name:
+            `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || tutor.email,
           email: tutor.email,
         };
       }
     } else if (community.tutor_type === "organization") {
-      const { Organization } = await import("../../models/marketplace/organization.js");
+      const { Organization } = await import(
+        "../../models/marketplace/organization.js"
+      );
       const org = await Organization.findByPk(authorId, {
         attributes: ["id", "name", "email"],
       });
@@ -68,8 +76,12 @@ async function getAuthorInfo(authorId, community) {
 
   // Check if author is an organization_user whose organization_id matches community tutor_id
   if (community.tutor_type === "organization") {
-    const { OrganizationUser } = await import("../../models/marketplace/organizationUser.js");
-    const { Organization } = await import("../../models/marketplace/organization.js");
+    const { OrganizationUser } = await import(
+      "../../models/marketplace/organizationUser.js"
+    );
+    const { Organization } = await import(
+      "../../models/marketplace/organization.js"
+    );
     const orgUser = await OrganizationUser.findByPk(authorId, {
       attributes: ["id", "organization_id", "fname", "lname", "email"],
       include: [
@@ -81,10 +93,16 @@ async function getAuthorInfo(authorId, community) {
         },
       ],
     });
-    if (orgUser && Number(orgUser.organization_id) === Number(community.tutor_id)) {
+    if (
+      orgUser &&
+      Number(orgUser.organization_id) === Number(community.tutor_id)
+    ) {
       return {
         id: orgUser.organization_id || orgUser.id,
-        name: orgUser.organization?.name || `${orgUser.fname || ""} ${orgUser.lname || ""}`.trim() || orgUser.email,
+        name:
+          orgUser.organization?.name ||
+          `${orgUser.fname || ""} ${orgUser.lname || ""}`.trim() ||
+          orgUser.email,
         email: orgUser.email,
       };
     }
@@ -97,7 +115,10 @@ async function getAuthorInfo(authorId, community) {
   if (student) {
     return {
       id: student.id,
-      name: `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim() || student.email,
+      name:
+        `${student.fname || ""} ${student.mname || ""} ${
+          student.lname || ""
+        }`.trim() || student.email,
       email: student.email,
     };
   }
@@ -264,11 +285,11 @@ export const createPost = TryCatchFunction(async (req, res) => {
     );
   }
 
-  const { 
-    title, 
-    content, 
-    content_type = "text", 
-    category, 
+  const {
+    title,
+    content,
+    content_type = "text",
+    category,
     tags,
     status = "published",
     scheduled_at,
@@ -287,20 +308,32 @@ export const createPost = TryCatchFunction(async (req, res) => {
   let imageUrl = null;
   if (req.file) {
     const bucket = process.env.COMMUNITIES_BUCKET || "communities";
-    
+
     // Check if bucket exists, create if it doesn't
     try {
-      const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+      const { data: buckets, error: listError } =
+        await supabase.storage.listBuckets();
       if (!listError) {
         const bucketExists = buckets?.some((b) => b.name === bucket);
         if (!bucketExists) {
           // Try to create the bucket
-          const { error: createError } = await supabase.storage.createBucket(bucket, {
-            public: true,
-            allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-          });
+          const { error: createError } = await supabase.storage.createBucket(
+            bucket,
+            {
+              public: true,
+              allowedMimeTypes: [
+                "image/jpeg",
+                "image/png",
+                "image/gif",
+                "image/webp",
+              ],
+            }
+          );
           if (createError) {
-            console.error(`Failed to create bucket "${bucket}":`, createError.message);
+            console.error(
+              `Failed to create bucket "${bucket}":`,
+              createError.message
+            );
             throw new ErrorClass(
               `Storage bucket "${bucket}" does not exist. Please create it in Supabase Storage settings. Error: ${createError.message}`,
               500
@@ -319,7 +352,8 @@ export const createPost = TryCatchFunction(async (req, res) => {
     }
 
     const fileExt = req.file.originalname.split(".").pop();
-    const fileName = `communities/${communityId}/posts/${userId}_${Date.now()}.${fileExt}`;
+    // Object path inside bucket: {communityId}/posts/... (no leading "communities/" to avoid .../public/communities/communities/...)
+    const fileName = `${communityId}/posts/${userId}_${Date.now()}.${fileExt}`;
 
     const { data, error } = await supabase.storage
       .from(bucket)
@@ -329,7 +363,10 @@ export const createPost = TryCatchFunction(async (req, res) => {
       });
 
     if (error) {
-      if (error.message?.includes("Bucket not found") || error.message?.includes("not found")) {
+      if (
+        error.message?.includes("Bucket not found") ||
+        error.message?.includes("not found")
+      ) {
         throw new ErrorClass(
           `Storage bucket "${bucket}" does not exist. Please create a bucket named "${bucket}" in your Supabase Storage settings.`,
           500
@@ -342,7 +379,7 @@ export const createPost = TryCatchFunction(async (req, res) => {
       .from(bucket)
       .getPublicUrl(fileName);
     imageUrl = urlData.publicUrl;
-    
+
     console.log(`✅ Image uploaded successfully: ${imageUrl}`);
   }
 
@@ -350,14 +387,23 @@ export const createPost = TryCatchFunction(async (req, res) => {
   const authorId = userId;
 
   // Validate status
-  const validStatuses = ["draft", "published", "scheduled", "pinned", "archived"];
+  const validStatuses = [
+    "draft",
+    "published",
+    "scheduled",
+    "pinned",
+    "archived",
+  ];
   const postStatus = validStatuses.includes(status) ? status : "published";
 
   // Validate scheduled_at if status is scheduled
   let scheduledDate = null;
   if (postStatus === "scheduled") {
     if (!scheduled_at) {
-      throw new ErrorClass("scheduled_at is required when status is 'scheduled'", 400);
+      throw new ErrorClass(
+        "scheduled_at is required when status is 'scheduled'",
+        400
+      );
     }
     scheduledDate = new Date(scheduled_at);
     if (isNaN(scheduledDate.getTime())) {
@@ -517,7 +563,7 @@ export const createPost = TryCatchFunction(async (req, res) => {
 
   // Ensure image_url is included in response
   const postData = post.toJSON();
-  
+
   res.status(201).json({
     status: true,
     code: 201,
@@ -567,11 +613,11 @@ export const getPosts = TryCatchFunction(async (req, res) => {
   };
 
   // Status filter - default to published for non-owners, allow all for owners
-  const isOwner = userId && (
-    userType === "sole_tutor" ||
-    userType === "organization" ||
-    userType === "organization_user"
-  );
+  const isOwner =
+    userId &&
+    (userType === "sole_tutor" ||
+      userType === "organization" ||
+      userType === "organization_user");
 
   if (status) {
     where.status = status;
@@ -738,15 +784,15 @@ export const updatePost = TryCatchFunction(async (req, res) => {
 
   // Handle image upload if provided
   if (req.file) {
-    // Delete old image if exists
+    // Delete old image if exists (object key = path after bucket name in URL)
     if (post.image_url) {
       try {
-        const urlParts = post.image_url.split("/");
-        const fileName = urlParts
-          .slice(urlParts.indexOf("communities"))
-          .join("/");
         const bucket = process.env.COMMUNITIES_BUCKET || "communities";
-        await supabase.storage.from(bucket).remove([fileName]);
+        const urlParts = post.image_url.split("/");
+        const bucketIdx = urlParts.indexOf(bucket);
+        const objectKey =
+          bucketIdx !== -1 ? urlParts.slice(bucketIdx + 1).join("/") : null;
+        if (objectKey) await supabase.storage.from(bucket).remove([objectKey]);
       } catch (error) {
         console.error("Error deleting old image:", error);
       }
@@ -754,7 +800,8 @@ export const updatePost = TryCatchFunction(async (req, res) => {
 
     // Upload new image
     const fileExt = req.file.originalname.split(".").pop();
-    const fileName = `communities/${communityId}/posts/${userId}_${Date.now()}.${fileExt}`;
+    // Object path inside bucket: {communityId}/posts/... (no leading "communities/" to avoid .../public/communities/communities/...)
+    const fileName = `${communityId}/posts/${userId}_${Date.now()}.${fileExt}`;
     const bucket = process.env.COMMUNITIES_BUCKET || "communities";
 
     const { data, error } = await supabase.storage
@@ -1090,7 +1137,7 @@ export const getComments = TryCatchFunction(async (req, res) => {
   // Second pass: build tree structure
   allComments.forEach((comment) => {
     const formatted = commentMap.get(comment.id);
-    
+
     if (comment.parent_comment_id) {
       // This is a reply, add to parent's replies
       const parent = commentMap.get(comment.parent_comment_id);
@@ -1155,7 +1202,8 @@ export const uploadFile = TryCatchFunction(async (req, res) => {
 
   // Upload to Supabase
   const fileExt = req.file.originalname.split(".").pop();
-  const fileName = `communities/${communityId}/files/${userId}_${Date.now()}.${fileExt}`;
+  // Object path inside bucket: {communityId}/files/... (no leading "communities/")
+  const fileName = `${communityId}/files/${userId}_${Date.now()}.${fileExt}`;
   const bucket = process.env.COMMUNITIES_BUCKET || "communities";
 
   const { data, error } = await supabase.storage
@@ -1321,12 +1369,16 @@ export const deleteFile = TryCatchFunction(async (req, res) => {
     );
   }
 
-  // Delete from Supabase
+  // Delete from Supabase (object key = path after bucket name in URL)
   try {
-    const urlParts = file.file_url.split("/");
-    const fileName = urlParts.slice(urlParts.indexOf("communities")).join("/");
     const bucket = process.env.COMMUNITIES_BUCKET || "communities";
-    await supabase.storage.from(bucket).remove([fileName]);
+    const urlParts = file.file_url.split("/");
+    const bucketIdx = urlParts.indexOf(bucket);
+    const objectKey =
+      bucketIdx !== -1
+        ? urlParts.slice(bucketIdx + 1).join("/")
+        : file.file_url;
+    await supabase.storage.from(bucket).remove([objectKey]);
   } catch (error) {
     console.error("Error deleting file from storage:", error);
   }
