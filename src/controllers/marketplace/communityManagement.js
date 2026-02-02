@@ -24,7 +24,10 @@ const uploadCommunityImage = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new ErrorClass("Only JPEG, PNG, and WebP images are allowed", 400), false);
+      cb(
+        new ErrorClass("Only JPEG, PNG, and WebP images are allowed", 400),
+        false
+      );
     }
   },
 });
@@ -46,12 +49,19 @@ const uploadCommunityVideo = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new ErrorClass("Only MP4, WebM, OGG, MOV, and AVI videos are allowed", 400), false);
+      cb(
+        new ErrorClass(
+          "Only MP4, WebM, OGG, MOV, and AVI videos are allowed",
+          400
+        ),
+        false
+      );
     }
   },
 });
 
-export const uploadCommunityImageMiddleware = uploadCommunityImage.single("image");
+export const uploadCommunityImageMiddleware =
+  uploadCommunityImage.single("image");
 
 // Middleware for uploading both image and intro video (and thumbnail)
 export const uploadCommunityMediaMiddleware = multer({
@@ -60,7 +70,12 @@ export const uploadCommunityMediaMiddleware = multer({
     fileSize: 100 * 1024 * 1024, // 100MB max
   },
   fileFilter: (req, file, cb) => {
-    const allowedImageTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    const allowedImageTypes = [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/webp",
+    ];
     const allowedVideoTypes = [
       "video/mp4",
       "video/webm",
@@ -69,11 +84,20 @@ export const uploadCommunityMediaMiddleware = multer({
       "video/x-msvideo",
     ];
 
-    if (file.fieldname === "image" && allowedImageTypes.includes(file.mimetype)) {
+    if (
+      file.fieldname === "image" &&
+      allowedImageTypes.includes(file.mimetype)
+    ) {
       cb(null, true);
-    } else if (file.fieldname === "intro_video" && allowedVideoTypes.includes(file.mimetype)) {
+    } else if (
+      file.fieldname === "intro_video" &&
+      allowedVideoTypes.includes(file.mimetype)
+    ) {
       cb(null, true);
-    } else if (file.fieldname === "intro_video_thumbnail" && allowedImageTypes.includes(file.mimetype)) {
+    } else if (
+      file.fieldname === "intro_video_thumbnail" &&
+      allowedImageTypes.includes(file.mimetype)
+    ) {
       cb(null, true);
     } else {
       cb(
@@ -114,7 +138,6 @@ function getTutorInfo(req) {
   return { tutorId, tutorType };
 }
 
-
 /**
  * Create a new community
  * POST /api/marketplace/tutor/communities
@@ -123,7 +146,11 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
   const { tutorId, tutorType } = getTutorInfo(req);
 
   // Check subscription limits
-  const limitCheck = await checkSubscriptionLimit(tutorId, tutorType, "community");
+  const limitCheck = await checkSubscriptionLimit(
+    tutorId,
+    tutorType,
+    "community"
+  );
   if (!limitCheck.allowed) {
     throw new ErrorClass(limitCheck.reason, 403);
   }
@@ -154,20 +181,32 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
   let imageUrl = null;
   if (req.file) {
     const bucket = process.env.COMMUNITIES_BUCKET || "communities";
-    
+
     // Check if bucket exists, create if it doesn't
     try {
-      const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+      const { data: buckets, error: listError } =
+        await supabase.storage.listBuckets();
       if (!listError) {
         const bucketExists = buckets?.some((b) => b.name === bucket);
         if (!bucketExists) {
           // Try to create the bucket
-          const { error: createError } = await supabase.storage.createBucket(bucket, {
-            public: true,
-            allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-          });
+          const { error: createError } = await supabase.storage.createBucket(
+            bucket,
+            {
+              public: true,
+              allowedMimeTypes: [
+                "image/jpeg",
+                "image/png",
+                "image/gif",
+                "image/webp",
+              ],
+            }
+          );
           if (createError) {
-            console.error(`Failed to create bucket "${bucket}":`, createError.message);
+            console.error(
+              `Failed to create bucket "${bucket}":`,
+              createError.message
+            );
             throw new ErrorClass(
               `Storage bucket "${bucket}" does not exist. Please create it in Supabase Storage settings. Error: ${createError.message}`,
               500
@@ -194,7 +233,10 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
       });
 
     if (error) {
-      if (error.message?.includes("Bucket not found") || error.message?.includes("not found")) {
+      if (
+        error.message?.includes("Bucket not found") ||
+        error.message?.includes("not found")
+      ) {
         throw new ErrorClass(
           `Storage bucket "${bucket}" does not exist. Please create a bucket named "${bucket}" in your Supabase Storage settings.`,
           500
@@ -203,7 +245,9 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
       throw new ErrorClass(`Image upload failed: ${error.message}`, 500);
     }
 
-    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+    const { data: urlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(fileName);
     imageUrl = urlData.publicUrl;
   }
 
@@ -213,7 +257,9 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
 
   // If video file is uploaded (field name: 'intro_video')
   if (req.files && req.files.intro_video) {
-    const videoFile = Array.isArray(req.files.intro_video) ? req.files.intro_video[0] : req.files.intro_video;
+    const videoFile = Array.isArray(req.files.intro_video)
+      ? req.files.intro_video[0]
+      : req.files.intro_video;
     const bucket = process.env.COMMUNITIES_BUCKET || "communities";
     const fileExt = videoFile.originalname.split(".").pop();
     const fileName = `communities/${tutorId}/intro-videos/${Date.now()}.${fileExt}`;
@@ -229,13 +275,17 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
       throw new ErrorClass(`Intro video upload failed: ${error.message}`, 500);
     }
 
-    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+    const { data: urlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(fileName);
     introVideoUrl = urlData.publicUrl;
   }
 
   // If thumbnail is uploaded (field name: 'intro_video_thumbnail')
   if (req.files && req.files.intro_video_thumbnail) {
-    const thumbnailFile = Array.isArray(req.files.intro_video_thumbnail) ? req.files.intro_video_thumbnail[0] : req.files.intro_video_thumbnail;
+    const thumbnailFile = Array.isArray(req.files.intro_video_thumbnail)
+      ? req.files.intro_video_thumbnail[0]
+      : req.files.intro_video_thumbnail;
     const bucket = process.env.COMMUNITIES_BUCKET || "communities";
     const fileExt = thumbnailFile.originalname.split(".").pop();
     const fileName = `communities/${tutorId}/intro-thumbnails/${Date.now()}.${fileExt}`;
@@ -248,10 +298,15 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
       });
 
     if (error) {
-      throw new ErrorClass(`Intro video thumbnail upload failed: ${error.message}`, 500);
+      throw new ErrorClass(
+        `Intro video thumbnail upload failed: ${error.message}`,
+        500
+      );
     }
 
-    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+    const { data: urlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(fileName);
     introVideoThumbnailUrl = urlData.publicUrl;
   }
 
@@ -272,9 +327,12 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
     member_limit: member_limit ? parseInt(member_limit) : null,
     auto_approve: auto_approve === true || auto_approve === "true",
     who_can_post,
-    moderation_enabled: moderation_enabled === true || moderation_enabled === "true",
-    file_sharing_enabled: file_sharing_enabled !== false && file_sharing_enabled !== "false",
-    live_sessions_enabled: live_sessions_enabled !== false && live_sessions_enabled !== "false",
+    moderation_enabled:
+      moderation_enabled === true || moderation_enabled === "true",
+    file_sharing_enabled:
+      file_sharing_enabled !== false && file_sharing_enabled !== "false",
+    live_sessions_enabled:
+      live_sessions_enabled !== false && live_sessions_enabled !== "false",
     visibility,
     intro_video_url: introVideoUrl,
     intro_video_thumbnail_url: introVideoThumbnailUrl,
@@ -400,25 +458,39 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
     file_sharing_enabled,
     live_sessions_enabled,
     visibility,
+    intro_video_url,
+    intro_video_thumbnail_url,
   } = req.body;
 
   // Upload new image if provided
   if (req.file) {
     const bucket = process.env.COMMUNITIES_BUCKET || "communities";
-    
+
     // Check if bucket exists, create if it doesn't
     try {
-      const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+      const { data: buckets, error: listError } =
+        await supabase.storage.listBuckets();
       if (!listError) {
         const bucketExists = buckets?.some((b) => b.name === bucket);
         if (!bucketExists) {
           // Try to create the bucket
-          const { error: createError } = await supabase.storage.createBucket(bucket, {
-            public: true,
-            allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-          });
+          const { error: createError } = await supabase.storage.createBucket(
+            bucket,
+            {
+              public: true,
+              allowedMimeTypes: [
+                "image/jpeg",
+                "image/png",
+                "image/gif",
+                "image/webp",
+              ],
+            }
+          );
           if (createError) {
-            console.error(`Failed to create bucket "${bucket}":`, createError.message);
+            console.error(
+              `Failed to create bucket "${bucket}":`,
+              createError.message
+            );
             throw new ErrorClass(
               `Storage bucket "${bucket}" does not exist. Please create it in Supabase Storage settings. Error: ${createError.message}`,
               500
@@ -456,7 +528,10 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
       });
 
     if (error) {
-      if (error.message?.includes("Bucket not found") || error.message?.includes("not found")) {
+      if (
+        error.message?.includes("Bucket not found") ||
+        error.message?.includes("not found")
+      ) {
         throw new ErrorClass(
           `Storage bucket "${bucket}" does not exist. Please create a bucket named "${bucket}" in your Supabase Storage settings.`,
           500
@@ -465,21 +540,27 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
       throw new ErrorClass(`Image upload failed: ${error.message}`, 500);
     }
 
-    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+    const { data: urlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(fileName);
     community.image_url = urlData.publicUrl;
   }
 
   // Handle intro video upload if provided
   if (req.files && req.files.intro_video) {
-    const videoFile = Array.isArray(req.files.intro_video) ? req.files.intro_video[0] : req.files.intro_video;
+    const videoFile = Array.isArray(req.files.intro_video)
+      ? req.files.intro_video[0]
+      : req.files.intro_video;
     const bucket = process.env.COMMUNITIES_BUCKET || "communities";
-    
+
     // Delete old video if exists
     if (community.intro_video_url) {
       try {
         const urlParts = community.intro_video_url.split("/");
         const fileName = urlParts[urlParts.length - 1];
-        await supabase.storage.from(bucket).remove([`communities/${tutorId}/intro-videos/${fileName}`]);
+        await supabase.storage
+          .from(bucket)
+          .remove([`communities/${tutorId}/intro-videos/${fileName}`]);
       } catch (error) {
         console.error("Error deleting old intro video:", error);
       }
@@ -499,21 +580,27 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
       throw new ErrorClass(`Intro video upload failed: ${error.message}`, 500);
     }
 
-    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+    const { data: urlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(fileName);
     community.intro_video_url = urlData.publicUrl;
   }
 
   // Handle intro video thumbnail upload if provided
   if (req.files && req.files.intro_video_thumbnail) {
-    const thumbnailFile = Array.isArray(req.files.intro_video_thumbnail) ? req.files.intro_video_thumbnail[0] : req.files.intro_video_thumbnail;
+    const thumbnailFile = Array.isArray(req.files.intro_video_thumbnail)
+      ? req.files.intro_video_thumbnail[0]
+      : req.files.intro_video_thumbnail;
     const bucket = process.env.COMMUNITIES_BUCKET || "communities";
-    
+
     // Delete old thumbnail if exists
     if (community.intro_video_thumbnail_url) {
       try {
         const urlParts = community.intro_video_thumbnail_url.split("/");
         const fileName = urlParts[urlParts.length - 1];
-        await supabase.storage.from(bucket).remove([`communities/${tutorId}/intro-thumbnails/${fileName}`]);
+        await supabase.storage
+          .from(bucket)
+          .remove([`communities/${tutorId}/intro-thumbnails/${fileName}`]);
       } catch (error) {
         console.error("Error deleting old intro video thumbnail:", error);
       }
@@ -530,10 +617,15 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
       });
 
     if (error) {
-      throw new ErrorClass(`Intro video thumbnail upload failed: ${error.message}`, 500);
+      throw new ErrorClass(
+        `Intro video thumbnail upload failed: ${error.message}`,
+        500
+      );
     }
 
-    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+    const { data: urlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(fileName);
     community.intro_video_thumbnail_url = urlData.publicUrl;
   }
 
@@ -550,13 +642,22 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
   if (category !== undefined) community.category = normalizeCategory(category);
   if (price !== undefined) community.price = parseFloat(price);
   if (currency !== undefined) community.currency = currency;
-  if (trial_days !== undefined) community.trial_days = parseInt(trial_days) || 0;
-  if (member_limit !== undefined) community.member_limit = member_limit ? parseInt(member_limit) : null;
-  if (auto_approve !== undefined) community.auto_approve = auto_approve === true || auto_approve === "true";
+  if (trial_days !== undefined)
+    community.trial_days = parseInt(trial_days) || 0;
+  if (member_limit !== undefined)
+    community.member_limit = member_limit ? parseInt(member_limit) : null;
+  if (auto_approve !== undefined)
+    community.auto_approve = auto_approve === true || auto_approve === "true";
   if (who_can_post !== undefined) community.who_can_post = who_can_post;
-  if (moderation_enabled !== undefined) community.moderation_enabled = moderation_enabled === true || moderation_enabled === "true";
-  if (file_sharing_enabled !== undefined) community.file_sharing_enabled = file_sharing_enabled !== false && file_sharing_enabled !== "false";
-  if (live_sessions_enabled !== undefined) community.live_sessions_enabled = live_sessions_enabled !== false && live_sessions_enabled !== "false";
+  if (moderation_enabled !== undefined)
+    community.moderation_enabled =
+      moderation_enabled === true || moderation_enabled === "true";
+  if (file_sharing_enabled !== undefined)
+    community.file_sharing_enabled =
+      file_sharing_enabled !== false && file_sharing_enabled !== "false";
+  if (live_sessions_enabled !== undefined)
+    community.live_sessions_enabled =
+      live_sessions_enabled !== false && live_sessions_enabled !== "false";
   if (visibility !== undefined) community.visibility = visibility;
   if (intro_video_url !== undefined) {
     // Allow setting video URL directly (for YouTube/Vimeo embeds) or clearing it
@@ -618,4 +719,3 @@ export const deleteCommunity = TryCatchFunction(async (req, res) => {
     message: "Community deleted successfully",
   });
 });
-
