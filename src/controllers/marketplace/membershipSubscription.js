@@ -627,26 +627,39 @@ export const subscribeToMembership = TryCatchFunction(async (req, res) => {
   }
   // Free memberships don't need payment
 
-  // Process payment if not free
+  // Create subscription first (payment record requires subscription_id)
+  const transaction = await db.transaction();
+  let subscription;
   let payment = null;
-  if (selectedPricingType !== "free" && price > 0) {
 
-    if (payment_method === "wallet") {
-      // Get wallet balance
-      const { balance: walletBalance } = await getWalletBalance(studentId, true);
+  try {
+    subscription = await MembershipSubscription.create(
+      {
+        student_id: studentId,
+        membership_id: membershipId,
+        tier_id: useTierSystem ? parseInt(tier_id) : null,
+        tier_name: useTierSystem ? selectedTier.tier_name : null,
+        status: "active",
+        start_date: now,
+        end_date: endDate,
+        next_payment_date: nextPaymentDate,
+        auto_renew: true,
+      },
+      { transaction }
+    );
 
-      if (walletBalance < price) {
-        throw new ErrorClass(
-          `Insufficient wallet balance. Required: ${price} ${currency}, Available: ${walletBalance} ${currency}`,
-          400
-        );
-      }
+    // Process payment if not free
+    if (selectedPricingType !== "free" && price > 0) {
+      if (payment_method === "wallet") {
+        const { balance: walletBalance } = await getWalletBalance(studentId, true);
 
-      // Use transaction for atomicity
-      const transaction = await db.transaction();
+        if (walletBalance < price) {
+          throw new ErrorClass(
+            `Insufficient wallet balance. Required: ${price} ${currency}, Available: ${walletBalance} ${currency}`,
+            400
+          );
+        }
 
-      try {
-        // Debit wallet
         const newBalance = walletBalance - price;
         const txRef = `MEMBERSHIP-SUB-${membershipId}-${Date.now()}`;
 
@@ -666,12 +679,11 @@ export const subscribeToMembership = TryCatchFunction(async (req, res) => {
           { transaction }
         );
 
-        // Update student wallet
         await student.update({ wallet_balance: newBalance }, { transaction });
 
-        // Create payment record
         payment = await MembershipPayment.create(
           {
+            subscription_id: subscription.id,
             student_id: studentId,
             membership_id: membershipId,
             amount: price,
@@ -684,43 +696,17 @@ export const subscribeToMembership = TryCatchFunction(async (req, res) => {
           },
           { transaction }
         );
-
-        await transaction.commit();
-      } catch (error) {
+      } else if (payment_method === "flutterwave") {
         await transaction.rollback();
-        throw error;
+        throw new ErrorClass("Flutterwave payment not yet implemented", 501);
       }
-    } else if (payment_method === "flutterwave") {
-      // TODO: Implement Flutterwave payment
-      // For now, create pending payment
-      payment = await MembershipPayment.create({
-        student_id: studentId,
-        membership_id: membershipId,
-        amount: price,
-        currency: currency,
-        payment_method: "flutterwave",
-        status: "pending",
-        payment_period: selectedPricingType,
-      });
-
-      // Return payment URL for Flutterwave
-      // This would need to be implemented with Flutterwave integration
-      throw new ErrorClass("Flutterwave payment not yet implemented", 501);
     }
-  }
 
-  // Create subscription
-  const subscription = await MembershipSubscription.create({
-    student_id: studentId,
-    membership_id: membershipId,
-    tier_id: useTierSystem ? parseInt(tier_id) : null,
-    tier_name: useTierSystem ? selectedTier.tier_name : null,
-    status: "active",
-    start_date: now,
-    end_date: endDate,
-    next_payment_date: nextPaymentDate,
-    auto_renew: true,
-  });
+    await transaction.commit();
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
 
   // Create tier change record for initial subscription
   if (useTierSystem) {
