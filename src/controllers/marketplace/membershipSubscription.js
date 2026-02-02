@@ -5,7 +5,15 @@
 
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
-import { Membership, MembershipProduct, MembershipSubscription, MembershipPayment, MembershipTier, MembershipTierProduct, MembershipTierChange } from "../../models/marketplace/index.js";
+import {
+  Membership,
+  MembershipProduct,
+  MembershipSubscription,
+  MembershipPayment,
+  MembershipTier,
+  MembershipTierProduct,
+  MembershipTierChange,
+} from "../../models/marketplace/index.js";
 import { Students } from "../../models/auth/student.js";
 import { Funding } from "../../models/payment/index.js";
 import { getWalletBalance } from "../../services/walletBalanceService.js";
@@ -31,7 +39,14 @@ import { checkProductAccess as checkAccess } from "../../services/membershipAcce
  * GET /api/marketplace/memberships
  */
 export const browseMemberships = TryCatchFunction(async (req, res) => {
-  const { page = 1, limit = 20, tutor_id, category, pricing_type, search } = req.query;
+  const {
+    page = 1,
+    limit = 20,
+    tutor_id,
+    category,
+    pricing_type,
+    search,
+  } = req.query;
   const studentId = req.user?.id;
 
   const where = {
@@ -223,7 +238,9 @@ export const getMembershipDetails = TryCatchFunction(async (req, res) => {
 
   // Sort tiers by display_order (Sequelize order in nested include can be unreliable)
   if (membership.tiers?.length) {
-    membership.tiers.sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+    membership.tiers.sort(
+      (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)
+    );
   }
 
   // Check tutor subscription is active
@@ -243,7 +260,9 @@ export const getMembershipDetails = TryCatchFunction(async (req, res) => {
   let tutorName = null;
   if (membership.tutor_type === "sole_tutor") {
     const tutor = await SoleTutor.findByPk(membership.tutor_id);
-    tutorName = tutor ? `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || null : null;
+    tutorName = tutor
+      ? `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || null
+      : null;
   } else if (membership.tutor_type === "organization") {
     const org = await Organization.findByPk(membership.tutor_id);
     tutorName = org?.name || null;
@@ -418,79 +437,88 @@ export const getMembershipDetails = TryCatchFunction(async (req, res) => {
  * Get tiers for a membership (student-facing)
  * GET /api/marketplace/memberships/:id/tiers
  */
-export const getMembershipTiersForStudent = TryCatchFunction(async (req, res) => {
-  const { id } = req.params;
-  const membershipId = parseInt(id, 10);
+export const getMembershipTiersForStudent = TryCatchFunction(
+  async (req, res) => {
+    const { id } = req.params;
+    const membershipId = parseInt(id, 10);
 
-  if (!membershipId || isNaN(membershipId)) {
-    throw new ErrorClass("Invalid membership ID", 400);
-  }
+    if (!membershipId || isNaN(membershipId)) {
+      throw new ErrorClass("Invalid membership ID", 400);
+    }
 
-  const membership = await Membership.findOne({
-    where: {
-      id: membershipId,
-      status: "active",
-    },
-    attributes: ["id", "name", "tutor_id", "tutor_type", "currency"],
-  });
-
-  if (!membership) {
-    throw new ErrorClass("Membership not found", 404);
-  }
-
-  // Check tutor subscription is active
-  const tutorSubscription = await TutorSubscription.findOne({
-    where: {
-      tutor_id: membership.tutor_id,
-      tutor_type: membership.tutor_type,
-      status: "active",
-    },
-  });
-
-  if (!tutorSubscription) {
-    throw new ErrorClass("This membership is currently unavailable", 403);
-  }
-
-  const tiers = await MembershipTier.findAll({
-    where: {
-      membership_id: membershipId,
-      status: "active",
-    },
-    include: [
-      {
-        model: MembershipTierProduct,
-        as: "products",
-        attributes: ["id", "product_type", "product_id", "monthly_access_level", "yearly_access_level", "lifetime_access_level"],
+    const membership = await Membership.findOne({
+      where: {
+        id: membershipId,
+        status: "active",
       },
-    ],
-    order: [
-      ["display_order", "ASC"],
-      ["created_at", "ASC"],
-    ],
-  });
+      attributes: ["id", "name", "tutor_id", "tutor_type", "currency"],
+    });
 
-  res.json({
-    status: true,
-    code: 200,
-    message: "Tiers retrieved successfully",
-    data: {
-      membership_id: membershipId,
-      membership_name: membership.name,
-      currency: membership.currency,
-      tiers: tiers.map((t) => ({
-        id: t.id,
-        tier_name: t.tier_name,
-        description: t.description,
-        monthly_price: t.monthly_price,
-        yearly_price: t.yearly_price,
-        lifetime_price: t.lifetime_price,
-        currency: t.currency,
-        display_order: t.display_order,
-        products: t.products || [],
-      })),
-    },
-  });
-});
+    if (!membership) {
+      throw new ErrorClass("Membership not found", 404);
+    }
+
+    // Check tutor subscription is active
+    const tutorSubscription = await TutorSubscription.findOne({
+      where: {
+        tutor_id: membership.tutor_id,
+        tutor_type: membership.tutor_type,
+        status: "active",
+      },
+    });
+
+    if (!tutorSubscription) {
+      throw new ErrorClass("This membership is currently unavailable", 403);
+    }
+
+    const tiers = await MembershipTier.findAll({
+      where: {
+        membership_id: membershipId,
+        status: "active",
+      },
+      include: [
+        {
+          model: MembershipTierProduct,
+          as: "products",
+          attributes: [
+            "id",
+            "product_type",
+            "product_id",
+            "monthly_access_level",
+            "yearly_access_level",
+            "lifetime_access_level",
+          ],
+        },
+      ],
+      order: [
+        ["display_order", "ASC"],
+        ["created_at", "ASC"],
+      ],
+    });
+
+    res.json({
+      status: true,
+      code: 200,
+      message: "Tiers retrieved successfully",
+      data: {
+        membership_id: membershipId,
+        membership_name: membership.name,
+        currency: membership.currency,
+        tiers: tiers.map((t) => ({
+          id: t.id,
+          tier_name: t.tier_name,
+          description: t.description,
+          monthly_price: t.monthly_price,
+          yearly_price: t.yearly_price,
+          lifetime_price: t.lifetime_price,
+          currency: t.currency,
+          display_order: t.display_order,
+          products: t.products || [],
+        })),
+      },
+    });
+  }
+);
 
 /**
  * Subscribe to membership
@@ -534,8 +562,14 @@ export const subscribeToMembership = TryCatchFunction(async (req, res) => {
     if (!tier_id) {
       throw new ErrorClass("tier_id is required for this membership", 400);
     }
-    if (!pricing_type || !["monthly", "yearly", "lifetime"].includes(pricing_type)) {
-      throw new ErrorClass("pricing_type must be one of: monthly, yearly, lifetime", 400);
+    if (
+      !pricing_type ||
+      !["monthly", "yearly", "lifetime"].includes(pricing_type)
+    ) {
+      throw new ErrorClass(
+        "pricing_type must be one of: monthly, yearly, lifetime",
+        400
+      );
     }
 
     // Find and validate tier
@@ -548,7 +582,10 @@ export const subscribeToMembership = TryCatchFunction(async (req, res) => {
     const priceField = `${pricing_type}_price`;
     const price = tier[priceField];
     if (price === null || price === undefined) {
-      throw new ErrorClass(`This tier does not support ${pricing_type} pricing`, 400);
+      throw new ErrorClass(
+        `This tier does not support ${pricing_type} pricing`,
+        400
+      );
     }
   } else {
     // Legacy: use membership pricing
@@ -567,7 +604,10 @@ export const subscribeToMembership = TryCatchFunction(async (req, res) => {
   });
 
   if (!tutorSubscription) {
-    throw new ErrorClass("This membership is currently unavailable. The tutor's subscription has expired.", 403);
+    throw new ErrorClass(
+      "This membership is currently unavailable. The tutor's subscription has expired.",
+      403
+    );
   }
 
   // Check if already subscribed
@@ -610,6 +650,7 @@ export const subscribeToMembership = TryCatchFunction(async (req, res) => {
 
   // Calculate dates based on pricing type
   const now = new Date();
+  const dateString = now.toISOString().split("T")[0]; // YYYY-MM-DD for Funding.date (STRING column)
   let endDate = null;
   let nextPaymentDate = null;
 
@@ -651,7 +692,10 @@ export const subscribeToMembership = TryCatchFunction(async (req, res) => {
     // Process payment if not free
     if (selectedPricingType !== "free" && price > 0) {
       if (payment_method === "wallet") {
-        const { balance: walletBalance } = await getWalletBalance(studentId, true);
+        const { balance: walletBalance } = await getWalletBalance(
+          studentId,
+          true
+        );
 
         if (walletBalance < price) {
           throw new ErrorClass(
@@ -670,7 +714,7 @@ export const subscribeToMembership = TryCatchFunction(async (req, res) => {
             type: "Debit",
             service_name: "Membership Subscription",
             ref: txRef,
-            date: now,
+            date: dateString,
             semester: null,
             academic_year: null,
             currency: currency,
@@ -731,11 +775,13 @@ export const subscribeToMembership = TryCatchFunction(async (req, res) => {
     data: {
       subscription,
       payment: payment,
-      tier: useTierSystem ? {
-        id: selectedTier.id,
-        name: selectedTier.tier_name,
-        pricing_type: selectedPricingType,
-      } : null,
+      tier: useTierSystem
+        ? {
+            id: selectedTier.id,
+            name: selectedTier.tier_name,
+            pricing_type: selectedPricingType,
+          }
+        : null,
     },
   });
 });
@@ -810,7 +856,14 @@ export const getMySubscriptions = TryCatchFunction(async (req, res) => {
       {
         model: Membership,
         as: "membership",
-        attributes: ["id", "name", "image_url", "pricing_type", "price", "currency"],
+        attributes: [
+          "id",
+          "name",
+          "image_url",
+          "pricing_type",
+          "price",
+          "currency",
+        ],
       },
     ],
     limit: parseInt(limit),
@@ -870,8 +923,14 @@ export const changeTier = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("new_tier_id is required", 400);
   }
 
-  if (!pricing_type || !["monthly", "yearly", "lifetime"].includes(pricing_type)) {
-    throw new ErrorClass("pricing_type must be one of: monthly, yearly, lifetime", 400);
+  if (
+    !pricing_type ||
+    !["monthly", "yearly", "lifetime"].includes(pricing_type)
+  ) {
+    throw new ErrorClass(
+      "pricing_type must be one of: monthly, yearly, lifetime",
+      400
+    );
   }
 
   // Get membership with tiers
@@ -910,7 +969,10 @@ export const changeTier = TryCatchFunction(async (req, res) => {
   const newPriceField = `${pricing_type}_price`;
   const newPrice = newTier[newPriceField];
   if (newPrice === null || newPrice === undefined) {
-    throw new ErrorClass(`This tier does not support ${pricing_type} pricing`, 400);
+    throw new ErrorClass(
+      `This tier does not support ${pricing_type} pricing`,
+      400
+    );
   }
 
   // Get current subscription
@@ -927,7 +989,10 @@ export const changeTier = TryCatchFunction(async (req, res) => {
   }
 
   if (!subscription.tier_id) {
-    throw new ErrorClass("Current subscription does not have a tier. Please subscribe to a tier first.", 400);
+    throw new ErrorClass(
+      "Current subscription does not have a tier. Please subscribe to a tier first.",
+      400
+    );
   }
 
   // Check if already on this tier
@@ -942,7 +1007,11 @@ export const changeTier = TryCatchFunction(async (req, res) => {
   }
 
   // Get old tier price for current pricing period
-  const oldPricingType = subscription.next_payment_date ? (subscription.end_date ? "yearly" : "monthly") : "lifetime";
+  const oldPricingType = subscription.next_payment_date
+    ? subscription.end_date
+      ? "yearly"
+      : "monthly"
+    : "lifetime";
   const oldPriceField = `${oldPricingType}_price`;
   const oldPrice = oldTier[oldPriceField] || 0;
 
@@ -952,6 +1021,7 @@ export const changeTier = TryCatchFunction(async (req, res) => {
 
   // Calculate payment/refund
   const now = new Date();
+  const dateStringTier = now.toISOString().split("T")[0]; // YYYY-MM-DD for Funding.date (STRING column)
   let paymentAmount = 0;
   let refundAmount = 0;
   const currency = newTier.currency || "NGN";
@@ -964,11 +1034,14 @@ export const changeTier = TryCatchFunction(async (req, res) => {
     if (subscription.end_date) {
       const startDate = new Date(subscription.start_date);
       const endDate = new Date(subscription.end_date);
-      const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+      const totalDays = Math.ceil(
+        (endDate - startDate) / (1000 * 60 * 60 * 24)
+      );
       const remainingDays = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24));
-      
+
       if (remainingDays > 0 && totalDays > 0) {
-        const proratedOldPrice = (parseFloat(oldPrice) * remainingDays) / totalDays;
+        const proratedOldPrice =
+          (parseFloat(oldPrice) * remainingDays) / totalDays;
         refundAmount = proratedOldPrice;
       }
     } else {
@@ -991,7 +1064,10 @@ export const changeTier = TryCatchFunction(async (req, res) => {
     if (isUpgrade && paymentAmount > 0) {
       // Process upgrade payment
       if (payment_method === "wallet") {
-        const { balance: walletBalance } = await getWalletBalance(studentId, true);
+        const { balance: walletBalance } = await getWalletBalance(
+          studentId,
+          true
+        );
 
         if (walletBalance < paymentAmount) {
           await transaction.rollback();
@@ -1012,7 +1088,7 @@ export const changeTier = TryCatchFunction(async (req, res) => {
             type: "Debit",
             service_name: "Membership Tier Upgrade",
             ref: txRef,
-            date: now,
+            date: dateStringTier,
             semester: null,
             academic_year: null,
             currency: currency,
@@ -1055,7 +1131,7 @@ export const changeTier = TryCatchFunction(async (req, res) => {
           type: "Credit",
           service_name: "Membership Tier Downgrade Refund",
           ref: txRef,
-          date: now,
+          date: dateStringTier,
           semester: null,
           academic_year: null,
           currency: currency,
@@ -1079,7 +1155,9 @@ export const changeTier = TryCatchFunction(async (req, res) => {
         subscription.next_payment_date = new Date(subscription.end_date);
       } else if (pricing_type === "yearly") {
         subscription.end_date = new Date(now);
-        subscription.end_date.setFullYear(subscription.end_date.getFullYear() + 1);
+        subscription.end_date.setFullYear(
+          subscription.end_date.getFullYear() + 1
+        );
         subscription.next_payment_date = new Date(subscription.end_date);
       } else if (pricing_type === "lifetime") {
         subscription.end_date = null;
@@ -1142,12 +1220,25 @@ export const checkProductAccessEndpoint = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Only students can check product access", 403);
   }
 
-  const validProductTypes = ["course", "ebook", "digital_download", "coaching_session", "community"];
+  const validProductTypes = [
+    "course",
+    "ebook",
+    "digital_download",
+    "coaching_session",
+    "community",
+  ];
   if (!validProductTypes.includes(productType)) {
-    throw new ErrorClass(`Invalid product type. Must be one of: ${validProductTypes.join(", ")}`, 400);
+    throw new ErrorClass(
+      `Invalid product type. Must be one of: ${validProductTypes.join(", ")}`,
+      400
+    );
   }
 
-  const accessInfo = await checkAccess(studentId, productType, parseInt(productId));
+  const accessInfo = await checkAccess(
+    studentId,
+    productType,
+    parseInt(productId)
+  );
 
   res.json({
     status: true,
