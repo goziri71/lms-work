@@ -780,7 +780,25 @@ export const updatePost = TryCatchFunction(async (req, res) => {
     );
   }
 
-  const { title, content, content_type, category, tags } = req.body;
+  const { title, content, content_type, category, tags, status } = req.body;
+
+  // Validate and apply status if provided
+  if (status !== undefined) {
+    const validStatuses = [
+      "draft",
+      "published",
+      "scheduled",
+      "pinned",
+      "archived",
+    ];
+    const normalizedStatus = String(status).toLowerCase().trim();
+    const postStatus = validStatuses.includes(normalizedStatus)
+      ? normalizedStatus
+      : normalizedStatus === "publish"
+      ? "published"
+      : post.status; // keep current if invalid
+    post.status = postStatus;
+  }
 
   // Handle image upload if provided
   if (req.file) {
@@ -827,6 +845,8 @@ export const updatePost = TryCatchFunction(async (req, res) => {
   if (category !== undefined) post.category = category;
   if (tags !== undefined)
     post.tags = tags ? (Array.isArray(tags) ? tags : JSON.parse(tags)) : null;
+
+  // (status already applied above when status !== undefined)
 
   await post.save();
 
