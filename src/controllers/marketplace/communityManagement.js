@@ -458,6 +458,7 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
     file_sharing_enabled,
     live_sessions_enabled,
     visibility,
+    status: statusParam,
     intro_video_url,
     intro_video_thumbnail_url,
   } = req.body;
@@ -659,6 +660,22 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
     community.live_sessions_enabled =
       live_sessions_enabled !== false && live_sessions_enabled !== "false";
   if (visibility !== undefined) community.visibility = visibility;
+  if (statusParam !== undefined) {
+    const validStatuses = ["draft", "published", "archived"];
+    const status =
+      statusParam === "publish"
+        ? "published"
+        : String(statusParam).toLowerCase();
+    if (!validStatuses.includes(status)) {
+      throw new ErrorClass(
+        `Invalid status "${statusParam}". Must be one of: ${validStatuses.join(
+          ", "
+        )}.`,
+        400
+      );
+    }
+    community.status = status;
+  }
   if (intro_video_url !== undefined) {
     // Allow setting video URL directly (for YouTube/Vimeo embeds) or clearing it
     community.intro_video_url = intro_video_url || null;
