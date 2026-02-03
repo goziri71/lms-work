@@ -98,7 +98,7 @@ export const createMembership = TryCatchFunction(async (req, res) => {
     throw new ErrorClass(limitCheck.reason, 403);
   }
 
-  const {
+  let {
     name,
     description,
     category,
@@ -111,6 +111,24 @@ export const createMembership = TryCatchFunction(async (req, res) => {
     tiers = [], // New field - Array of tier objects with products
   } = req.body;
 
+  // When sending multipart/form-data (e.g. with image), tiers/products come as JSON strings
+  if (typeof tiers === "string") {
+    try {
+      tiers = tiers.trim() ? JSON.parse(tiers) : [];
+    } catch {
+      tiers = [];
+    }
+  }
+  if (!Array.isArray(tiers)) tiers = [];
+  if (typeof products === "string") {
+    try {
+      products = products.trim() ? JSON.parse(products) : [];
+    } catch {
+      products = [];
+    }
+  }
+  if (!Array.isArray(products)) products = [];
+
   if (!name) {
     throw new ErrorClass("Name is required", 400);
   }
@@ -120,7 +138,7 @@ export const createMembership = TryCatchFunction(async (req, res) => {
     pricing_type || pricing_plan || pricingType || "monthly";
 
   // If tiers are provided, use tier system. Otherwise, use legacy pricing
-  const useTierSystem = Array.isArray(tiers) && tiers.length > 0;
+  const useTierSystem = tiers.length > 0;
 
   // Normalize price value (handle free memberships without price)
   let normalizedPrice = price;
