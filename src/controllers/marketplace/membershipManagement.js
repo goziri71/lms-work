@@ -10,7 +10,11 @@ import {
   MembershipProduct,
   MembershipTier,
   MembershipTierProduct,
+  MembershipSubscription,
+  MembershipPayment,
+  MembershipTierChange,
 } from "../../models/marketplace/index.js";
+import { db } from "../../database/database.js";
 import {
   checkSubscriptionLimit,
   validateSubscriptionStatus,
@@ -798,7 +802,7 @@ export const removeProductFromMembership = TryCatchFunction(
 );
 
 /**
- * Delete membership (soft delete - set status to inactive)
+ * Delete membership (hard delete - remove from database)
  * DELETE /api/marketplace/tutor/memberships/:id
  */
 export const deleteMembership = TryCatchFunction(async (req, res) => {
@@ -817,13 +821,68 @@ export const deleteMembership = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Membership not found", 404);
   }
 
-  // Set status to inactive (don't delete)
-  membership.status = "inactive";
-  await membership.save();
+  const membershipId = membership.id;
+
+  const transaction = await db.transaction();
+  try {
+    // Get subscription ids for this membership (for tier changes and payments)
+    const subscriptions = await MembershipSubscription.findAll({
+      where: { membership_id: membershipId },
+      attributes: ["id"],
+      transaction,
+    });
+    const subscriptionIds = subscriptions.map((s) => s.id);
+
+    if (subscriptionIds.length > 0) {
+      await MembershipTierChange.destroy({
+        where: { subscription_id: { [Op.in]: subscriptionIds } },
+        transaction,
+      });
+      await MembershipPayment.destroy({
+        where: { subscription_id: { [Op.in]: subscriptionIds } },
+        transaction,
+      });
+    }
+
+    await MembershipSubscription.destroy({
+      where: { membership_id: membershipId },
+      transaction,
+    });
+
+    const tiers = await MembershipTier.findAll({
+      where: { membership_id: membershipId },
+      attributes: ["id"],
+      transaction,
+    });
+    const tierIds = tiers.map((t) => t.id);
+    if (tierIds.length > 0) {
+      await MembershipTierProduct.destroy({
+        where: { tier_id: { [Op.in]: tierIds } },
+        transaction,
+      });
+    }
+
+    await MembershipTier.destroy({
+      where: { membership_id: membershipId },
+      transaction,
+    });
+
+    await MembershipProduct.destroy({
+      where: { membership_id: membershipId },
+      transaction,
+    });
+
+    await membership.destroy({ transaction });
+
+    await transaction.commit();
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
 
   res.json({
     status: true,
     code: 200,
-    message: "Membership deactivated successfully",
+    message: "Membership deleted successfully",
   });
 });
