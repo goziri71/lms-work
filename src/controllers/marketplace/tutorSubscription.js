@@ -1,6 +1,9 @@
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
-import { TutorSubscription, SUBSCRIPTION_TIERS } from "../../models/marketplace/tutorSubscription.js";
+import {
+  TutorSubscription,
+  SUBSCRIPTION_TIERS,
+} from "../../models/marketplace/tutorSubscription.js";
 import { Courses } from "../../models/course/courses.js";
 import { DigitalDownloads } from "../../models/marketplace/digitalDownloads.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
@@ -53,8 +56,16 @@ export const getSubscription = TryCatchFunction(async (req, res) => {
       },
     });
   } catch (error) {
-    if (error.name === 'SequelizeDatabaseError' && (error.message.includes('does not exist') || (error.message.includes('relation') && error.message.includes('does not exist')))) {
-      throw new ErrorClass("Subscription tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js", 500);
+    if (
+      error.name === "SequelizeDatabaseError" &&
+      (error.message.includes("does not exist") ||
+        (error.message.includes("relation") &&
+          error.message.includes("does not exist")))
+    ) {
+      throw new ErrorClass(
+        "Subscription tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js",
+        500
+      );
     }
     throw error;
   }
@@ -90,7 +101,8 @@ export const getSubscription = TryCatchFunction(async (req, res) => {
           subscription_tier: "free",
           status: "expired",
           previous_tier: subscription.subscription_tier,
-          message: "Your subscription has expired. Please renew to continue using premium features.",
+          message:
+            "Your subscription has expired. Please renew to continue using premium features.",
           ...freeTier,
           start_date: null,
           end_date: null,
@@ -100,7 +112,9 @@ export const getSubscription = TryCatchFunction(async (req, res) => {
     }
   }
 
-  const tierInfo = SUBSCRIPTION_TIERS[subscription.subscription_tier] || SUBSCRIPTION_TIERS.free;
+  const tierInfo =
+    SUBSCRIPTION_TIERS[subscription.subscription_tier] ||
+    SUBSCRIPTION_TIERS.free;
 
   res.json({
     success: true,
@@ -149,8 +163,16 @@ export const subscribe = TryCatchFunction(async (req, res) => {
       },
     });
   } catch (error) {
-    if (error.name === 'SequelizeDatabaseError' && (error.message.includes('does not exist') || (error.message.includes('relation') && error.message.includes('does not exist')))) {
-      throw new ErrorClass("Subscription tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js", 500);
+    if (
+      error.name === "SequelizeDatabaseError" &&
+      (error.message.includes("does not exist") ||
+        (error.message.includes("relation") &&
+          error.message.includes("does not exist")))
+    ) {
+      throw new ErrorClass(
+        "Subscription tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js",
+        500
+      );
     }
     throw error;
   }
@@ -158,7 +180,7 @@ export const subscribe = TryCatchFunction(async (req, res) => {
   // Handle payment for subscription (wallet payment required)
   // Subscription prices are in USD, convert to tutor's local currency
   const subscriptionPriceUSD = tierInfo.price;
-  
+
   // Get tutor wallet balance and currency
   let tutor;
   if (tutorType === "sole_tutor") {
@@ -177,12 +199,18 @@ export const subscribe = TryCatchFunction(async (req, res) => {
   // Convert USD price to tutor's local currency
   let subscriptionPrice = subscriptionPriceUSD;
   let currency = "USD";
-  
+
   if (subscriptionPriceUSD > 0 && tutorCurrency !== "USD") {
     // Import FX conversion service
-    const { convertCurrency } = await import("../../services/fxConversionService.js");
+    const { convertCurrency } = await import(
+      "../../services/fxConversionService.js"
+    );
     try {
-      const conversion = await convertCurrency(subscriptionPriceUSD, "USD", tutorCurrency);
+      const conversion = await convertCurrency(
+        subscriptionPriceUSD,
+        "USD",
+        tutorCurrency
+      );
       subscriptionPrice = conversion.convertedAmount;
       currency = tutorCurrency;
     } catch (error) {
@@ -209,7 +237,6 @@ export const subscribe = TryCatchFunction(async (req, res) => {
 
   // Free tier doesn't require payment
   if (subscriptionPrice > 0) {
-
     // Check if wallet has sufficient balance
     if (walletBalance < subscriptionPrice) {
       throw new ErrorClass(
@@ -251,7 +278,9 @@ export const subscribe = TryCatchFunction(async (req, res) => {
         subscription = existingSubscription;
       } else {
         // Create new subscription
-        subscription = await TutorSubscription.create(subscriptionData, { transaction });
+        subscription = await TutorSubscription.create(subscriptionData, {
+          transaction,
+        });
       }
 
       // Create wallet transaction record
@@ -345,8 +374,16 @@ export const getSubscriptionLimits = TryCatchFunction(async (req, res) => {
       },
     });
   } catch (error) {
-    if (error.name === 'SequelizeDatabaseError' && (error.message.includes('does not exist') || (error.message.includes('relation') && error.message.includes('does not exist')))) {
-      throw new ErrorClass("Subscription tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js", 500);
+    if (
+      error.name === "SequelizeDatabaseError" &&
+      (error.message.includes("does not exist") ||
+        (error.message.includes("relation") &&
+          error.message.includes("does not exist")))
+    ) {
+      throw new ErrorClass(
+        "Subscription tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js",
+        500
+      );
     }
     throw error;
   }
@@ -370,13 +407,24 @@ export const getSubscriptionLimits = TryCatchFunction(async (req, res) => {
     },
   });
 
-  // TODO: Add communities and memberships counts when implemented
+  const { Community } = await import("../../models/marketplace/index.js");
+  const { Membership } = await import("../../models/marketplace/membership.js");
+  const ownerType = tutorType === "sole_tutor" ? "sole_tutor" : "organization";
+
+  const communitiesCount = await Community.count({
+    where: { tutor_id: tutorId, tutor_type: ownerType },
+  });
+  const membershipsCount = await Membership.count({
+    where: { tutor_id: tutorId, tutor_type: ownerType },
+  });
 
   const limits = {
     courses: {
       limit: tierInfo.courses_limit,
       used: coursesCount,
-      remaining: tierInfo.courses_limit ? tierInfo.courses_limit - coursesCount : null,
+      remaining: tierInfo.courses_limit
+        ? tierInfo.courses_limit - coursesCount
+        : null,
       unlimited: tierInfo.courses_limit === null,
     },
     digital_downloads: {
@@ -389,14 +437,18 @@ export const getSubscriptionLimits = TryCatchFunction(async (req, res) => {
     },
     communities: {
       limit: tierInfo.communities_limit,
-      used: 0, // TODO: Implement when communities feature is ready
-      remaining: tierInfo.communities_limit ? tierInfo.communities_limit - 0 : null,
+      used: communitiesCount,
+      remaining: tierInfo.communities_limit
+        ? tierInfo.communities_limit - communitiesCount
+        : null,
       unlimited: tierInfo.communities_limit === null,
     },
     memberships: {
       limit: tierInfo.memberships_limit,
-      used: 0, // TODO: Implement when memberships feature is ready
-      remaining: tierInfo.memberships_limit ? tierInfo.memberships_limit - 0 : null,
+      used: membershipsCount,
+      remaining: tierInfo.memberships_limit
+        ? tierInfo.memberships_limit - membershipsCount
+        : null,
       unlimited: tierInfo.memberships_limit === null,
     },
     coaching: {
@@ -436,19 +488,24 @@ export async function checkSubscriptionExpiration(tutorId, tutorType) {
     if (now > endDate) {
       // Subscription expired - auto-expire it
       await subscription.update({ status: "expired" });
-      
+
       // Deactivate all tutor's memberships
       await deactivateTutorMemberships(tutorId, tutorType);
-      
+
       return {
         expired: true,
         isFreeTier: subscription.subscription_tier === "free",
-        reason: "Your subscription has expired. Please renew to continue using premium features.",
+        reason:
+          "Your subscription has expired. Please renew to continue using premium features.",
       };
     }
   }
 
-  return { expired: false, isFreeTier: subscription.subscription_tier === "free", subscription };
+  return {
+    expired: false,
+    isFreeTier: subscription.subscription_tier === "free",
+    subscription,
+  };
 }
 
 /**
@@ -461,7 +518,9 @@ export async function validateSubscriptionStatus(tutorId, tutorType) {
   if (expirationCheck.expired) {
     return {
       allowed: false,
-      reason: expirationCheck.reason || "Your subscription has expired. Please renew to continue.",
+      reason:
+        expirationCheck.reason ||
+        "Your subscription has expired. Please renew to continue.",
     };
   }
 
@@ -506,7 +565,8 @@ export async function validateSubscriptionStatus(tutorId, tutorType) {
       await subscription.update({ status: "expired" });
       return {
         allowed: false,
-        reason: "Your free tier subscription has expired (30-day limit). Please upgrade to a paid subscription to continue creating resources.",
+        reason:
+          "Your free tier subscription has expired (30-day limit). Please upgrade to a paid subscription to continue creating resources.",
       };
     }
   }
@@ -545,7 +605,8 @@ export async function checkSubscriptionLimit(tutorId, tutorType, resourceType) {
       currentCount = await Courses.count({
         where: {
           owner_id: tutorId,
-          owner_type: tutorType === "sole_tutor" ? "sole_tutor" : "organization",
+          owner_type:
+            tutorType === "sole_tutor" ? "sole_tutor" : "organization",
         },
       });
       break;
@@ -554,7 +615,8 @@ export async function checkSubscriptionLimit(tutorId, tutorType, resourceType) {
       currentCount = await DigitalDownloads.count({
         where: {
           owner_id: tutorId,
-          owner_type: tutorType === "sole_tutor" ? "sole_tutor" : "organization",
+          owner_type:
+            tutorType === "sole_tutor" ? "sole_tutor" : "organization",
         },
       });
       break;
@@ -564,17 +626,21 @@ export async function checkSubscriptionLimit(tutorId, tutorType, resourceType) {
       currentCount = await Community.count({
         where: {
           tutor_id: tutorId,
-          tutor_type: tutorType === "sole_tutor" ? "sole_tutor" : "organization",
+          tutor_type:
+            tutorType === "sole_tutor" ? "sole_tutor" : "organization",
         },
       });
       break;
     case "membership":
       limit = tierInfo.memberships_limit;
-      const { Membership } = await import("../../models/marketplace/membership.js");
+      const { Membership } = await import(
+        "../../models/marketplace/membership.js"
+      );
       currentCount = await Membership.count({
         where: {
           tutor_id: tutorId,
-          tutor_type: tutorType === "sole_tutor" ? "sole_tutor" : "organization",
+          tutor_type:
+            tutorType === "sole_tutor" ? "sole_tutor" : "organization",
         },
       });
       break;
@@ -604,7 +670,7 @@ export async function checkSubscriptionLimit(tutorId, tutorType, resourceType) {
 export async function deactivateTutorMemberships(tutorId, tutorType) {
   try {
     const { Membership } = await import("../../models/marketplace/index.js");
-    
+
     const memberships = await Membership.findAll({
       where: {
         tutor_id: tutorId,
@@ -619,7 +685,9 @@ export async function deactivateTutorMemberships(tutorId, tutorType) {
     }
 
     if (memberships.length > 0) {
-      console.log(`✅ Deactivated ${memberships.length} memberships for tutor ${tutorId} (${tutorType})`);
+      console.log(
+        `✅ Deactivated ${memberships.length} memberships for tutor ${tutorId} (${tutorType})`
+      );
     }
   } catch (error) {
     // If Membership model doesn't exist yet, just log and continue
@@ -634,7 +702,7 @@ export async function deactivateTutorMemberships(tutorId, tutorType) {
 export async function reactivateTutorMemberships(tutorId, tutorType) {
   try {
     const { Membership } = await import("../../models/marketplace/index.js");
-    
+
     const memberships = await Membership.findAll({
       where: {
         tutor_id: tutorId,
@@ -649,7 +717,9 @@ export async function reactivateTutorMemberships(tutorId, tutorType) {
     }
 
     if (memberships.length > 0) {
-      console.log(`✅ Reactivated ${memberships.length} memberships for tutor ${tutorId} (${tutorType})`);
+      console.log(
+        `✅ Reactivated ${memberships.length} memberships for tutor ${tutorId} (${tutorType})`
+      );
     }
   } catch (error) {
     console.warn("Could not reactivate memberships:", error.message);
