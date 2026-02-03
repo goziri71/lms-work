@@ -524,6 +524,16 @@ export const getMyMemberships = TryCatchFunction(async (req, res) => {
         model: MembershipProduct,
         as: "products",
       },
+      {
+        model: MembershipTier,
+        as: "tiers",
+        include: [
+          {
+            model: MembershipTierProduct,
+            as: "products",
+          },
+        ],
+      },
     ],
     order: [["created_at", "DESC"]],
   });
@@ -554,6 +564,16 @@ export const getMembership = TryCatchFunction(async (req, res) => {
       {
         model: MembershipProduct,
         as: "products",
+      },
+      {
+        model: MembershipTier,
+        as: "tiers",
+        include: [
+          {
+            model: MembershipTierProduct,
+            as: "products",
+          },
+        ],
       },
     ],
   });
