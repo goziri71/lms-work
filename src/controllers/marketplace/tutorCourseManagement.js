@@ -23,7 +23,10 @@ const uploadCourseImage = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new ErrorClass("Only JPEG, PNG, and WebP images are allowed", 400), false);
+      cb(
+        new ErrorClass("Only JPEG, PNG, and WebP images are allowed", 400),
+        false
+      );
     }
   },
 });
@@ -32,6 +35,50 @@ const uploadCourseImage = multer({
 export const uploadCourseImageMiddleware = uploadCourseImage.single("image");
 
 import { normalizeCategory, CATEGORIES } from "../../constants/categories.js";
+
+const COURSE_CODE_MAX_LENGTH = 6;
+const ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+/**
+ * Generate a random 6-character alphanumeric course code (unique per tutor).
+ * @param {number} ownerId - tutor_id or organization id
+ * @param {string} ownerType - "sole_tutor" or "organization"
+ * @param {object} [transaction] - optional Sequelize transaction
+ * @returns {Promise<string>} - 6-char uppercase code
+ */
+async function generateUniqueCourseCodeForTutor(
+  ownerId,
+  ownerType,
+  transaction = null
+) {
+  const opts = transaction ? { transaction } : {};
+  for (let attempt = 0; attempt < 10; attempt++) {
+    let code = "";
+    for (let i = 0; i < COURSE_CODE_MAX_LENGTH; i++) {
+      code += ALPHANUMERIC[Math.floor(Math.random() * ALPHANUMERIC.length)];
+    }
+    const existing = await Courses.findOne({
+      where: {
+        [Op.and]: [
+          Sequelize.where(
+            Sequelize.fn("UPPER", Sequelize.col("course_code")),
+            code
+          ),
+          { owner_id: ownerId },
+          { owner_type: ownerType },
+          { is_marketplace: true },
+        ],
+      },
+      ...opts,
+      paranoid: true,
+    });
+    if (!existing) return code;
+  }
+  throw new ErrorClass(
+    "Could not generate a unique course code. Please try again.",
+    500
+  );
+}
 
 /**
  * Get all courses created by tutor
@@ -42,12 +89,7 @@ export const getMyCourses = TryCatchFunction(async (req, res) => {
   const userType = req.user.userType;
   const tutorId = tutor.id;
 
-  const {
-    page = 1,
-    limit = 20,
-    status,
-    search,
-  } = req.query;
+  const { page = 1, limit = 20, status, search } = req.query;
 
   const ownerType = userType === "sole_tutor" ? "sole_tutor" : "organization";
   const ownerId = tutorId;
@@ -66,11 +108,11 @@ export const getMyCourses = TryCatchFunction(async (req, res) => {
     where[Op.or] = [
       { title: { [Op.iLike]: `%${search}%` } },
       // Only search course_code if it's not null
-      { 
-        course_code: { 
+      {
+        course_code: {
           [Op.iLike]: `%${search}%`,
-          [Op.ne]: null 
-        } 
+          [Op.ne]: null,
+        },
       },
     ];
   }
@@ -254,8 +296,14 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Category is required", 400);
   }
 
-  if (marketplace_status === "published" && (!price || parseFloat(price) <= 0)) {
-    throw new ErrorClass("Published courses must have a price greater than 0", 400);
+  if (
+    marketplace_status === "published" &&
+    (!price || parseFloat(price) <= 0)
+  ) {
+    throw new ErrorClass(
+      "Published courses must have a price greater than 0",
+      400
+    );
   }
 
   // Validate category
@@ -279,7 +327,10 @@ export const createCourse = TryCatchFunction(async (req, res) => {
   if (access_duration_days !== undefined && access_duration_days !== null) {
     const durationNum = parseInt(access_duration_days);
     if (isNaN(durationNum) || durationNum <= 0) {
-      throw new ErrorClass("Access duration must be a positive number of days", 400);
+      throw new ErrorClass(
+        "Access duration must be a positive number of days",
+        400
+      );
     }
   }
 
@@ -297,13 +348,18 @@ export const createCourse = TryCatchFunction(async (req, res) => {
 
   // Check subscription limits and expiration
   try {
-    const { checkSubscriptionLimit, validateSubscriptionStatus } = await import("./tutorSubscription.js");
-    
+    const { checkSubscriptionLimit, validateSubscriptionStatus } = await import(
+      "./tutorSubscription.js"
+    );
+
     // Determine tutor type
     let tutorType;
     if (userType === "sole_tutor") {
       tutorType = "sole_tutor";
-    } else if (userType === "organization" || userType === "organization_user") {
+    } else if (
+      userType === "organization" ||
+      userType === "organization_user"
+    ) {
       tutorType = "organization";
       if (userType === "organization_user") {
         tutorId = tutor.organization_id;
@@ -319,7 +375,11 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     }
 
     // Check subscription limit for courses
-    const limitCheck = await checkSubscriptionLimit(tutorId, tutorType, "course");
+    const limitCheck = await checkSubscriptionLimit(
+      tutorId,
+      tutorType,
+      "course"
+    );
     if (!limitCheck.allowed) {
       throw new ErrorClass(limitCheck.reason, 403);
     }
@@ -337,7 +397,10 @@ export const createCourse = TryCatchFunction(async (req, res) => {
   if (req.file) {
     const bucket = process.env.COURSES_BUCKET || "courses";
     const timestamp = Date.now();
-    const sanitizedFileName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const sanitizedFileName = req.file.originalname.replace(
+      /[^a-zA-Z0-9.-]/g,
+      "_"
+    );
     const ext = req.file.mimetype?.split("/")[1] || "jpg";
     const objectPath = `tutors/${tutorId}/images/${timestamp}_${sanitizedFileName}`;
 
@@ -379,35 +442,53 @@ export const createCourse = TryCatchFunction(async (req, res) => {
   });
 
   try {
-    // Check if course code already exists for this tutor (scoped to tutor's courses only)
-    // Only check uniqueness if course_code is provided and not empty
-    // Using transaction to ensure this check and insert are atomic
-    // Use case-insensitive comparison and exclude soft-deleted courses
     // Normalize course_code: treat null, undefined, empty string, and whitespace-only as "no code"
-    const normalizedCourseCode = course_code && typeof course_code === 'string' ? course_code.trim() : null;
-    
+    const normalizedCourseCode =
+      course_code && typeof course_code === "string"
+        ? course_code.trim()
+        : null;
+
+    // If tutor provided a code: must be at most 6 characters; then check uniqueness per tutor
+    let finalCourseCode;
     if (normalizedCourseCode && normalizedCourseCode.length > 0) {
+      if (normalizedCourseCode.length > COURSE_CODE_MAX_LENGTH) {
+        await transaction.rollback();
+        throw new ErrorClass(
+          `Course code must be at most ${COURSE_CODE_MAX_LENGTH} characters`,
+          400
+        );
+      }
       const trimmedCode = normalizedCourseCode.toUpperCase();
       const existingCourse = await Courses.findOne({
         where: {
           [Op.and]: [
             Sequelize.where(
-              Sequelize.fn('UPPER', Sequelize.col('course_code')),
+              Sequelize.fn("UPPER", Sequelize.col("course_code")),
               trimmedCode
             ),
             { owner_type: ownerType },
             { owner_id: ownerId },
-            { is_marketplace: true }, // Only check marketplace courses
+            { is_marketplace: true },
           ],
         },
         transaction,
-        paranoid: true, // Exclude soft-deleted courses (only check active courses)
+        paranoid: true,
       });
-
       if (existingCourse) {
         await transaction.rollback();
-        throw new ErrorClass("Course code already exists for your account", 409);
+        throw new ErrorClass(
+          "Course code already exists for your account",
+          409
+        );
       }
+      finalCourseCode = normalizedCourseCode;
+    } else {
+      // Auto-generate 6-char code unique per tutor
+      finalCourseCode = await generateUniqueCourseCodeForTutor(
+        ownerId,
+        ownerType,
+        transaction
+      );
     }
 
     // Validate program_id if provided
@@ -455,7 +536,9 @@ export const createCourse = TryCatchFunction(async (req, res) => {
           break; // Exit loop to handle error below
         }
         // Wait a bit before retrying (exponential backoff)
-        await new Promise((resolve) => setTimeout(resolve, 100 * (4 - retries)));
+        await new Promise((resolve) =>
+          setTimeout(resolve, 100 * (4 - retries))
+        );
       }
     }
 
@@ -474,13 +557,10 @@ export const createCourse = TryCatchFunction(async (req, res) => {
       }
     }
 
-    // Create course within transaction
-    // Normalize course_code: set to null if empty, undefined, or whitespace-only
-    const finalCourseCode = normalizedCourseCode && normalizedCourseCode.length > 0 ? normalizedCourseCode : null;
-    
+    // Create course within transaction (finalCourseCode already set above: from body or auto-generated)
     // Generate unique slug
     const slug = await generateCourseSlug(title.trim());
-    
+
     const course = await Courses.create(
       {
         title: title.trim(),
@@ -506,7 +586,9 @@ export const createCourse = TryCatchFunction(async (req, res) => {
         image_url: finalImageUrl,
         category: normalizedCategory,
         enrollment_limit: enrollment_limit ? parseInt(enrollment_limit) : null,
-        access_duration_days: access_duration_days ? parseInt(access_duration_days) : null,
+        access_duration_days: access_duration_days
+          ? parseInt(access_duration_days)
+          : null,
         date: new Date(),
       },
       { transaction }
@@ -613,7 +695,10 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
   if (marketplace_status === "published") {
     const newPrice = price ? parseFloat(price) : parseFloat(course.price || 0);
     if (newPrice <= 0) {
-      throw new ErrorClass("Published courses must have a price greater than 0", 400);
+      throw new ErrorClass(
+        "Published courses must have a price greater than 0",
+        400
+      );
     }
   }
 
@@ -641,7 +726,10 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
   if (access_duration_days !== undefined && access_duration_days !== null) {
     const durationNum = parseInt(access_duration_days);
     if (isNaN(durationNum) || durationNum <= 0) {
-      throw new ErrorClass("Access duration must be a positive number of days", 400);
+      throw new ErrorClass(
+        "Access duration must be a positive number of days",
+        400
+      );
     }
   }
 
@@ -658,7 +746,10 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
   if (req.file) {
     const bucket = process.env.COURSES_BUCKET || "courses";
     const timestamp = Date.now();
-    const sanitizedFileName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const sanitizedFileName = req.file.originalname.replace(
+      /[^a-zA-Z0-9.-]/g,
+      "_"
+    );
     const objectPath = `tutors/${tutorId}/images/${timestamp}_${sanitizedFileName}`;
 
     // Upload to Supabase
@@ -697,37 +788,6 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
     pricingType = priceNum === 0 ? "free" : "one_time";
   }
 
-  // Check course code uniqueness if changed (scoped to tutor's courses only)
-  // Use case-insensitive comparison and exclude soft-deleted courses
-  // Only check if course_code is provided and not empty
-  if (course_code !== undefined && course_code !== null && course_code.trim()) {
-    const trimmedCode = course_code.trim().toUpperCase();
-    const currentCode = course.course_code?.toUpperCase() || null;
-    
-    // Only check uniqueness if the code is actually changing
-    if (trimmedCode !== currentCode) {
-      const existingCourse = await Courses.findOne({
-        where: {
-          [Op.and]: [
-            Sequelize.where(
-              Sequelize.fn('UPPER', Sequelize.col('course_code')),
-              trimmedCode
-            ),
-            { owner_type: ownerType },
-            { owner_id: ownerId },
-            { is_marketplace: true },
-            { id: { [Op.ne]: parseInt(id) } }, // Exclude current course
-          ],
-        },
-        paranoid: true, // Exclude soft-deleted courses (only check active courses)
-      });
-
-      if (existingCourse) {
-        throw new ErrorClass("Course code already exists for your account", 409);
-      }
-    }
-  }
-
   // Update course
   const updateData = {};
   if (title !== undefined) {
@@ -737,9 +797,50 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
       updateData.slug = await generateCourseSlug(title.trim(), course.id);
     }
   }
+  // Course code: validate max 6 chars, uniqueness per tutor; or auto-generate when cleared
   if (course_code !== undefined) {
-    // Allow setting course_code to null/empty string to remove it
-    updateData.course_code = course_code && course_code.trim() ? course_code.trim() : null;
+    const trimmed =
+      course_code && typeof course_code === "string" ? course_code.trim() : "";
+    if (trimmed.length > 0) {
+      if (trimmed.length > COURSE_CODE_MAX_LENGTH) {
+        throw new ErrorClass(
+          `Course code must be at most ${COURSE_CODE_MAX_LENGTH} characters`,
+          400
+        );
+      }
+      const trimmedCode = trimmed.toUpperCase();
+      const currentCode = course.course_code?.toUpperCase() || null;
+      if (trimmedCode !== currentCode) {
+        const existingCourse = await Courses.findOne({
+          where: {
+            [Op.and]: [
+              Sequelize.where(
+                Sequelize.fn("UPPER", Sequelize.col("course_code")),
+                trimmedCode
+              ),
+              { owner_type: ownerType },
+              { owner_id: ownerId },
+              { is_marketplace: true },
+              { id: { [Op.ne]: parseInt(id) } },
+            ],
+          },
+          paranoid: true,
+        });
+        if (existingCourse) {
+          throw new ErrorClass(
+            "Course code already exists for your account",
+            409
+          );
+        }
+      }
+      updateData.course_code = trimmed;
+    } else {
+      // Empty/null: auto-generate a new 6-char code unique per tutor
+      updateData.course_code = await generateUniqueCourseCodeForTutor(
+        ownerId,
+        ownerType
+      );
+    }
   }
   if (course_unit !== undefined) updateData.course_unit = course_unit;
   if (price !== undefined) {
@@ -752,14 +853,23 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
   if (program_id !== undefined) updateData.program_id = program_id;
   if (faculty_id !== undefined) updateData.faculty_id = faculty_id;
   if (currency !== undefined) updateData.currency = currency;
-  if (marketplace_status !== undefined) updateData.marketplace_status = marketplace_status;
+  if (marketplace_status !== undefined)
+    updateData.marketplace_status = marketplace_status;
   if (description !== undefined) updateData.description = description.trim();
-  if (course_outline !== undefined) updateData.course_outline = course_outline.trim();
-  if (duration_days !== undefined) updateData.duration_days = duration_days ? parseInt(duration_days) : null;
+  if (course_outline !== undefined)
+    updateData.course_outline = course_outline.trim();
+  if (duration_days !== undefined)
+    updateData.duration_days = duration_days ? parseInt(duration_days) : null;
   if (image_url !== undefined || req.file) updateData.image_url = finalImageUrl;
   if (category !== undefined) updateData.category = normalizedCategory;
-  if (enrollment_limit !== undefined) updateData.enrollment_limit = enrollment_limit ? parseInt(enrollment_limit) : null;
-  if (access_duration_days !== undefined) updateData.access_duration_days = access_duration_days ? parseInt(access_duration_days) : null;
+  if (enrollment_limit !== undefined)
+    updateData.enrollment_limit = enrollment_limit
+      ? parseInt(enrollment_limit)
+      : null;
+  if (access_duration_days !== undefined)
+    updateData.access_duration_days = access_duration_days
+      ? parseInt(access_duration_days)
+      : null;
 
   await course.update(updateData);
 
@@ -878,7 +988,9 @@ export const updateCourseStatus = TryCatchFunction(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: `Course ${marketplace_status === "published" ? "published" : "unpublished"} successfully`,
+    message: `Course ${
+      marketplace_status === "published" ? "published" : "unpublished"
+    } successfully`,
     data: {
       course: {
         id: course.id,
@@ -888,4 +1000,3 @@ export const updateCourseStatus = TryCatchFunction(async (req, res) => {
     },
   });
 });
-

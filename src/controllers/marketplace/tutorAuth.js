@@ -38,7 +38,7 @@ export const registerSoleTutor = TryCatchFunction(async (req, res) => {
   if (!email || !password || !fname || !lname) {
     throw new ErrorClass(
       "Email, password, first name, and last name are required",
-      400,
+      400
     );
   }
 
@@ -54,6 +54,12 @@ export const registerSoleTutor = TryCatchFunction(async (req, res) => {
   // Hash password
   const hashedPassword = authService.hashPassword(password);
 
+  // Generate unique slug for public tutor page (from fname + lname)
+  const { generateTutorSlug } = await import(
+    "../../utils/productSlugHelper.js"
+  );
+  const slug = await generateTutorSlug(fname.trim(), lname.trim(), null);
+
   // Create tutor (status: pending - awaiting approval)
   const tutor = await SoleTutor.create({
     email: email.toLowerCase().trim(),
@@ -68,6 +74,7 @@ export const registerSoleTutor = TryCatchFunction(async (req, res) => {
     experience_years: experience_years || 0,
     address: address?.trim() || null,
     country: country?.trim() || null,
+    slug,
     status: "pending", // Requires admin approval
     verification_status: "unverified",
   });
@@ -180,28 +187,28 @@ export const soleTutorLogin = TryCatchFunction(async (req, res) => {
   if (tutor.status === "pending") {
     throw new ErrorClass(
       "Your account is pending approval. Please wait for admin approval.",
-      403,
+      403
     );
   }
 
   if (tutor.status === "rejected") {
     throw new ErrorClass(
       "Your account has been rejected. Please contact support.",
-      403,
+      403
     );
   }
 
   if (tutor.status === "suspended") {
     throw new ErrorClass(
       "Your account has been suspended. Please contact support.",
-      403,
+      403
     );
   }
 
   // Verify password
   const isPasswordValid = await authService.comparePassword(
     password,
-    tutor.password,
+    tutor.password
   );
 
   if (!isPasswordValid) {
@@ -222,8 +229,9 @@ export const soleTutorLogin = TryCatchFunction(async (req, res) => {
 
   // Check and auto-expire subscriptions if needed
   try {
-    const { checkSubscriptionExpiration } =
-      await import("./tutorSubscription.js");
+    const { checkSubscriptionExpiration } = await import(
+      "./tutorSubscription.js"
+    );
     await checkSubscriptionExpiration(tutor.id, "sole_tutor");
   } catch (error) {
     // If subscription tables don't exist, continue without checking
@@ -338,28 +346,28 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
   if (organization.status === "pending") {
     throw new ErrorClass(
       "Your organization account is pending approval. Please wait for admin approval.",
-      403,
+      403
     );
   }
 
   if (organization.status === "rejected") {
     throw new ErrorClass(
       "Your organization account has been rejected. Please contact support.",
-      403,
+      403
     );
   }
 
   if (organization.status === "suspended") {
     throw new ErrorClass(
       "Your organization account has been suspended. Please contact support.",
-      403,
+      403
     );
   }
 
   // Verify password
   const isPasswordValid = await authService.comparePassword(
     password,
-    organization.password,
+    organization.password
   );
 
   if (!isPasswordValid) {
@@ -380,8 +388,9 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
 
   // Check and auto-expire subscriptions if needed
   try {
-    const { checkSubscriptionExpiration } =
-      await import("./tutorSubscription.js");
+    const { checkSubscriptionExpiration } = await import(
+      "./tutorSubscription.js"
+    );
     await checkSubscriptionExpiration(organization.id, "organization");
   } catch (error) {
     // If subscription tables don't exist, continue without checking
@@ -504,7 +513,7 @@ export const organizationUserLogin = TryCatchFunction(async (req, res) => {
   if (orgUser.organization.status !== "active") {
     throw new ErrorClass(
       "Your organization account is not active. Please contact your organization admin.",
-      403,
+      403
     );
   }
 
@@ -512,21 +521,21 @@ export const organizationUserLogin = TryCatchFunction(async (req, res) => {
   if (orgUser.status === "suspended") {
     throw new ErrorClass(
       "Your account has been suspended. Please contact your organization admin.",
-      403,
+      403
     );
   }
 
   if (orgUser.status === "inactive") {
     throw new ErrorClass(
       "Your account is inactive. Please contact your organization admin.",
-      403,
+      403
     );
   }
 
   // Verify password
   const isPasswordValid = await authService.comparePassword(
     password,
-    orgUser.password,
+    orgUser.password
   );
 
   if (!isPasswordValid) {
@@ -644,28 +653,28 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
     if (tutor.status === "pending") {
       throw new ErrorClass(
         "Your account is pending approval. Please wait for admin approval.",
-        403,
+        403
       );
     }
 
     if (tutor.status === "rejected") {
       throw new ErrorClass(
         "Your account has been rejected. Please contact support.",
-        403,
+        403
       );
     }
 
     if (tutor.status === "suspended") {
       throw new ErrorClass(
         "Your account has been suspended. Please contact support.",
-        403,
+        403
       );
     }
 
     // Verify password
     const isPasswordValid = await authService.comparePassword(
       password,
-      tutor.password,
+      tutor.password
     );
 
     if (!isPasswordValid) {
@@ -677,8 +686,9 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
 
     // Check and auto-expire subscriptions if needed
     try {
-      const { checkSubscriptionExpiration } =
-        await import("./tutorSubscription.js");
+      const { checkSubscriptionExpiration } = await import(
+        "./tutorSubscription.js"
+      );
       await checkSubscriptionExpiration(tutor.id, "sole_tutor");
     } catch (error) {
       // If subscription tables don't exist, continue without checking
@@ -780,28 +790,28 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
     if (organization.status === "pending") {
       throw new ErrorClass(
         "Your organization account is pending approval. Please wait for admin approval.",
-        403,
+        403
       );
     }
 
     if (organization.status === "rejected") {
       throw new ErrorClass(
         "Your organization account has been rejected. Please contact support.",
-        403,
+        403
       );
     }
 
     if (organization.status === "suspended") {
       throw new ErrorClass(
         "Your organization account has been suspended. Please contact support.",
-        403,
+        403
       );
     }
 
     // Verify password
     const isPasswordValid = await authService.comparePassword(
       password,
-      organization.password,
+      organization.password
     );
 
     if (!isPasswordValid) {
@@ -813,8 +823,9 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
 
     // Check and auto-expire subscriptions if needed
     try {
-      const { checkSubscriptionExpiration } =
-        await import("./tutorSubscription.js");
+      const { checkSubscriptionExpiration } = await import(
+        "./tutorSubscription.js"
+      );
       await checkSubscriptionExpiration(organization.id, "organization");
     } catch (error) {
       // If subscription tables don't exist, continue without checking
@@ -915,7 +926,7 @@ async function sendTutorPasswordResetEmailAndLog(
   account,
   resetToken,
   resetUrl,
-  accountType,
+  accountType
 ) {
   const recipientEmail = account.email;
   const recipientName =
@@ -929,7 +940,7 @@ async function sendTutorPasswordResetEmailAndLog(
     result = await emailService.sendPasswordResetEmail(
       { email: recipientEmail, name: recipientName },
       resetToken,
-      resetUrl,
+      resetUrl
     );
   } catch (error) {
     console.error("❌ Error sending tutor password reset email:", {
@@ -948,7 +959,7 @@ async function sendTutorPasswordResetEmailAndLog(
     });
   } else {
     console.log(
-      `✅ Password reset email sent successfully to ${recipientEmail}`,
+      `✅ Password reset email sent successfully to ${recipientEmail}`
     );
   }
 
@@ -972,7 +983,7 @@ async function sendTutorPasswordResetEmailAndLog(
   } catch (logErr) {
     console.error(
       "Failed to log tutor password reset email to EmailLog:",
-      logErr.message,
+      logErr.message
     );
   }
 
@@ -1019,14 +1030,14 @@ export const requestPasswordResetSoleTutor = TryCatchFunction(
       tutor,
       resetToken,
       resetUrl,
-      "sole_tutor",
+      "sole_tutor"
     );
 
     res.status(200).json({
       success: true,
       message: "If the email exists, a password reset link has been sent.",
     });
-  },
+  }
 );
 
 /**
@@ -1069,14 +1080,14 @@ export const requestPasswordResetOrganization = TryCatchFunction(
       organization,
       resetToken,
       resetUrl,
-      "organization",
+      "organization"
     );
 
     res.status(200).json({
       success: true,
       message: "If the email exists, a password reset link has been sent.",
     });
-  },
+  }
 );
 
 /**
@@ -1120,7 +1131,7 @@ export const requestPasswordResetTutor = TryCatchFunction(async (req, res) => {
       soleTutor,
       resetToken,
       resetUrl,
-      "sole_tutor",
+      "sole_tutor"
     );
   } else {
     await organization.update({ password_reset_token: hashedToken });
@@ -1129,7 +1140,7 @@ export const requestPasswordResetTutor = TryCatchFunction(async (req, res) => {
       organization,
       resetToken,
       resetUrl,
-      "organization",
+      "organization"
     );
   }
 
@@ -1160,7 +1171,7 @@ export const resetPasswordSoleTutor = TryCatchFunction(async (req, res) => {
   if (!tutor) {
     throw new ErrorClass(
       "Invalid or expired reset token. Please request a new password reset.",
-      400,
+      400
     );
   }
 
@@ -1201,7 +1212,7 @@ export const resetPasswordOrganization = TryCatchFunction(async (req, res) => {
   if (!organization) {
     throw new ErrorClass(
       "Invalid or expired reset token. Please request a new password reset.",
-      400,
+      400
     );
   }
 

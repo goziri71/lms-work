@@ -65,7 +65,8 @@ export const SoleTutor = db.define(
       type: DataTypes.ENUM("pending", "active", "suspended", "rejected"),
       allowNull: false,
       defaultValue: "pending",
-      comment: "pending = awaiting approval, active = approved, suspended = temporarily disabled, rejected = application rejected",
+      comment:
+        "pending = awaiting approval, active = approved, suspended = temporarily disabled, rejected = application rejected",
     },
     verification_status: {
       type: DataTypes.ENUM("unverified", "verified", "rejected"),
@@ -77,7 +78,8 @@ export const SoleTutor = db.define(
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
       defaultValue: 0.0,
-      comment: "Available balance for payouts - legacy field (use wallet_balance_primary)",
+      comment:
+        "Available balance for payouts - legacy field (use wallet_balance_primary)",
     },
     wallet_balance_primary: {
       type: DataTypes.DECIMAL(10, 2),
@@ -169,6 +171,12 @@ export const SoleTutor = db.define(
       allowNull: true,
       defaultValue: "UTC",
     },
+    slug: {
+      type: DataTypes.STRING(120),
+      allowNull: true,
+      unique: true,
+      comment: "URL-friendly slug for public tutor page (e.g. jane-doe)",
+    },
     created_at: {
       type: DataTypes.DATE,
       allowNull: false,
@@ -191,6 +199,10 @@ export const SoleTutor = db.define(
         fields: ["email"],
       },
       {
+        unique: true,
+        fields: ["slug"],
+      },
+      {
         fields: ["status"],
       },
       {
@@ -199,4 +211,3 @@ export const SoleTutor = db.define(
     ],
   }
 );
-

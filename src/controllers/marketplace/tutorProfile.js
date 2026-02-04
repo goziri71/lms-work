@@ -42,6 +42,7 @@ export const getProfile = TryCatchFunction(async (req, res) => {
     profileData.country = tutor.country;
     profileData.timezone = tutor.timezone;
     profileData.profile_image = tutor.profile_image;
+    profileData.slug = tutor.slug ?? null;
   } else if (userType === "organization") {
     profileData.name = tutor.name;
     profileData.description = tutor.description;
@@ -97,13 +98,17 @@ export const updateProfile = TryCatchFunction(async (req, res) => {
     if (mname !== undefined) updateData.mname = mname?.trim() || null;
     if (phone !== undefined) updateData.phone = phone?.trim() || null;
     if (bio !== undefined) updateData.bio = bio?.trim() || null;
-    if (specialization !== undefined) updateData.specialization = specialization?.trim() || null;
-    if (qualifications !== undefined) updateData.qualifications = qualifications?.trim() || null;
-    if (experience_years !== undefined) updateData.experience_years = experience_years || 0;
+    if (specialization !== undefined)
+      updateData.specialization = specialization?.trim() || null;
+    if (qualifications !== undefined)
+      updateData.qualifications = qualifications?.trim() || null;
+    if (experience_years !== undefined)
+      updateData.experience_years = experience_years || 0;
     if (address !== undefined) updateData.address = address?.trim() || null;
     if (country !== undefined) updateData.country = country?.trim() || null;
     if (timezone !== undefined) updateData.timezone = timezone?.trim() || "UTC";
-    if (profile_image !== undefined) updateData.profile_image = profile_image || null;
+    if (profile_image !== undefined)
+      updateData.profile_image = profile_image || null;
 
     // Validation
     if (fname !== undefined && !fname) {
@@ -111,6 +116,17 @@ export const updateProfile = TryCatchFunction(async (req, res) => {
     }
     if (lname !== undefined && !lname) {
       throw new ErrorClass("Last name is required", 400);
+    }
+
+    // Set or update slug for public tutor page (when name changes or slug missing)
+    const nameChanged = fname !== undefined || lname !== undefined;
+    if (nameChanged || !tutor.slug) {
+      const { generateTutorSlug } = await import(
+        "../../utils/productSlugHelper.js"
+      );
+      const f = updateData.fname !== undefined ? updateData.fname : tutor.fname;
+      const l = updateData.lname !== undefined ? updateData.lname : tutor.lname;
+      updateData.slug = await generateTutorSlug(f, l, tutor.id);
     }
   } else if (userType === "organization") {
     const {
@@ -129,17 +145,22 @@ export const updateProfile = TryCatchFunction(async (req, res) => {
     } = req.body;
 
     if (name !== undefined) updateData.name = name?.trim();
-    if (description !== undefined) updateData.description = description?.trim() || null;
+    if (description !== undefined)
+      updateData.description = description?.trim() || null;
     if (website !== undefined) updateData.website = website?.trim() || null;
     if (logo !== undefined) updateData.logo = logo || null;
     if (phone !== undefined) updateData.phone = phone?.trim() || null;
     if (address !== undefined) updateData.address = address?.trim() || null;
     if (country !== undefined) updateData.country = country?.trim() || null;
-    if (registration_number !== undefined) updateData.registration_number = registration_number?.trim() || null;
+    if (registration_number !== undefined)
+      updateData.registration_number = registration_number?.trim() || null;
     if (tax_id !== undefined) updateData.tax_id = tax_id?.trim() || null;
-    if (contact_person !== undefined) updateData.contact_person = contact_person?.trim() || null;
-    if (contact_email !== undefined) updateData.contact_email = contact_email?.trim() || null;
-    if (contact_phone !== undefined) updateData.contact_phone = contact_phone?.trim() || null;
+    if (contact_person !== undefined)
+      updateData.contact_person = contact_person?.trim() || null;
+    if (contact_email !== undefined)
+      updateData.contact_email = contact_email?.trim() || null;
+    if (contact_phone !== undefined)
+      updateData.contact_phone = contact_phone?.trim() || null;
 
     // Validation
     if (name !== undefined && !name) {
@@ -193,7 +214,10 @@ export const changePassword = TryCatchFunction(async (req, res) => {
   const { current_password, new_password, confirm_password } = req.body;
 
   if (!current_password || !new_password || !confirm_password) {
-    throw new ErrorClass("Current password, new password, and confirmation are required", 400);
+    throw new ErrorClass(
+      "Current password, new password, and confirmation are required",
+      400
+    );
   }
 
   if (new_password !== confirm_password) {
@@ -201,11 +225,17 @@ export const changePassword = TryCatchFunction(async (req, res) => {
   }
 
   if (new_password.length < 8) {
-    throw new ErrorClass("New password must be at least 8 characters long", 400);
+    throw new ErrorClass(
+      "New password must be at least 8 characters long",
+      400
+    );
   }
 
   // Verify current password
-  const isPasswordValid = authService.comparePassword(current_password, tutor.password);
+  const isPasswordValid = authService.comparePassword(
+    current_password,
+    tutor.password
+  );
   if (!isPasswordValid) {
     throw new ErrorClass("Current password is incorrect", 401);
   }
@@ -291,4 +321,3 @@ export const updateSettings = TryCatchFunction(async (req, res) => {
     },
   });
 });
-

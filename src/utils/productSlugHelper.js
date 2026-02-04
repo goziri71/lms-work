@@ -6,6 +6,7 @@
 import { generateSlug, generateUniqueSlug } from "./slugGenerator.js";
 import { Op } from "sequelize";
 import { Courses } from "../models/course/courses.js";
+import { SoleTutor } from "../models/marketplace/soleTutor.js";
 import { EBooks } from "../models/marketplace/ebooks.js";
 import { DigitalDownloads } from "../models/marketplace/digitalDownloads.js";
 import { Community } from "../models/marketplace/community.js";
@@ -102,6 +103,26 @@ export async function generateMembershipSlug(name, excludeId = null) {
       where.id = { [Op.ne]: excludeId };
     }
     const existing = await Membership.findOne({ where });
+    return !!existing;
+  });
+}
+
+/**
+ * Generate unique slug for a sole tutor (from fname + lname)
+ */
+export async function generateTutorSlug(fname, lname, excludeId = null) {
+  const name = [fname, lname].filter(Boolean).join(" ").trim();
+  const baseSlug = generateSlug(name);
+  if (!baseSlug) {
+    return `tutor-${excludeId || Date.now()}`;
+  }
+
+  return await generateUniqueSlug(baseSlug, async (slug) => {
+    const where = { slug };
+    if (excludeId) {
+      where.id = { [Op.ne]: excludeId };
+    }
+    const existing = await SoleTutor.findOne({ where });
     return !!existing;
   });
 }

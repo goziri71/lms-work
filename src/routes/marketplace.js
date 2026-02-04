@@ -157,6 +157,7 @@ import {
   getSalesPageBySlug,
   getSalesPageAnalytics,
 } from "../controllers/public/salesPage.js";
+import { getTutorProductsBySlug } from "../controllers/public/tutorPublicStore.js";
 import {
   getFeaturedProducts,
   getTrendingProducts,
@@ -353,6 +354,9 @@ router.get("/store/products/:type/:id", getStoreProduct);
 // Public Sales Pages (No authentication required)
 router.get("/public/sales/:slug", getSalesPageBySlug);
 
+// Public Tutor Store - all products by sole tutor slug (No authentication required)
+router.get("/public/tutor/:slug/products", getTutorProductsBySlug);
+
 // Top Products (No authentication required)
 router.get("/products/featured", getFeaturedProducts);
 router.get("/products/trending", getTrendingProducts);
@@ -377,31 +381,31 @@ router.post(
   "/tutor/kyc",
   tutorAuthorize,
   uploadKycDocumentsMiddleware,
-  submitKyc,
+  submitKyc
 );
 router.put(
   "/tutor/kyc",
   tutorAuthorize,
   uploadKycDocumentsMiddleware,
-  submitKyc,
+  submitKyc
 );
 
 // Google Drive Integration (Tutor authenticated)
 router.get(
   "/google-drive/connect",
   tutorAuthorize,
-  initiateGoogleDriveConnection,
+  initiateGoogleDriveConnection
 );
 router.get("/google-drive/callback", tutorAuthorize, handleGoogleDriveCallback);
 router.get(
   "/google-drive/connection",
   tutorAuthorize,
-  getGoogleDriveConnection,
+  getGoogleDriveConnection
 );
 router.delete(
   "/google-drive/connection",
   tutorAuthorize,
-  disconnectGoogleDrive,
+  disconnectGoogleDrive
 );
 router.get("/google-drive/files", tutorAuthorize, listGoogleDriveFiles);
 router.post("/google-drive/import", tutorAuthorize, importGoogleDriveFiles);
@@ -434,19 +438,19 @@ router.post("/password/reset/request", requestPasswordResetTutor);
 // Legacy: type-specific endpoints (still supported)
 router.post(
   "/password/reset-request/sole-tutor",
-  requestPasswordResetSoleTutor,
+  requestPasswordResetSoleTutor
 );
 router.post(
   "/password/reset/request/sole-tutor",
-  requestPasswordResetSoleTutor,
+  requestPasswordResetSoleTutor
 );
 router.post(
   "/password/reset-request/organization",
-  requestPasswordResetOrganization,
+  requestPasswordResetOrganization
 );
 router.post(
   "/password/reset/request/organization",
-  requestPasswordResetOrganization,
+  requestPasswordResetOrganization
 );
 router.post("/password/reset/sole-tutor", resetPasswordSoleTutor);
 router.post("/password/reset/organization", resetPasswordOrganization);
@@ -493,18 +497,18 @@ router.get("/digital-downloads", authorize, browseDigitalDownloads);
 router.get(
   "/digital-downloads/my-downloads",
   authorize,
-  getStudentDigitalDownloads,
+  getStudentDigitalDownloads
 );
 router.post("/digital-downloads/purchase", authorize, purchaseDigitalDownload);
 router.post(
   "/digital-downloads/:id/download-url",
   authorize,
-  getDigitalDownloadUrl,
+  getDigitalDownloadUrl
 );
 router.post(
   "/digital-downloads/:id/stream-url",
   authorize,
-  getDigitalDownloadStreamUrl,
+  getDigitalDownloadStreamUrl
 );
 router.get("/digital-downloads/:id/preview-url", getDigitalDownloadPreviewUrl);
 router.get("/digital-downloads/:id", authorize, getStudentDigitalDownloadById);
@@ -513,12 +517,12 @@ router.get("/digital-downloads/:id", authorize, getStudentDigitalDownloadById);
 router.post(
   "/digital-downloads/:id/read-session",
   authorize,
-  createReadSession,
+  createReadSession
 );
 router.put(
   "/digital-downloads/:id/read-session",
   authorize,
-  updateReadProgress,
+  updateReadProgress
 );
 router.get("/digital-downloads/:id/read-session", authorize, getReadProgress);
 router.get("/digital-downloads/:id/read", streamReadOnlyDocument); // Public endpoint with token
@@ -555,13 +559,13 @@ router.post(
   "/tutor/courses",
   tutorAuthorize,
   uploadCourseImageMiddleware,
-  createCourse,
+  createCourse
 );
 router.put(
   "/tutor/courses/:id",
   tutorAuthorize,
   uploadCourseImageMiddleware,
-  updateCourse,
+  updateCourse
 );
 router.delete("/tutor/courses/:id", tutorAuthorize, deleteCourse);
 router.patch("/tutor/courses/:id/status", tutorAuthorize, updateCourseStatus);
@@ -572,7 +576,7 @@ router.get("/tutor/earnings/transactions", tutorAuthorize, getTransactions);
 router.get(
   "/tutor/earnings/transactions/:id",
   tutorAuthorize,
-  getTransactionById,
+  getTransactionById
 );
 
 // Wallet Management
@@ -587,7 +591,7 @@ router.get("/tutor/wallet/convert/rate", tutorAuthorize, getConversionRate);
 router.get(
   "/tutor/wallet/convert/history",
   tutorAuthorize,
-  getConversionHistory,
+  getConversionHistory
 );
 
 // Metadata (Faculties & Programs for course creation)
@@ -599,7 +603,7 @@ router.post("/tutor/courses/:courseId/modules", tutorAuthorize, createModule);
 router.get(
   "/tutor/courses/:courseId/modules",
   tutorAuthorize,
-  getModulesByCourse,
+  getModulesByCourse
 );
 router.patch("/tutor/modules/:moduleId", tutorAuthorize, updateModule);
 router.delete("/tutor/modules/:moduleId", tutorAuthorize, deleteModule);
@@ -611,7 +615,7 @@ router.post(
   "/tutor/modules/:moduleId/units/:unitId/video",
   tutorAuthorize,
   uploadVideoMiddleware,
-  uploadUnitVideo,
+  uploadUnitVideo
 );
 
 // E-Book Management (Tutor) - Legacy (kept for backward compatibility)
@@ -625,59 +629,59 @@ router.post(
   "/tutor/ebooks/upload-pdf",
   tutorAuthorize,
   uploadPDFMiddleware,
-  uploadEBookPDF,
+  uploadEBookPDF
 );
 router.post(
   "/tutor/ebooks/upload-cover",
   tutorAuthorize,
   uploadCoverImageMiddleware,
-  uploadEBookCover,
+  uploadEBookCover
 );
 
 // Digital Downloads Management (Tutor) - New (supports all product types)
 router.get(
   "/tutor/digital-downloads",
   tutorAuthorize,
-  getTutorDigitalDownloads,
+  getTutorDigitalDownloads
 );
 router.get(
   "/tutor/digital-downloads/:id",
   tutorAuthorize,
-  getTutorDigitalDownloadById,
+  getTutorDigitalDownloadById
 );
 router.post("/tutor/digital-downloads", tutorAuthorize, createDigitalDownload);
 router.put(
   "/tutor/digital-downloads/:id",
   tutorAuthorize,
-  updateDigitalDownload,
+  updateDigitalDownload
 );
 router.delete(
   "/tutor/digital-downloads/:id",
   tutorAuthorize,
-  deleteDigitalDownload,
+  deleteDigitalDownload
 );
 router.patch(
   "/tutor/digital-downloads/:id/status",
   tutorAuthorize,
-  updateDigitalDownloadStatus,
+  updateDigitalDownloadStatus
 );
 router.post(
   "/tutor/digital-downloads/upload-file",
   tutorAuthorize,
   uploadDigitalDownloadFileMiddleware,
-  uploadDigitalDownloadFile,
+  uploadDigitalDownloadFile
 );
 router.post(
   "/tutor/digital-downloads/upload-cover",
   tutorAuthorize,
   uploadDigitalDownloadCoverMiddleware,
-  uploadDigitalDownloadCover,
+  uploadDigitalDownloadCover
 );
 router.post(
   "/tutor/digital-downloads/upload-preview",
   tutorAuthorize,
   uploadPreviewFileMiddleware,
-  uploadDigitalDownloadPreview,
+  uploadDigitalDownloadPreview
 );
 
 // ============================================
@@ -687,43 +691,43 @@ router.get(
   "/tutor/organization/users",
   tutorAuthorize,
   requireOrganization,
-  getOrganizationUsers,
+  getOrganizationUsers
 );
 router.get(
   "/tutor/organization/users/stats",
   tutorAuthorize,
   requireOrganization,
-  getOrganizationUsersStats,
+  getOrganizationUsersStats
 );
 router.get(
   "/tutor/organization/users/:id",
   tutorAuthorize,
   requireOrganization,
-  getOrganizationUserById,
+  getOrganizationUserById
 );
 router.post(
   "/tutor/organization/users",
   tutorAuthorize,
   requireOrganization,
-  createOrganizationUser,
+  createOrganizationUser
 );
 router.put(
   "/tutor/organization/users/:id",
   tutorAuthorize,
   requireOrganization,
-  updateOrganizationUser,
+  updateOrganizationUser
 );
 router.delete(
   "/tutor/organization/users/:id",
   tutorAuthorize,
   requireOrganization,
-  deleteOrganizationUser,
+  deleteOrganizationUser
 );
 router.post(
   "/tutor/organization/users/:id/reset-password",
   tutorAuthorize,
   requireOrganization,
-  resetOrganizationUserPassword,
+  resetOrganizationUserPassword
 );
 
 // ============================================
@@ -741,7 +745,7 @@ router.post("/tutor/coaching/purchase-hours", tutorAuthorize, purchaseHours);
 router.get(
   "/tutor/coaching/purchase-history",
   tutorAuthorize,
-  getPurchaseHistory,
+  getPurchaseHistory
 );
 
 // ============================================
@@ -751,14 +755,14 @@ router.post(
   "/tutor/coaching/sessions",
   tutorAuthorize,
   uploadCoachingImageMiddleware,
-  createSession,
+  createSession
 );
 router.get("/tutor/coaching/sessions", tutorAuthorize, listSessions);
 router.get("/tutor/coaching/sessions/:id", tutorAuthorize, getSession);
 router.post(
   "/tutor/coaching/sessions/:id/invite",
   tutorAuthorize,
-  inviteStudents,
+  inviteStudents
 );
 router.post("/tutor/coaching/sessions/:id/start", tutorAuthorize, startSession);
 router.post("/tutor/coaching/sessions/:id/end", tutorAuthorize, endSession);
@@ -775,12 +779,12 @@ router.get("/coaching/sessions/:id", optionalAuthorize, getSessionDetails);
 router.post(
   "/coaching/sessions/:id/purchase",
   authorize,
-  purchaseSessionAccess,
+  purchaseSessionAccess
 );
 router.post(
   "/coaching/sessions/:id/join-token",
   authorize,
-  getStudentJoinToken,
+  getStudentJoinToken
 );
 router.get("/coaching/my-sessions", authorize, getMySessions);
 
@@ -788,12 +792,12 @@ router.get("/coaching/my-sessions", authorize, getMySessions);
 router.get(
   "/coaching/sessions/:sessionId/messages",
   authorize,
-  getSessionMessages,
+  getSessionMessages
 );
 router.put(
   "/coaching/sessions/:sessionId/messages/read",
   authorize,
-  markMessagesAsRead,
+  markMessagesAsRead
 );
 
 // COMMUNITY MANAGEMENT
@@ -801,7 +805,7 @@ router.post(
   "/tutor/communities",
   tutorAuthorize,
   uploadCommunityMediaMiddleware,
-  createCommunity,
+  createCommunity
 );
 router.get("/tutor/communities", tutorAuthorize, getMyCommunities);
 router.get("/tutor/communities/:id", tutorAuthorize, getCommunity);
@@ -809,7 +813,7 @@ router.put(
   "/tutor/communities/:id",
   tutorAuthorize,
   uploadCommunityImageMiddleware,
-  updateCommunity,
+  updateCommunity
 );
 router.delete("/tutor/communities/:id", tutorAuthorize, deleteCommunity);
 
@@ -817,7 +821,7 @@ router.delete("/tutor/communities/:id", tutorAuthorize, deleteCommunity);
 router.post(
   "/communities/:id/subscribe",
   authorize,
-  purchaseCommunitySubscription,
+  purchaseCommunitySubscription
 );
 
 // COMMUNITY CONTENT (Posts, Comments, Files)
@@ -825,7 +829,7 @@ router.post(
   "/communities/:id/posts",
   authorize,
   uploadPostImageMiddleware,
-  createPost,
+  createPost
 );
 router.get("/communities/:id/posts", optionalAuthorize, getPosts);
 router.get("/communities/:id/posts/:postId", optionalAuthorize, getPost);
@@ -833,24 +837,24 @@ router.put(
   "/communities/:id/posts/:postId",
   authorize,
   uploadPostImageMiddleware,
-  updatePost,
+  updatePost
 );
 router.delete("/communities/:id/posts/:postId", authorize, deletePost);
 router.post(
   "/communities/:id/posts/:postId/comments",
   authorize,
-  createComment,
+  createComment
 );
 router.get(
   "/communities/:id/posts/:postId/comments",
   optionalAuthorize,
-  getComments,
+  getComments
 );
 router.post(
   "/communities/:id/files",
   authorize,
   uploadCommunityFileMiddleware,
-  uploadFile,
+  uploadFile
 );
 router.get("/communities/:id/files", authorize, getFiles);
 router.delete("/communities/:id/files/:fileId", authorize, deleteFile);
@@ -863,42 +867,42 @@ router.get("/communities/:id/reactions", optionalAuthorize, getReactions);
 router.post(
   "/tutor/communities/:id/audio-sessions",
   tutorAuthorize,
-  createAudioSession,
+  createAudioSession
 );
 router.get(
   "/tutor/communities/:id/audio-sessions",
   tutorAuthorize,
-  getTutorAudioSessions,
+  getTutorAudioSessions
 );
 router.get(
   "/communities/:id/audio-sessions",
   optionalAuthorize,
-  getAudioSessions,
+  getAudioSessions
 );
 router.get(
   "/communities/:id/audio-sessions/:sessionId",
   optionalAuthorize,
-  getAudioSession,
+  getAudioSession
 );
 router.post(
   "/tutor/communities/:id/audio-sessions/:sessionId/start",
   tutorAuthorize,
-  startAudioSession,
+  startAudioSession
 );
 router.post(
   "/tutor/communities/:id/audio-sessions/:sessionId/end",
   tutorAuthorize,
-  endAudioSession,
+  endAudioSession
 );
 router.post(
   "/communities/:id/audio-sessions/:sessionId/join-token",
   authorize,
-  getCommunityAudioJoinToken,
+  getCommunityAudioJoinToken
 );
 router.delete(
   "/tutor/communities/:id/audio-sessions/:sessionId",
   tutorAuthorize,
-  cancelAudioSession,
+  cancelAudioSession
 );
 
 // COMMUNITY MEMBER MANAGEMENT
@@ -906,27 +910,27 @@ router.get("/tutor/communities/:id/members", tutorAuthorize, getMembers);
 router.get(
   "/tutor/communities/:id/members/:memberId",
   tutorAuthorize,
-  getMember,
+  getMember
 );
 router.put(
   "/tutor/communities/:id/members/:memberId/role",
   tutorAuthorize,
-  updateMemberRole,
+  updateMemberRole
 );
 router.put(
   "/tutor/communities/:id/members/:memberId/block",
   tutorAuthorize,
-  blockMember,
+  blockMember
 );
 router.put(
   "/tutor/communities/:id/members/:memberId/unblock",
   tutorAuthorize,
-  unblockMember,
+  unblockMember
 );
 router.delete(
   "/tutor/communities/:id/members/:memberId",
   tutorAuthorize,
-  removeMember,
+  removeMember
 );
 
 // ============================================
@@ -939,7 +943,7 @@ router.post("/tutor/bank-accounts/:id/verify", tutorAuthorize, verifyAccount);
 router.put(
   "/tutor/bank-accounts/:id/set-primary",
   tutorAuthorize,
-  setPrimaryAccount,
+  setPrimaryAccount
 );
 router.put("/tutor/bank-accounts/:id", tutorAuthorize, updateBankAccount);
 router.delete("/tutor/bank-accounts/:id", tutorAuthorize, deleteBankAccount);
@@ -957,7 +961,7 @@ router.post(
   "/tutor/memberships",
   tutorAuthorize,
   uploadMembershipImageMiddleware,
-  createMembership,
+  createMembership
 );
 router.get("/tutor/memberships", tutorAuthorize, getMyMemberships);
 router.get("/tutor/memberships/:id", tutorAuthorize, getMembership);
@@ -965,17 +969,17 @@ router.put(
   "/tutor/memberships/:id",
   tutorAuthorize,
   uploadMembershipImageMiddleware,
-  updateMembership,
+  updateMembership
 );
 router.post(
   "/tutor/memberships/:id/products",
   tutorAuthorize,
-  addProductToMembership,
+  addProductToMembership
 );
 router.delete(
   "/tutor/memberships/:id/products/:productId",
   tutorAuthorize,
-  removeProductFromMembership,
+  removeProductFromMembership
 );
 router.delete("/tutor/memberships/:id", tutorAuthorize, deleteMembership);
 
@@ -989,22 +993,22 @@ router.put("/tutor/memberships/:id/tiers/:tierId", tutorAuthorize, updateTier);
 router.delete(
   "/tutor/memberships/:id/tiers/:tierId",
   tutorAuthorize,
-  deleteTier,
+  deleteTier
 );
 router.post(
   "/tutor/memberships/:id/tiers/products",
   tutorAuthorize,
-  bulkAssignProductsToTiers,
+  bulkAssignProductsToTiers
 );
 router.post(
   "/tutor/memberships/:id/tiers/:tierId/products",
   tutorAuthorize,
-  addProductToTier,
+  addProductToTier
 );
 router.delete(
   "/tutor/memberships/:id/tiers/:tierId/products/:productId",
   tutorAuthorize,
-  removeProductFromTier,
+  removeProductFromTier
 );
 
 // ============================================
@@ -1020,7 +1024,7 @@ router.post("/memberships/:id/cancel", authorize, cancelSubscription);
 router.get(
   "/products/:productType/:productId/access",
   authorize,
-  checkProductAccessEndpoint,
+  checkProductAccessEndpoint
 );
 
 // Store Cart Management (Student authentication optional for guest carts)
@@ -1042,13 +1046,13 @@ router.post(
   "/tutor/sales-pages/upload-hero-image",
   tutorAuthorize,
   uploadHeroImageMiddleware,
-  uploadHeroImage,
+  uploadHeroImage
 );
 router.post(
   "/tutor/sales-pages/upload-hero-video",
   tutorAuthorize,
   uploadHeroVideoMiddleware,
-  uploadHeroVideo,
+  uploadHeroVideo
 );
 
 // Sales Page CRUD
@@ -1060,7 +1064,7 @@ router.delete("/tutor/sales-pages/:id", tutorAuthorize, deleteSalesPage);
 router.get(
   "/tutor/sales-pages/:id/analytics",
   tutorAuthorize,
-  getSalesPageAnalytics,
+  getSalesPageAnalytics
 );
 
 router.get("/tutor/payouts/:id", tutorAuthorize, getPayout);
@@ -1071,12 +1075,12 @@ router.get("/tutor/learners/:learnerId", tutorAuthorize, getLearnerDetails);
 router.get(
   "/tutor/learners/:learnerId/activity",
   tutorAuthorize,
-  getLearnerActivity,
+  getLearnerActivity
 );
 router.get(
   "/tutor/learners/:learnerId/courses/:courseId/progress",
   tutorAuthorize,
-  getLearnerCourseProgress,
+  getLearnerCourseProgress
 );
 
 export default router;
