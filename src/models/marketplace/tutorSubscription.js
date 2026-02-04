@@ -20,7 +20,13 @@ export const TutorSubscription = db.define(
       comment: "Type of tutor account",
     },
     subscription_tier: {
-      type: DataTypes.ENUM("free", "basic", "professional", "expert", "grand_master"),
+      type: DataTypes.ENUM(
+        "free",
+        "basic",
+        "professional",
+        "expert",
+        "grand_master"
+      ),
       allowNull: false,
       defaultValue: "free",
       comment: "Subscription tier level",
@@ -120,7 +126,7 @@ export const SUBSCRIPTION_TIERS = {
     name: "Professional",
     price: 99,
     courses_limit: 25,
-    communities_limit: 1,
+    communities_limit: 3,
     community_member_limit: 30,
     digital_downloads_limit: 10,
     memberships_limit: 3,
@@ -131,7 +137,7 @@ export const SUBSCRIPTION_TIERS = {
     name: "Expert",
     price: 249,
     courses_limit: 100,
-    communities_limit: 3,
+    communities_limit: 5,
     community_member_limit: 50,
     digital_downloads_limit: 20,
     memberships_limit: 5,
@@ -150,4 +156,3 @@ export const SUBSCRIPTION_TIERS = {
     commission_rate: 10.0,
   },
 };
-
