@@ -319,6 +319,7 @@ import {
   bulkAssignProductsToTiers,
   addProductToTier,
   removeProductFromTier,
+  parseTierFormMiddleware,
 } from "../controllers/marketplace/membershipTierManagement.js";
 import {
   browseMemberships,
@@ -1001,7 +1002,12 @@ router.delete("/tutor/memberships/:id", tutorAuthorize, deleteMembership);
 router.post("/tutor/memberships/:id/tiers", tutorAuthorize, createTier);
 router.get("/tutor/memberships/:id/tiers", tutorAuthorize, getMembershipTiers);
 router.get("/tutor/memberships/:id/tiers/:tierId", tutorAuthorize, getTier);
-router.put("/tutor/memberships/:id/tiers/:tierId", tutorAuthorize, updateTier);
+router.put(
+  "/tutor/memberships/:id/tiers/:tierId",
+  tutorAuthorize,
+  parseTierFormMiddleware,
+  updateTier
+);
 router.delete(
   "/tutor/memberships/:id/tiers/:tierId",
   tutorAuthorize,

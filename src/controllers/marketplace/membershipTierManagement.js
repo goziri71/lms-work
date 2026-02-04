@@ -3,11 +3,22 @@
  * Handles CRUD operations for membership tiers by tutors
  */
 
+import multer from "multer";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
-import { Membership, MembershipTier, MembershipTierProduct } from "../../models/marketplace/index.js";
-import { checkSubscriptionLimit, validateSubscriptionStatus } from "./tutorSubscription.js";
+import {
+  Membership,
+  MembershipTier,
+  MembershipTierProduct,
+} from "../../models/marketplace/index.js";
+import {
+  checkSubscriptionLimit,
+  validateSubscriptionStatus,
+} from "./tutorSubscription.js";
 import { Op } from "sequelize";
+
+/** Parse multipart form body for tier update (no file) - so FormData from frontend populates req.body */
+export const parseTierFormMiddleware = multer().none();
 import { Courses } from "../../models/course/courses.js";
 import { EBooks } from "../../models/marketplace/ebooks.js";
 import { DigitalDownloads } from "../../models/marketplace/digitalDownloads.js";
@@ -40,38 +51,78 @@ function getTutorInfo(req) {
 /**
  * Validate product ownership
  */
-async function validateProductOwnership(tutorId, tutorType, productType, productId) {
+async function validateProductOwnership(
+  tutorId,
+  tutorType,
+  productType,
+  productId
+) {
   const ownerType = tutorType === "sole_tutor" ? "sole_tutor" : "organization";
 
   switch (productType) {
     case "course":
       const course = await Courses.findByPk(productId);
-      if (!course || course.owner_id !== tutorId || course.owner_type !== ownerType) {
-        throw new ErrorClass(`Course ${productId} not found or does not belong to you`, 404);
+      if (
+        !course ||
+        course.owner_id !== tutorId ||
+        course.owner_type !== ownerType
+      ) {
+        throw new ErrorClass(
+          `Course ${productId} not found or does not belong to you`,
+          404
+        );
       }
       break;
     case "ebook":
       const ebook = await EBooks.findByPk(productId);
-      if (!ebook || ebook.owner_id !== tutorId || ebook.owner_type !== ownerType) {
-        throw new ErrorClass(`Ebook ${productId} not found or does not belong to you`, 404);
+      if (
+        !ebook ||
+        ebook.owner_id !== tutorId ||
+        ebook.owner_type !== ownerType
+      ) {
+        throw new ErrorClass(
+          `Ebook ${productId} not found or does not belong to you`,
+          404
+        );
       }
       break;
     case "digital_download":
       const download = await DigitalDownloads.findByPk(productId);
-      if (!download || download.owner_id !== tutorId || download.owner_type !== ownerType) {
-        throw new ErrorClass(`Digital download ${productId} not found or does not belong to you`, 404);
+      if (
+        !download ||
+        download.owner_id !== tutorId ||
+        download.owner_type !== ownerType
+      ) {
+        throw new ErrorClass(
+          `Digital download ${productId} not found or does not belong to you`,
+          404
+        );
       }
       break;
     case "coaching_session":
       const session = await CoachingSession.findByPk(productId);
-      if (!session || session.tutor_id !== tutorId || session.tutor_type !== tutorType) {
-        throw new ErrorClass(`Coaching session ${productId} not found or does not belong to you`, 404);
+      if (
+        !session ||
+        session.tutor_id !== tutorId ||
+        session.tutor_type !== tutorType
+      ) {
+        throw new ErrorClass(
+          `Coaching session ${productId} not found or does not belong to you`,
+          404
+        );
       }
       break;
     case "community":
       const community = await Community.findByPk(productId);
-      if (!community || community.tutor_id !== tutorId || community.tutor_type !== tutorType) {
-        throw new ErrorClass(`Community ${productId} not found or does not belong to you`, 404);
+      if (
+        !community ||
+        community.tutor_id !== tutorId ||
+        community.tutor_type !== tutorType
+      ) {
+        throw new ErrorClass(
+          `Community ${productId} not found or does not belong to you`,
+          404
+        );
       }
       break;
     default:
@@ -129,7 +180,10 @@ export const createTier = TryCatchFunction(async (req, res) => {
   });
 
   if (existingTier) {
-    throw new ErrorClass(`Tier name "${tier_name}" already exists for this membership`, 400);
+    throw new ErrorClass(
+      `Tier name "${tier_name}" already exists for this membership`,
+      400
+    );
   }
 
   // Validate at least one price is provided
@@ -138,7 +192,10 @@ export const createTier = TryCatchFunction(async (req, res) => {
   const hasLifetime = lifetime_price !== undefined && lifetime_price !== null;
 
   if (!hasMonthly && !hasYearly && !hasLifetime) {
-    throw new ErrorClass("At least one pricing option (monthly, yearly, or lifetime) must be provided", 400);
+    throw new ErrorClass(
+      "At least one pricing option (monthly, yearly, or lifetime) must be provided",
+      400
+    );
   }
 
   // Validate prices are non-negative
@@ -202,10 +259,20 @@ export const getMembershipTiers = TryCatchFunction(async (req, res) => {
       {
         model: MembershipTierProduct,
         as: "products",
-        attributes: ["id", "product_type", "product_id", "monthly_access_level", "yearly_access_level", "lifetime_access_level"],
+        attributes: [
+          "id",
+          "product_type",
+          "product_id",
+          "monthly_access_level",
+          "yearly_access_level",
+          "lifetime_access_level",
+        ],
       },
     ],
-    order: [["display_order", "ASC"], ["created_at", "ASC"]],
+    order: [
+      ["display_order", "ASC"],
+      ["created_at", "ASC"],
+    ],
   });
 
   res.json({
@@ -246,7 +313,14 @@ export const getTier = TryCatchFunction(async (req, res) => {
       {
         model: MembershipTierProduct,
         as: "products",
-        attributes: ["id", "product_type", "product_id", "monthly_access_level", "yearly_access_level", "lifetime_access_level"],
+        attributes: [
+          "id",
+          "product_type",
+          "product_id",
+          "monthly_access_level",
+          "yearly_access_level",
+          "lifetime_access_level",
+        ],
       },
     ],
   });
@@ -301,19 +375,23 @@ export const updateTier = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Tier not found", 404);
   }
 
-  const {
-    tier_name,
-    description,
-    monthly_price,
-    yearly_price,
-    lifetime_price,
-    currency,
-    display_order,
-    status,
-  } = req.body;
+  // Support both snake_case and camelCase (e.g. from JSON or FormData)
+  const body = req.body || {};
+  const tier_name = body.tier_name ?? body.tierName;
+  const description = body.description;
+  const monthly_price = body.monthly_price ?? body.monthlyPrice;
+  const yearly_price = body.yearly_price ?? body.yearlyPrice;
+  const lifetime_price = body.lifetime_price ?? body.lifetimePrice;
+  const currency = body.currency;
+  const display_order = body.display_order ?? body.displayOrder;
+  const status = body.status;
 
   // If tier name is being changed, check uniqueness
-  if (tier_name !== undefined && tier_name.trim() !== tier.tier_name) {
+  if (
+    tier_name !== undefined &&
+    tier_name !== null &&
+    String(tier_name).trim() !== tier.tier_name
+  ) {
     const existingTier = await MembershipTier.findOne({
       where: {
         membership_id: membershipId,
@@ -323,9 +401,12 @@ export const updateTier = TryCatchFunction(async (req, res) => {
     });
 
     if (existingTier) {
-      throw new ErrorClass(`Tier name "${tier_name}" already exists for this membership`, 400);
+      throw new ErrorClass(
+        `Tier name "${tier_name}" already exists for this membership`,
+        400
+      );
     }
-    tier.tier_name = tier_name.trim();
+    tier.tier_name = String(tier_name).trim();
   }
 
   if (description !== undefined) tier.description = description || null;
@@ -351,7 +432,8 @@ export const updateTier = TryCatchFunction(async (req, res) => {
     tier.lifetime_price = price;
   }
   if (currency !== undefined) tier.currency = currency;
-  if (display_order !== undefined) tier.display_order = parseInt(display_order) || 0;
+  if (display_order !== undefined)
+    tier.display_order = parseInt(display_order) || 0;
   if (status !== undefined) {
     if (!["active", "inactive"].includes(status)) {
       throw new ErrorClass("Status must be 'active' or 'inactive'", 400);
@@ -412,7 +494,9 @@ export const deleteTier = TryCatchFunction(async (req, res) => {
   }
 
   // Check if tier has active subscriptions
-  const { MembershipSubscription } = await import("../../models/marketplace/index.js");
+  const { MembershipSubscription } = await import(
+    "../../models/marketplace/index.js"
+  );
   const activeSubscriptions = await MembershipSubscription.count({
     where: {
       tier_id: tierId,
@@ -486,7 +570,10 @@ export const bulkAssignProductsToTiers = TryCatchFunction(async (req, res) => {
     }
 
     if (!Array.isArray(products) || products.length === 0) {
-      errors.push({ tier_id, error: "Products array is required and must not be empty" });
+      errors.push({
+        tier_id,
+        error: "Products array is required and must not be empty",
+      });
       continue;
     }
 
@@ -506,16 +593,31 @@ export const bulkAssignProductsToTiers = TryCatchFunction(async (req, res) => {
     const tierResults = [];
 
     for (const product of products) {
-      const { product_type, product_id, monthly_access_level, yearly_access_level, lifetime_access_level } = product;
+      const {
+        product_type,
+        product_id,
+        monthly_access_level,
+        yearly_access_level,
+        lifetime_access_level,
+      } = product;
 
       if (!product_type || !product_id) {
-        errors.push({ tier_id, product, error: "product_type and product_id are required" });
+        errors.push({
+          tier_id,
+          product,
+          error: "product_type and product_id are required",
+        });
         continue;
       }
 
       try {
         // Validate product ownership
-        await validateProductOwnership(tutorId, tutorType, product_type, product_id);
+        await validateProductOwnership(
+          tutorId,
+          tutorType,
+          product_type,
+          product_id
+        );
 
         // Check if product already exists in tier
         const existing = await MembershipTierProduct.findOne({
@@ -576,7 +678,13 @@ export const bulkAssignProductsToTiers = TryCatchFunction(async (req, res) => {
 export const addProductToTier = TryCatchFunction(async (req, res) => {
   const { tutorId, tutorType } = getTutorInfo(req);
   const { id: membershipId, tierId } = req.params;
-  const { product_type, product_id, monthly_access_level, yearly_access_level, lifetime_access_level } = req.body;
+  const {
+    product_type,
+    product_id,
+    monthly_access_level,
+    yearly_access_level,
+    lifetime_access_level,
+  } = req.body;
 
   if (!product_type || !product_id) {
     throw new ErrorClass("product_type and product_id are required", 400);
