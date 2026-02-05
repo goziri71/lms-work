@@ -70,5 +70,5 @@ export const Config = {
   },
 
   // Frontend URL for email links
-  frontendUrl: process.env.FRONTEND_URL || "https://pinnacleuniversity.co",
+  frontendUrl: process.env.FRONTEND_URL || "https://app.knomada.co",
 };

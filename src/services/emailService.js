@@ -122,7 +122,7 @@ class EmailService {
         userEmail: user.email,
         userType: userType,
         loginUrl: `${
-          Config.frontendUrl || "https://pinnacleuniversity.co"
+          Config.frontendUrl || "https://app.knomada.co"
         }/login`,
         currentYear: new Date().getFullYear(),
       });
@@ -130,7 +130,7 @@ class EmailService {
       return await this.sendEmail({
         to: user.email,
         name: user.name,
-        subject: "Welcome to LenerMe by WPUN",
+        subject: "Welcome to Knomada",
         htmlBody,
       });
     } catch (error) {
@@ -158,7 +158,7 @@ class EmailService {
       return await this.sendEmail({
         to: user.email,
         name: user.name,
-        subject: "Password Reset Request - LenerMe by WPUN",
+        subject: "Password Reset Request - Knomada",
         htmlBody,
       });
     } catch (error) {
@@ -181,7 +181,7 @@ class EmailService {
         instructor: course.instructor || "TBA",
         startDate: course.start_date || "To be announced",
         courseUrl: `${
-          Config.frontendUrl || "https://pinnacleuniversity.co"
+          Config.frontendUrl || "https://app.knomada.co"
         }/courses/${course.id}`,
         currentYear: new Date().getFullYear(),
       });
@@ -213,7 +213,7 @@ class EmailService {
         duration: exam.duration_minutes,
         courseName: exam.course?.title || "Your Course",
         examUrl: `${
-          Config.frontendUrl || "https://pinnacleuniversity.co"
+          Config.frontendUrl || "https://app.knomada.co"
         }/exams/${exam.id}`,
         currentYear: new Date().getFullYear(),
       });
@@ -246,7 +246,7 @@ class EmailService {
         totalScore: gradeInfo.totalScore,
         grade: gradeInfo.grade,
         viewUrl: `${
-          Config.frontendUrl || "https://pinnacleuniversity.co"
+          Config.frontendUrl || "https://app.knomada.co"
         }/grades`,
         currentYear: new Date().getFullYear(),
       });
@@ -278,7 +278,7 @@ class EmailService {
         roleDisplay: admin.role === "super_admin" ? "Super Admin" : "WSP Admin",
         isSuperAdmin: admin.role === "super_admin",
         loginUrl: `${
-          Config.frontendUrl || "https://pinnacleuniversity.co"
+          Config.frontendUrl || "https://app.knomada.co"
         }/admin/login`,
         currentYear: new Date().getFullYear(),
       });
@@ -303,10 +303,10 @@ class EmailService {
   async sendPasswordChangedEmail(user, changeInfo = {}) {
     try {
       const userType = changeInfo.userType || "student"; // student, staff, admin
-      let loginUrl = `${Config.frontendUrl || "https://pinnacleuniversity.co"}/login`;
+      let loginUrl = `${Config.frontendUrl || "https://app.knomada.co"}/login`;
       
       if (userType === "admin") {
-        loginUrl = `${Config.frontendUrl || "https://pinnacleuniversity.co"}/admin/login`;
+        loginUrl = `${Config.frontendUrl || "https://app.knomada.co"}/admin/login`;
       }
 
       const htmlBody = await renderTemplate("password-changed", {

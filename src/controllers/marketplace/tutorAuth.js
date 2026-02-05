@@ -933,7 +933,7 @@ async function sendTutorPasswordResetEmailAndLog(
     accountType === "sole_tutor"
       ? `${account.fname || ""} ${account.lname || ""}`.trim()
       : account.name || "Organization";
-  const subject = "Password Reset Request - LenerMe by WPUN";
+  const subject = "Password Reset Request - Knomada";
 
   let result;
   try {
@@ -1023,7 +1023,7 @@ export const requestPasswordResetSoleTutor = TryCatchFunction(
     });
 
     const resetUrl = `${
-      process.env.FRONTEND_URL || "https://app.lenerme.com"
+      process.env.FRONTEND_URL || "https://app.knomada.co"
     }/reset-password?token=${resetToken}&type=sole_tutor`;
 
     await sendTutorPasswordResetEmailAndLog(
@@ -1073,7 +1073,7 @@ export const requestPasswordResetOrganization = TryCatchFunction(
     });
 
     const resetUrl = `${
-      process.env.FRONTEND_URL || "https://app.lenerme.com"
+      process.env.FRONTEND_URL || "https://app.knomada.co"
     }/reset-password?token=${resetToken}&type=organization`;
 
     await sendTutorPasswordResetEmailAndLog(
@@ -1122,7 +1122,7 @@ export const requestPasswordResetTutor = TryCatchFunction(async (req, res) => {
     .update(resetToken)
     .digest("hex");
 
-  const frontendUrl = process.env.FRONTEND_URL || "https://app.lenerme.com";
+  const frontendUrl = process.env.FRONTEND_URL || "https://app.knomada.co";
 
   if (soleTutor) {
     await soleTutor.update({ password_reset_token: hashedToken });

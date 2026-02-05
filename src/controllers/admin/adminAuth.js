@@ -321,7 +321,7 @@ export const requestAdminPasswordReset = TryCatchFunction(async (req, res) => {
 
   // Create reset URL for admin (different from student/staff)
   const resetUrl = `https://${
-    process.env.ADMIN_FRONTEND_URL || "manage.lenerme.com"
+    process.env.ADMIN_FRONTEND_URL || "https://manage.knomada.co"
   }/reset-password?token=${resetToken}&type=admin`;
 
   // Send password reset email

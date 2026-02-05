@@ -730,7 +730,7 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
         recipient_email: student.email,
         recipient_name: `${student.fname} ${student.lname}`,
         email_type: "welcome",
-        subject: "Welcome to LenerMe by WPUN",
+        subject: "Welcome to Knomada",
         status: result.success ? "sent" : "failed",
         error_message: result.success ? null : result.message,
         sent_at: result.success ? new Date() : null,
@@ -832,7 +832,7 @@ export const registerStaff = TryCatchFunction(async (req, res) => {
         recipient_email: staff.email,
         recipient_name: `${staff.fname} ${staff.lname}`,
         email_type: "welcome",
-        subject: "Welcome to LenerMe by WPUN",
+        subject: "Welcome to Knomada",
         status: result.success ? "sent" : "failed",
         error_message: result.success ? null : result.message,
         sent_at: result.success ? new Date() : null,
@@ -907,7 +907,7 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
 
   // Create reset URL (adjust based on your frontend)
   const resetUrl = `${
-    process.env.FRONTEND_URL || "https://app.lenerme.com"
+    process.env.FRONTEND_URL || "https://app.knomada.co"
   }/reset-password?token=${resetToken}&type=${userType}`;
 
   // Send password reset email
@@ -929,7 +929,7 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
       recipient_email: user.email,
       recipient_name: `${user.fname} ${user.lname}`,
       email_type: "password_reset",
-      subject: "Password Reset Request - LenerMe by WPUN",
+      subject: "Password Reset Request - Knomada",
       status: result.success ? "sent" : "failed",
       error_message: result.success
         ? null
@@ -948,7 +948,7 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
     //   user_id: user.id,
     //   user_type: userType,
     //   email_type: "password_reset",
-    //   subject: "Password Reset Request - LenerMe by WPUN",
+    //   subject: "Password Reset Request - Knomada",
     //   status: result.success ? "sent" : "failed",
     //   error_message: result.success ? null : (result.message || JSON.stringify(result.error)),
     //   sent_at: result.success ? new Date() : null,
@@ -967,7 +967,7 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
         recipient_email: user.email,
         recipient_name: `${user.fname} ${user.lname}`,
         email_type: "password_reset",
-        subject: "Password Reset Request - LenerMe by WPUN",
+        subject: "Password Reset Request - Knomada",
         status: "failed",
         error_message: error.message || "Unknown error occurred",
         sent_at: null,

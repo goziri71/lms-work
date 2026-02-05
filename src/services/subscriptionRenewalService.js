@@ -170,7 +170,7 @@ async function renewSubscription(subscription) {
               </div>
               <p>Your subscription has been marked as expired. Please fund your wallet and renew your subscription to continue using premium features.</p>
               <div style="text-align: center; margin: 30px 0;">
-                <a href="${process.env.FRONTEND_URL || 'https://your-frontend-url.com'}/tutor/subscription" style="background-color: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                <a href="${process.env.FRONTEND_URL || 'https://app.knomada.co'}/tutor/subscription" style="background-color: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
                   Renew Subscription
                 </a>
               </div>
