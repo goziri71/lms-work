@@ -448,7 +448,7 @@ export const createCourse = TryCatchFunction(async (req, res) => {
         ? course_code.trim()
         : null;
 
-    // If tutor provided a code: must be at most 6 characters; then check uniqueness per tutor
+    // If tutor provided a code: must be at most 6 characters; check uniqueness, auto-generate if duplicate
     let finalCourseCode;
     if (normalizedCourseCode && normalizedCourseCode.length > 0) {
       if (normalizedCourseCode.length > COURSE_CODE_MAX_LENGTH) {
@@ -475,15 +475,17 @@ export const createCourse = TryCatchFunction(async (req, res) => {
         paranoid: true,
       });
       if (existingCourse) {
-        await transaction.rollback();
-        throw new ErrorClass(
-          "Course code already exists for your account",
-          409
+        // Duplicate detected - auto-generate a unique code instead of erroring
+        finalCourseCode = await generateUniqueCourseCodeForTutor(
+          ownerId,
+          ownerType,
+          transaction
         );
+      } else {
+        finalCourseCode = normalizedCourseCode;
       }
-      finalCourseCode = normalizedCourseCode;
     } else {
-      // Auto-generate 6-char code unique per tutor
+      // No code provided - auto-generate 6-char code unique per tutor
       finalCourseCode = await generateUniqueCourseCodeForTutor(
         ownerId,
         ownerType,
@@ -797,7 +799,7 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
       updateData.slug = await generateCourseSlug(title.trim(), course.id);
     }
   }
-  // Course code: validate max 6 chars, uniqueness per tutor; or auto-generate when cleared
+  // Course code: validate max 6 chars, uniqueness per tutor; auto-generate if duplicate or cleared
   if (course_code !== undefined) {
     const trimmed =
       course_code && typeof course_code === "string" ? course_code.trim() : "";
@@ -827,13 +829,17 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
           paranoid: true,
         });
         if (existingCourse) {
-          throw new ErrorClass(
-            "Course code already exists for your account",
-            409
+          // Duplicate detected - auto-generate a unique code instead of erroring
+          updateData.course_code = await generateUniqueCourseCodeForTutor(
+            ownerId,
+            ownerType
           );
+        } else {
+          updateData.course_code = trimmed;
         }
+      } else {
+        updateData.course_code = trimmed;
       }
-      updateData.course_code = trimmed;
     } else {
       // Empty/null: auto-generate a new 6-char code unique per tutor
       updateData.course_code = await generateUniqueCourseCodeForTutor(
