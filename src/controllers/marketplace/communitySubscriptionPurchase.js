@@ -234,21 +234,18 @@ export const purchaseCommunitySubscription = TryCatchFunction(async (req, res) =
       }
     }
 
-    // Record WSP commission
-    await WspCommission.create(
-      {
-        transaction_type: "community_subscription",
-        transaction_id: subscription.id,
-        tutor_id: tutorId,
-        tutor_type: tutorType,
-        amount: priceInStudentCurrency,
-        currency: studentCurrency,
-        commission_rate: commissionRate,
-        commission_amount: wspCommission,
-        status: "completed",
-      },
-      { transaction }
-    );
+    // Record WSP commission (only if there's a commission to record)
+    if (wspCommission > 0) {
+      await WspCommission.create(
+        {
+          transaction_id: subscription.id,
+          amount: wspCommission,
+          currency: studentCurrency,
+          status: "collected",
+        },
+        { transaction }
+      );
+    }
 
     await transaction.commit();
 
