@@ -367,14 +367,18 @@ router.get("/payments/:id", adminAuthorize, requireSuperAdmin, getPaymentTransac
 router.get("/tutors/sole-tutors", adminAuthorize, requireSuperAdmin, getAllSoleTutors);
 router.get("/tutors/sole-tutors/:id", adminAuthorize, requireSuperAdmin, getSoleTutorById);
 router.post("/tutors/sole-tutors/:id/approve", adminAuthorize, requireSuperAdmin, approveSoleTutor);
+router.patch("/tutors/sole-tutors/:id/approve", adminAuthorize, requireSuperAdmin, approveSoleTutor);
 router.post("/tutors/sole-tutors/:id/reject", adminAuthorize, requireSuperAdmin, rejectSoleTutor);
+router.patch("/tutors/sole-tutors/:id/reject", adminAuthorize, requireSuperAdmin, rejectSoleTutor);
 router.put("/tutors/sole-tutors/:id/status", adminAuthorize, requireSuperAdmin, updateSoleTutorStatus);
 router.put("/tutors/sole-tutors/:id/commission", adminAuthorize, requireSuperAdmin, updateSoleTutorCommissionRate);
 
 router.get("/tutors/organizations", adminAuthorize, requireSuperAdmin, getAllOrganizations);
 router.get("/tutors/organizations/:id", adminAuthorize, requireSuperAdmin, getOrganizationById);
 router.post("/tutors/organizations/:id/approve", adminAuthorize, requireSuperAdmin, approveOrganization);
+router.patch("/tutors/organizations/:id/approve", adminAuthorize, requireSuperAdmin, approveOrganization);
 router.post("/tutors/organizations/:id/reject", adminAuthorize, requireSuperAdmin, rejectOrganization);
+router.patch("/tutors/organizations/:id/reject", adminAuthorize, requireSuperAdmin, rejectOrganization);
 router.put("/tutors/organizations/:id/status", adminAuthorize, requireSuperAdmin, updateOrganizationStatus);
 router.put("/tutors/organizations/:id/commission", adminAuthorize, requireSuperAdmin, updateOrganizationCommissionRate);
 
