@@ -118,7 +118,7 @@ export const createSession = TryCatchFunction(async (req, res) => {
     });
     throw error;
   }
-  const {
+  let {
     title,
     description,
     start_time,
