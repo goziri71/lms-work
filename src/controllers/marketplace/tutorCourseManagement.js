@@ -947,7 +947,7 @@ export const deleteCourse = TryCatchFunction(async (req, res) => {
     );
   }
 
-  await course.destroy();
+  await course.destroy({ force: true });
 
   res.status(200).json({
     success: true,
