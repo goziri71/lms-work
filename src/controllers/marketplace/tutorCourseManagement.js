@@ -436,10 +436,8 @@ export const createCourse = TryCatchFunction(async (req, res) => {
   const ownerType = userType === "sole_tutor" ? "sole_tutor" : "organization";
   const ownerId = tutorId;
 
-  // Use a transaction to ensure atomicity and prevent race conditions
-  const transaction = await db.transaction({
-    isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
-  });
+  // Use a transaction to ensure atomicity
+  const transaction = await db.transaction();
 
   try {
     // Normalize course_code: treat null, undefined, empty string, and whitespace-only as "no code"
@@ -560,64 +558,41 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     }
 
     // Create course within transaction (finalCourseCode already set above: from body or auto-generated)
-    // Generate unique slug with retry logic for race conditions
-    let slug = await generateCourseSlug(title.trim());
-    let course;
-    let slugAttempts = 0;
-    const maxSlugAttempts = 3;
+    // Generate unique slug (generateCourseSlug checks DB and appends -1, -2 etc if needed)
+    const slug = await generateCourseSlug(title.trim());
 
-    while (slugAttempts < maxSlugAttempts) {
-      try {
-        course = await Courses.create(
-          {
-            title: title.trim(),
-            slug: slug,
-            course_code: finalCourseCode,
-            course_unit: course_unit || null,
-            price: price ? String(price) : "0",
-            pricing_type: pricingType,
-            course_type: course_type || null,
-            course_level: course_level || null,
-            semester: semester || null,
-            program_id: program_id || null,
-            faculty_id: faculty_id || null,
-            staff_id: staffId,
-            currency: currency,
-            owner_type: ownerType,
-            owner_id: ownerId,
-            is_marketplace: true,
-            marketplace_status: marketplace_status,
-            description: description.trim(),
-            course_outline: course_outline.trim(),
-            duration_days: duration_days ? parseInt(duration_days) : null,
-            image_url: finalImageUrl,
-            category: normalizedCategory,
-            enrollment_limit: enrollment_limit ? parseInt(enrollment_limit) : null,
-            access_duration_days: access_duration_days
-              ? parseInt(access_duration_days)
-              : null,
-            date: new Date(),
-          },
-          { transaction }
-        );
-        break; // Success, exit loop
-      } catch (createError) {
-        if (
-          createError.name === "SequelizeUniqueConstraintError" &&
-          (createError.fields?.slug || createError.message?.includes("slug"))
-        ) {
-          slugAttempts++;
-          if (slugAttempts >= maxSlugAttempts) {
-            throw createError; // Max retries, let outer catch handle it
-          }
-          // Append random suffix and retry
-          const suffix = Math.random().toString(36).substring(2, 6);
-          slug = `${slug}-${suffix}`;
-        } else {
-          throw createError; // Not a slug error, rethrow
-        }
-      }
-    }
+    const course = await Courses.create(
+      {
+        title: title.trim(),
+        slug: slug,
+        course_code: finalCourseCode,
+        course_unit: course_unit || null,
+        price: price ? String(price) : "0",
+        pricing_type: pricingType,
+        course_type: course_type || null,
+        course_level: course_level || null,
+        semester: semester || null,
+        program_id: program_id || null,
+        faculty_id: faculty_id || null,
+        staff_id: staffId,
+        currency: currency,
+        owner_type: ownerType,
+        owner_id: ownerId,
+        is_marketplace: true,
+        marketplace_status: marketplace_status,
+        description: description.trim(),
+        course_outline: course_outline.trim(),
+        duration_days: duration_days ? parseInt(duration_days) : null,
+        image_url: finalImageUrl,
+        category: normalizedCategory,
+        enrollment_limit: enrollment_limit ? parseInt(enrollment_limit) : null,
+        access_duration_days: access_duration_days
+          ? parseInt(access_duration_days)
+          : null,
+        date: new Date(),
+      },
+      { transaction }
+    );
 
     // Commit transaction
     await transaction.commit();
@@ -654,12 +629,13 @@ export const createCourse = TryCatchFunction(async (req, res) => {
 
     // Handle database constraint violations
     if (error.name === "SequelizeUniqueConstraintError") {
-      // Check which field caused the constraint violation
-      const fields = error.fields || {};
-      if (fields.slug || error.message?.includes("slug")) {
-        throw new ErrorClass("A course with this title already exists. Please use a different title.", 409);
-      }
-      throw new ErrorClass("A unique constraint was violated. Please try again.", 409);
+      console.error("SequelizeUniqueConstraintError details:", {
+        fields: error.fields,
+        errors: error.errors?.map(e => ({ field: e.path, value: e.value, message: e.message })),
+        message: error.message,
+        parent: error.parent?.detail,
+      });
+      throw new ErrorClass("A course with this title already exists. Please try a different title.", 409);
     }
 
     if (error.name === "SequelizeForeignKeyConstraintError") {
