@@ -451,6 +451,21 @@ export const createSession = TryCatchFunction(async (req, res) => {
     });
   } catch (error) {
     await transaction.rollback();
+
+    // ── FULL ERROR DUMP so Render logs show everything ──
+    console.error("═══════════ COACHING SESSION CREATE ERROR ═══════════");
+    console.error("Name:", error.name);
+    console.error("Message:", error.message);
+    console.error("Code:", error.code);
+    console.error("Parent:", error.parent?.message || error.parent);
+    console.error("Original:", error.original?.message || error.original);
+    console.error("Detail:", error.parent?.detail);
+    console.error("SQL:", error.sql);
+    console.error("Fields:", error.fields);
+    console.error("Errors:", error.errors?.map(e => ({ path: e.path, value: e.value, msg: e.message })));
+    console.error("Stack:", error.stack);
+    console.error("═══════════════════════════════════════════════════");
+
     // Refund hours if session creation failed and hours were deducted
     if (hoursCheck && hoursCheck.allowed && !hoursCheck.unlimited && typeof durationHours !== 'undefined') {
       try {
@@ -459,25 +474,11 @@ export const createSession = TryCatchFunction(async (req, res) => {
         console.error("Failed to refund hours after session creation error:", refundError);
       }
     }
-    // Log detailed error for debugging
-    console.error("❌ Error creating coaching session:", {
-      message: error.message,
-      name: error.name,
-      stack: error.stack,
-      tutorId: tutorId || "unknown",
-      tutorType: tutorType || "unknown",
-      title: title || "unknown",
-      pricing_type: pricing_type || "unknown",
-      errorCode: error.code,
-      errorParent: error.parent?.message,
-      errorOriginal: error.original?.message,
-    });
     
     // Handle specific database errors
     if (error.name === "SequelizeDatabaseError") {
-      console.error("Database error details:", error.parent);
       throw new ErrorClass(
-        `Database error: ${error.message || "An error occurred while creating the session"}`,
+        `Database error: ${error.parent?.message || error.message}`,
         500
       );
     }
@@ -485,6 +486,13 @@ export const createSession = TryCatchFunction(async (req, res) => {
     if (error.name === "SequelizeValidationError") {
       const validationErrors = error.errors?.map((e) => e.message).join(", ") || error.message;
       throw new ErrorClass(`Validation error: ${validationErrors}`, 400);
+    }
+
+    if (error.name === "SequelizeUniqueConstraintError") {
+      throw new ErrorClass(
+        `Duplicate entry: ${error.parent?.detail || error.message}`,
+        409
+      );
     }
     
     throw error;
