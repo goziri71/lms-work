@@ -15,7 +15,7 @@ export const getSystemSettings = TryCatchFunction(async (req, res) => {
   if (!settings) {
     settings = {
       id: null,
-      name: "Western Pinnacle University",
+      name: "Knomada",
       address: "",
       rate: "1500",
     };
@@ -59,7 +59,7 @@ export const updateSystemSettings = TryCatchFunction(async (req, res) => {
   } else {
     // Create new
     settings = await GeneralSetup.create({
-      name: name?.trim() || "Western Pinnacle University",
+      name: name?.trim() || "Knomada",
       address: address?.trim() || "",
       rate: rate?.toString() || "1500",
     });

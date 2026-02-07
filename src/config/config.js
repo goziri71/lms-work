@@ -65,7 +65,7 @@ export const Config = {
     apiUrl: process.env.ZEPTOMAIL_API_URL,
     apiToken: process.env.ZEPTOMAIL_TOKEN,
     fromAddress: process.env.EMAIL_FROM_ADDRESS,
-    fromName: process.env.EMAIL_FROM_NAME || "Pinnacle University",
+    fromName: process.env.EMAIL_FROM_NAME || "Knomada",
     enabled: process.env.EMAIL_ENABLED === "true" || true,
   },
 
