@@ -695,17 +695,17 @@ export const setupAssociations = () => {
   });
 
   // Coaching Session Ownership (for browsing)
+  // No scope needed - tutor_type is on coaching_sessions, not on the target table.
+  // required: false (LEFT JOIN) handles mismatches gracefully (returns null).
   CoachingSession.belongsTo(SoleTutor, {
     foreignKey: "tutor_id",
     constraints: false,
-    scope: { tutor_type: "sole_tutor" },
     as: "soleTutorOwner",
   });
 
   CoachingSession.belongsTo(Organization, {
     foreignKey: "tutor_id",
     constraints: false,
-    scope: { tutor_type: "organization" },
     as: "organizationOwner",
   });
 
