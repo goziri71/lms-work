@@ -310,34 +310,55 @@ export const getMySessions = TryCatchFunction(async (req, res) => {
 
   const offset = (parseInt(page) - 1) * parseInt(limit);
 
-  const { count, rows: purchases } =
-    await CoachingSessionPurchase.findAndCountAll({
-      where,
-      include: [
-        {
-          model: CoachingSession,
-          as: "coachingSession",
-          where: status ? { status } : {},
-          include: [
-            {
-              model: SoleTutor,
-              as: "soleTutorOwner",
-              attributes: ["id", "fname", "lname", "email"],
-              required: false,
-            },
-            {
-              model: Organization,
-              as: "organizationOwner",
-              attributes: ["id", "name", "email"],
-              required: false,
-            },
-          ],
+  let count, purchases;
+  try {
+    ({ count, rows: purchases } =
+      await CoachingSessionPurchase.findAndCountAll({
+        where,
+        include: [
+          {
+            model: CoachingSession,
+            as: "coachingSession",
+            where: status ? { status } : {},
+            required: false,
+            include: [
+              {
+                model: SoleTutor,
+                as: "soleTutorOwner",
+                attributes: ["id", "fname", "lname", "email"],
+                required: false,
+              },
+              {
+                model: Organization,
+                as: "organizationOwner",
+                attributes: ["id", "name", "email"],
+                required: false,
+              },
+            ],
+          },
+        ],
+        order: [["purchased_at", "DESC"]],
+        limit: parseInt(limit),
+        offset,
+      }));
+  } catch (error) {
+    console.error("❌ getMySessions DB error:", error.name, error.message, error.parent?.message);
+    if (
+      error.name === "SequelizeDatabaseError" &&
+      (error.message.includes("does not exist") ||
+        error.message.includes("relation"))
+    ) {
+      // Table doesn't exist yet - return empty instead of 500
+      return res.json({
+        success: true,
+        data: {
+          sessions: [],
+          pagination: { total: 0, page: parseInt(page), limit: parseInt(limit), pages: 0 },
         },
-      ],
-      order: [["purchased_at", "DESC"]],
-      limit: parseInt(limit),
-      offset,
-    });
+      });
+    }
+    throw error;
+  }
 
   res.json({
     success: true,
