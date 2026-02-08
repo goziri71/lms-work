@@ -46,7 +46,7 @@ export async function trackLearnerActivity(options, req = null) {
     // Get IP and user agent from request if available
     let ipAddress = null;
     let userAgent = null;
-    let locationData = {};
+    let geoData = {};
     let deviceInfo = {};
 
     if (req) {
@@ -58,8 +58,7 @@ export async function trackLearnerActivity(options, req = null) {
 
       userAgent = req.headers["user-agent"] || null;
 
-      // Get geolocation synchronously if possible (with timeout)
-      let geoData = {};
+      // Get geolocation (with timeout)
       if (ipAddress && ipAddress !== "::1" && ipAddress !== "127.0.0.1" && !ipAddress.startsWith("192.168.") && !ipAddress.startsWith("10.") && !ipAddress.startsWith("172.")) {
         try {
           // Use Promise.race to timeout after 2 seconds
