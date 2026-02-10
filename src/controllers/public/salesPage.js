@@ -188,6 +188,19 @@ export const getSalesPageBySlug = TryCatchFunction(async (req, res) => {
   // Get product details
   const product = await getProductForSalesPage(salesPage.product_type, salesPage.product_id);
   if (!product) {
+    // Debug: check why product not found
+    if (salesPage.product_type === "course") {
+      const { Courses } = await import("../../models/course/courses.js");
+      const courseAny = await Courses.findByPk(salesPage.product_id, { paranoid: false });
+      console.error("❌ Sales page product not found debug:", {
+        product_type: salesPage.product_type,
+        product_id: salesPage.product_id,
+        course_exists: !!courseAny,
+        is_marketplace: courseAny?.is_marketplace,
+        marketplace_status: courseAny?.marketplace_status,
+        deleted_at: courseAny?.deleted_at,
+      });
+    }
     throw new ErrorClass("Product not found or not available", 404);
   }
 
