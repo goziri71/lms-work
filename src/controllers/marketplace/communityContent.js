@@ -16,9 +16,9 @@ import multer from "multer";
 import { Op } from "sequelize";
 
 // Helper function to get author info (handles both tutors and students)
-async function getAuthorInfo(authorId, community) {
-  if (!community) {
-    // If no community info, try student first, then fallback
+async function getAuthorInfo(authorId, community, authorType = null) {
+  // If we know the author type, use it directly
+  if (authorType === "student") {
     const student = await Students.findByPk(authorId, {
       attributes: ["id", "fname", "lname", "mname", "email"],
     });
@@ -30,37 +30,29 @@ async function getAuthorInfo(authorId, community) {
             student.lname || ""
           }`.trim() || student.email,
         email: student.email,
+        type: "student",
       };
     }
-    return {
-      id: authorId,
-      name: "Unknown",
-      email: "",
-    };
   }
 
-  // First, check if author_id matches the community tutor_id (for sole_tutor and organization)
-  if (Number(community.tutor_id) === Number(authorId)) {
-    // Author is the tutor
-    if (community.tutor_type === "sole_tutor") {
-      const { SoleTutor } = await import(
-        "../../models/marketplace/soleTutor.js"
-      );
-      const tutor = await SoleTutor.findByPk(authorId, {
-        attributes: ["id", "fname", "lname", "email"],
-      });
-      if (tutor) {
-        return {
-          id: tutor.id,
-          name:
-            `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || tutor.email,
-          email: tutor.email,
-        };
-      }
-    } else if (community.tutor_type === "organization") {
-      const { Organization } = await import(
-        "../../models/marketplace/organization.js"
-      );
+  if (authorType === "sole_tutor") {
+    const { SoleTutor } = await import("../../models/marketplace/soleTutor.js");
+    const tutor = await SoleTutor.findByPk(authorId, {
+      attributes: ["id", "fname", "lname", "email"],
+    });
+    if (tutor) {
+      return {
+        id: tutor.id,
+        name: `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || tutor.email,
+        email: tutor.email,
+        type: "tutor",
+      };
+    }
+  }
+
+  if (authorType === "organization" || authorType === "organization_user") {
+    const { Organization } = await import("../../models/marketplace/organization.js");
+    if (authorType === "organization") {
       const org = await Organization.findByPk(authorId, {
         attributes: ["id", "name", "email"],
       });
@@ -69,46 +61,27 @@ async function getAuthorInfo(authorId, community) {
           id: org.id,
           name: org.name || org.email,
           email: org.email,
+          type: "tutor",
+        };
+      }
+    } else {
+      const { OrganizationUser } = await import("../../models/marketplace/organizationUser.js");
+      const orgUser = await OrganizationUser.findByPk(authorId, {
+        attributes: ["id", "organization_id", "fname", "lname", "email"],
+        include: [{ model: Organization, as: "organization", attributes: ["id", "name"], required: false }],
+      });
+      if (orgUser) {
+        return {
+          id: orgUser.id,
+          name: orgUser.organization?.name || `${orgUser.fname || ""} ${orgUser.lname || ""}`.trim() || orgUser.email,
+          email: orgUser.email,
+          type: "tutor",
         };
       }
     }
   }
 
-  // Check if author is an organization_user whose organization_id matches community tutor_id
-  if (community.tutor_type === "organization") {
-    const { OrganizationUser } = await import(
-      "../../models/marketplace/organizationUser.js"
-    );
-    const { Organization } = await import(
-      "../../models/marketplace/organization.js"
-    );
-    const orgUser = await OrganizationUser.findByPk(authorId, {
-      attributes: ["id", "organization_id", "fname", "lname", "email"],
-      include: [
-        {
-          model: Organization,
-          as: "organization",
-          attributes: ["id", "name"],
-          required: false,
-        },
-      ],
-    });
-    if (
-      orgUser &&
-      Number(orgUser.organization_id) === Number(community.tutor_id)
-    ) {
-      return {
-        id: orgUser.organization_id || orgUser.id,
-        name:
-          orgUser.organization?.name ||
-          `${orgUser.fname || ""} ${orgUser.lname || ""}`.trim() ||
-          orgUser.email,
-        email: orgUser.email,
-      };
-    }
-  }
-
-  // Author is a student
+  // If no authorType provided, check student FIRST (most comments are from students)
   const student = await Students.findByPk(authorId, {
     attributes: ["id", "fname", "lname", "mname", "email"],
   });
@@ -120,7 +93,39 @@ async function getAuthorInfo(authorId, community) {
           student.lname || ""
         }`.trim() || student.email,
       email: student.email,
+      type: "student",
     };
+  }
+
+  // Then check tutor only if not a student
+  if (community && Number(community.tutor_id) === Number(authorId)) {
+    if (community.tutor_type === "sole_tutor") {
+      const { SoleTutor } = await import("../../models/marketplace/soleTutor.js");
+      const tutor = await SoleTutor.findByPk(authorId, {
+        attributes: ["id", "fname", "lname", "email"],
+      });
+      if (tutor) {
+        return {
+          id: tutor.id,
+          name: `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || tutor.email,
+          email: tutor.email,
+          type: "tutor",
+        };
+      }
+    } else if (community.tutor_type === "organization") {
+      const { Organization } = await import("../../models/marketplace/organization.js");
+      const org = await Organization.findByPk(authorId, {
+        attributes: ["id", "name", "email"],
+      });
+      if (org) {
+        return {
+          id: org.id,
+          name: org.name || org.email,
+          email: org.email,
+          type: "tutor",
+        };
+      }
+    }
   }
 
   // Fallback
@@ -128,6 +133,7 @@ async function getAuthorInfo(authorId, community) {
     id: authorId,
     name: "Unknown",
     email: "",
+    type: "unknown",
   };
 }
 
@@ -420,6 +426,7 @@ export const createPost = TryCatchFunction(async (req, res) => {
   const post = await CommunityPost.create({
     community_id: communityId,
     author_id: authorId,
+    author_type: userType,
     title: title || null,
     content,
     content_type,
@@ -672,7 +679,7 @@ export const getPosts = TryCatchFunction(async (req, res) => {
   // Format posts with author names (handle both tutors and students)
   const formattedPosts = await Promise.all(
     posts.map(async (post) => {
-      const author = await getAuthorInfo(post.author_id, community);
+      const author = await getAuthorInfo(post.author_id, community, post.author_type || null);
       return {
         ...post.toJSON(),
         author,
@@ -735,7 +742,7 @@ export const getPost = TryCatchFunction(async (req, res) => {
   await post.increment("views");
 
   // Get author info (handles both tutors and students)
-  const author = await getAuthorInfo(post.author_id, community);
+  const author = await getAuthorInfo(post.author_id, community, post.author_type || null);
 
   res.json({
     status: true,
@@ -856,7 +863,7 @@ export const updatePost = TryCatchFunction(async (req, res) => {
   });
 
   // Get author info (handles both tutors and students)
-  const author = await getAuthorInfo(post.author_id, community);
+  const author = await getAuthorInfo(post.author_id, community, post.author_type || null);
 
   res.json({
     status: true,
@@ -954,6 +961,7 @@ export const createComment = TryCatchFunction(async (req, res) => {
   const comment = await CommunityComment.create({
     post_id: postId,
     author_id: userId,
+    author_type: userType,
     parent_comment_id: parent_comment_id || null,
     content,
     mentions: mentionedUserIds.length > 0 ? mentionedUserIds : null,
@@ -1144,7 +1152,7 @@ export const getComments = TryCatchFunction(async (req, res) => {
   // First pass: create map of all comments with author info
   await Promise.all(
     allComments.map(async (comment) => {
-      const author = await getAuthorInfo(comment.author_id, community);
+      const author = await getAuthorInfo(comment.author_id, community, comment.author_type || null);
       const formatted = {
         ...comment.toJSON(),
         author,

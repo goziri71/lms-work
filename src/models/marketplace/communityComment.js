@@ -17,7 +17,12 @@ export const CommunityComment = db.define(
     author_id: {
       type: DataTypes.INTEGER,
       allowNull: false,
-      comment: "Reference to students.id (author)",
+      comment: "Reference to author (student, sole_tutor, organization, etc.)",
+    },
+    author_type: {
+      type: DataTypes.STRING(30),
+      allowNull: true,
+      comment: "Type of author: student, sole_tutor, organization, organization_user",
     },
     parent_comment_id: {
       type: DataTypes.INTEGER,
