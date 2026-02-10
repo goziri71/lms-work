@@ -16,7 +16,7 @@ export const trackActivity = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Only students can track activities", 403);
   }
 
-  const {
+  let {
     activity_type,
     course_id,
     module_id,
