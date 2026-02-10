@@ -167,22 +167,19 @@ export const purchaseSessionAccess = TryCatchFunction(async (req, res) => {
       { transaction }
     );
 
-    // Create WPU commission record
-    await WspCommission.create(
-      {
-        transaction_id: null, // Not linked to marketplace transaction
-        amount: wspCommission,
-        currency: studentCurrency,
-        status: "collected",
-        collected_at: new Date(),
-        metadata: {
-          type: "coaching_session",
-          session_id: id,
-          purchase_id: purchase.id,
+    // Create WPU commission record (only if there's commission to record)
+    if (wspCommission > 0) {
+      await WspCommission.create(
+        {
+          transaction_id: purchase.id,
+          amount: wspCommission,
+          currency: studentCurrency,
+          status: "collected",
+          collected_at: new Date(),
         },
-      },
-      { transaction }
-    );
+        { transaction }
+      );
+    }
 
     // Update tutor earnings
     let tutor;
