@@ -343,6 +343,12 @@ import {
   uploadHeroImageMiddleware,
   uploadHeroVideoMiddleware,
 } from "../controllers/marketplace/salesPageManagement.js";
+import {
+  generateAIContent,
+  improveAIContent,
+  summarizeAIContent,
+  getContentTypes,
+} from "../controllers/marketplace/aiContent.js";
 
 const router = express.Router();
 
@@ -1088,6 +1094,14 @@ router.get(
 );
 
 router.get("/tutor/payouts/:id", tutorAuthorize, getPayout);
+
+// ============================================
+// AI CONTENT GENERATION (Tutor Authentication Required)
+// ============================================
+router.get("/tutor/ai/content-types", tutorAuthorize, getContentTypes);
+router.post("/tutor/ai/generate", tutorAuthorize, generateAIContent);
+router.post("/tutor/ai/improve", tutorAuthorize, improveAIContent);
+router.post("/tutor/ai/summarize", tutorAuthorize, summarizeAIContent);
 
 // Learner Management & Activity Tracking
 router.get("/tutor/learners", tutorAuthorize, getMyLearners);

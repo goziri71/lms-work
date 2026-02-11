@@ -440,4 +440,19 @@ router.put("/tutor-kyc/:id/approve", adminAuthorize, approveKyc);
 router.put("/tutor-kyc/:id/reject", adminAuthorize, rejectKyc);
 router.put("/tutor-kyc/:id/request-resubmission", adminAuthorize, requestKycResubmission);
 
+// ============================================
+// AI CONTENT GENERATION (Admin Access)
+// ============================================
+import {
+  generateAIContent,
+  improveAIContent,
+  summarizeAIContent,
+  getContentTypes,
+} from "../controllers/marketplace/aiContent.js";
+
+router.get("/ai/content-types", adminAuthorize, getContentTypes);
+router.post("/ai/generate", adminAuthorize, generateAIContent);
+router.post("/ai/improve", adminAuthorize, improveAIContent);
+router.post("/ai/summarize", adminAuthorize, summarizeAIContent);
+
 export default router;

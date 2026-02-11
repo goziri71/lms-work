@@ -71,4 +71,11 @@ export const Config = {
 
   // Frontend URL for email links
   frontendUrl: process.env.FRONTEND_URL || "https://app.knomada.co",
+
+  // OpenAI Configuration
+  openai: {
+    apiKey: process.env.OPENAI_API_KEY,
+    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    maxTokens: parseInt(process.env.OPENAI_MAX_TOKENS) || 2000,
+  },
 };
