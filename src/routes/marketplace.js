@@ -249,6 +249,7 @@ import { purchaseCommunitySubscription } from "../controllers/marketplace/commun
 import {
   getMySubscriptionForCommunity,
   getMyCommunities as getStudentMyCommunities,
+  getCommunityMembers,
 } from "../controllers/marketplace/studentCommunity.js";
 import {
   createPost,
@@ -836,6 +837,7 @@ router.get(
   getMySubscriptionForCommunity
 );
 router.get("/my-communities", authorize, getStudentMyCommunities);
+router.get("/communities/:id/members", authorize, getCommunityMembers);
 
 // COMMUNITY CONTENT (Posts, Comments, Files)
 router.post(

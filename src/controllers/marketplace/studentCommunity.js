@@ -8,8 +8,10 @@ import { ErrorClass } from "../../utils/errorClass/index.js";
 import { Community } from "../../models/marketplace/community.js";
 import { CommunitySubscription } from "../../models/marketplace/communitySubscription.js";
 import { CommunityMember } from "../../models/marketplace/communityMember.js";
+import { Students } from "../../models/auth/student.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
+import { Op } from "sequelize";
 
 /**
  * Get current student's subscription/membership status for a community
@@ -214,6 +216,95 @@ export const getMyCommunities = TryCatchFunction(async (req, res) => {
     data: {
       communities: communityList,
       total: communityList.length,
+    },
+  });
+});
+
+/**
+ * Get members of a community (student-facing)
+ * GET /api/marketplace/communities/:id/members
+ * Student must be an active member to view other members
+ */
+export const getCommunityMembers = TryCatchFunction(async (req, res) => {
+  const { id: communityId } = req.params;
+  const studentId = req.user?.id;
+  const { page = 1, limit = 20, search } = req.query;
+
+  // Verify community exists
+  const community = await Community.findByPk(communityId, {
+    attributes: ["id", "name", "tutor_id", "tutor_type", "member_count"],
+  });
+  if (!community) {
+    throw new ErrorClass("Community not found", 404);
+  }
+
+  // Verify student is a member
+  const myMembership = await CommunityMember.findOne({
+    where: {
+      community_id: communityId,
+      student_id: studentId,
+      status: "active",
+    },
+  });
+  if (!myMembership) {
+    throw new ErrorClass("You must be a member of this community to view members", 403);
+  }
+
+  const where = {
+    community_id: communityId,
+    status: "active",
+  };
+
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+
+  const includeStudent = {
+    model: Students,
+    as: "student",
+    attributes: ["id", "fname", "lname", "mname", "email"],
+  };
+
+  if (search) {
+    includeStudent.where = {
+      [Op.or]: [
+        { fname: { [Op.iLike]: `%${search}%` } },
+        { lname: { [Op.iLike]: `%${search}%` } },
+        { email: { [Op.iLike]: `%${search}%` } },
+      ],
+    };
+  }
+
+  const { count, rows: members } = await CommunityMember.findAndCountAll({
+    where,
+    limit: parseInt(limit),
+    offset,
+    order: [["joined_at", "DESC"]],
+    include: [includeStudent],
+  });
+
+  const formattedMembers = members.map((m) => ({
+    id: m.id,
+    role: m.role,
+    joined_at: m.joined_at,
+    last_active_at: m.last_active_at,
+    student: m.student
+      ? {
+          id: m.student.id,
+          name: `${m.student.fname || ""} ${m.student.mname || ""} ${m.student.lname || ""}`.trim(),
+          email: m.student.email,
+        }
+      : null,
+  }));
+
+  res.status(200).json({
+    success: true,
+    data: {
+      members: formattedMembers,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: count,
+        totalPages: Math.ceil(count / parseInt(limit)),
+      },
     },
   });
 });
