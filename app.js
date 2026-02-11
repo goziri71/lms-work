@@ -202,6 +202,15 @@ connectDB().then(async (success) => {
       }
     }
 
+    // Auto-add author_type columns if missing (for community posts/comments)
+    try {
+      await db.query(`ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS author_type VARCHAR(30) DEFAULT NULL`);
+      await db.query(`ALTER TABLE community_comments ADD COLUMN IF NOT EXISTS author_type VARCHAR(30) DEFAULT NULL`);
+      console.log("✅ community author_type columns verified");
+    } catch (colErr) {
+      console.warn("⚠️ Could not verify author_type columns:", colErr.message);
+    }
+
     setupDiscussionsSocket(io);
     setupDirectChatSocket(io);
     setupCoachingMessagingSocket(io);

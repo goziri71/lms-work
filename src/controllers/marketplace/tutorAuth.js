@@ -60,7 +60,7 @@ export const registerSoleTutor = TryCatchFunction(async (req, res) => {
   );
   const slug = await generateTutorSlug(fname.trim(), lname.trim(), null);
 
-  // Create tutor (status: pending - awaiting approval)
+  // Create tutor (auto-approved)
   const tutor = await SoleTutor.create({
     email: email.toLowerCase().trim(),
     password: hashedPassword,
@@ -75,8 +75,8 @@ export const registerSoleTutor = TryCatchFunction(async (req, res) => {
     address: address?.trim() || null,
     country: country?.trim() || null,
     slug,
-    status: "pending", // Requires admin approval
-    verification_status: "unverified",
+    status: "active",
+    verification_status: "verified",
   });
 
   res.status(201).json({
@@ -131,7 +131,7 @@ export const registerOrganization = TryCatchFunction(async (req, res) => {
   // Hash password
   const hashedPassword = authService.hashPassword(password);
 
-  // Create organization (status: pending - awaiting approval)
+  // Create organization (auto-approved)
   const organization = await Organization.create({
     name: name.trim(),
     email: email.toLowerCase().trim(),
@@ -146,8 +146,8 @@ export const registerOrganization = TryCatchFunction(async (req, res) => {
     contact_person: contact_person?.trim() || null,
     contact_email: contact_email?.trim() || null,
     contact_phone: contact_phone?.trim() || null,
-    status: "pending", // Requires admin approval
-    verification_status: "unverified",
+    status: "active",
+    verification_status: "verified",
   });
 
   res.status(201).json({
