@@ -8,6 +8,8 @@ import { EmailLog } from "../../models/email/emailLog.js";
 import { EmailPreference } from "../../models/email/emailPreference.js";
 import { Op, fn, col } from "sequelize";
 import crypto from "crypto";
+import { getIPGeolocation } from "../../services/ipGeolocationService.js";
+import { getCurrencyFromCountry } from "../../services/currencyService.js";
 
 // Student Login using Sequelize ORM
 export const studentLogin = TryCatchFunction(async (req, res) => {
@@ -605,6 +607,28 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
   // Hash password
   const hashedPassword = await authService.hashPassword(password);
 
+  // Auto-detect country and currency from IP if not provided
+  let finalCountry = country?.trim() || null;
+  let finalCurrency = currency || null;
+
+  try {
+    const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip;
+    const geoData = await getIPGeolocation(clientIp);
+    if (geoData.success && geoData.country) {
+      if (!finalCountry) finalCountry = geoData.country;
+      if (!finalCurrency) finalCurrency = getCurrencyFromCountry(finalCountry) || "NGN";
+    }
+  } catch (geoErr) {
+    // Geo detection failed - proceed with defaults, don't block registration
+    console.warn("Geo detection failed during student registration:", geoErr.message);
+  }
+
+  // If frontend provided country but geo didn't run, still derive currency
+  if (!finalCurrency && finalCountry) {
+    finalCurrency = getCurrencyFromCountry(finalCountry) || "NGN";
+  }
+  if (!finalCurrency) finalCurrency = "NGN"; // ultimate fallback
+
   // Create student with required defaults
   // Note: program_id, referral_code, and designated_institute are excluded from registration
   let student;
@@ -621,13 +645,13 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
       address: address || null,
       state_origin: state_origin || null,
       lcda: lcda || null,
-      country: country || null,
+      country: finalCountry,
       level: level || null,
       study_mode: study_mode || null,
       admin_status: "pending",
       date: new Date(),
       // Required fields with defaults (not set during registration)
-      currency: currency || "NGN",
+      currency: finalCurrency,
       referral_code: "", // Default empty string (not set during registration)
       designated_institute: 0, // Default 0 (not set during registration)
       foreign_student:

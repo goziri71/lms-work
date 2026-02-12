@@ -14,6 +14,7 @@ import {
   detectUserCurrency,
   getCurrencyFromCountry,
 } from "../../services/currencyService.js";
+import { getIPGeolocation } from "../../services/ipGeolocationService.js";
 import { EmailLog } from "../../models/email/emailLog.js";
 
 /**
@@ -60,6 +61,29 @@ export const registerSoleTutor = TryCatchFunction(async (req, res) => {
   );
   const slug = await generateTutorSlug(fname.trim(), lname.trim(), null);
 
+  // Auto-detect country and currency from IP if not provided
+  let finalCountry = country?.trim() || null;
+  let finalCountryCode = null;
+  let finalCurrency = "NGN"; // safe fallback
+
+  try {
+    const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip;
+    const geoData = await getIPGeolocation(clientIp);
+    if (geoData.success && geoData.country) {
+      if (!finalCountry) finalCountry = geoData.country;
+      finalCountryCode = geoData.country_code || null;
+      finalCurrency = getCurrencyFromCountry(finalCountry) || "NGN";
+    }
+  } catch (geoErr) {
+    // Geo detection failed - proceed with defaults, don't block registration
+    console.warn("Geo detection failed during tutor registration:", geoErr.message);
+  }
+
+  // If frontend provided country but geo didn't run, still derive currency
+  if (finalCountry && finalCurrency === "NGN" && finalCountry.toLowerCase() !== "nigeria") {
+    finalCurrency = getCurrencyFromCountry(finalCountry) || "NGN";
+  }
+
   // Create tutor (auto-approved)
   const tutor = await SoleTutor.create({
     email: email.toLowerCase().trim(),
@@ -73,7 +97,10 @@ export const registerSoleTutor = TryCatchFunction(async (req, res) => {
     qualifications: qualifications?.trim() || null,
     experience_years: experience_years || 0,
     address: address?.trim() || null,
-    country: country?.trim() || null,
+    country: finalCountry,
+    country_code: finalCountryCode,
+    currency: finalCurrency,
+    local_currency: finalCurrency,
     slug,
     status: "active",
     verification_status: "verified",
@@ -131,6 +158,28 @@ export const registerOrganization = TryCatchFunction(async (req, res) => {
   // Hash password
   const hashedPassword = authService.hashPassword(password);
 
+  // Auto-detect country and currency from IP if not provided
+  let finalCountry = country?.trim() || null;
+  let finalCountryCode = null;
+  let finalCurrency = "NGN"; // safe fallback
+
+  try {
+    const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip;
+    const geoData = await getIPGeolocation(clientIp);
+    if (geoData.success && geoData.country) {
+      if (!finalCountry) finalCountry = geoData.country;
+      finalCountryCode = geoData.country_code || null;
+      finalCurrency = getCurrencyFromCountry(finalCountry) || "NGN";
+    }
+  } catch (geoErr) {
+    console.warn("Geo detection failed during org registration:", geoErr.message);
+  }
+
+  // If frontend provided country but geo didn't run, still derive currency
+  if (finalCountry && finalCurrency === "NGN" && finalCountry.toLowerCase() !== "nigeria") {
+    finalCurrency = getCurrencyFromCountry(finalCountry) || "NGN";
+  }
+
   // Create organization (auto-approved)
   const organization = await Organization.create({
     name: name.trim(),
@@ -140,7 +189,10 @@ export const registerOrganization = TryCatchFunction(async (req, res) => {
     website: website?.trim() || null,
     phone: phone?.trim() || null,
     address: address?.trim() || null,
-    country: country?.trim() || null,
+    country: finalCountry,
+    country_code: finalCountryCode,
+    currency: finalCurrency,
+    local_currency: finalCurrency,
     registration_number: registration_number?.trim() || null,
     tax_id: tax_id?.trim() || null,
     contact_person: contact_person?.trim() || null,

@@ -14,6 +14,7 @@ const CACHE_TTL_RATE_LIMIT_MS = 5 * 60 * 1000; // 5 min for 429 so we don't retr
 function getDefaultResult(message = "Geolocation service unavailable") {
   return {
     country: null,
+    country_code: null,
     city: null,
     region: null,
     latitude: null,
@@ -57,13 +58,14 @@ export async function getIPGeolocation(ipAddress) {
     const response = await axios.get(`http://ip-api.com/json/${ipAddress}`, {
       timeout: 5000,
       params: {
-        fields: "status,message,country,regionName,city,lat,lon,timezone,isp",
+        fields: "status,message,country,countryCode,regionName,city,lat,lon,timezone,isp",
       },
     });
 
     if (response.data.status === "success") {
       const data = {
         country: response.data.country || null,
+        country_code: response.data.countryCode || null,
         city: response.data.city || null,
         region: response.data.regionName || null,
         latitude: response.data.lat || null,
@@ -116,6 +118,7 @@ async function getIPGeolocationFallback(ipAddress) {
     if (response.data && !response.data.error) {
       return {
         country: response.data.country_name || null,
+        country_code: response.data.country_code || null,
         city: response.data.city || null,
         region: response.data.region || null,
         latitude: response.data.latitude || null,
