@@ -22,6 +22,10 @@ export { TutorBankAccount } from "./tutorBankAccount.js";
 export { TutorPayout } from "./tutorPayout.js";
 // One-on-One Coaching exports
 export { CoachingSchedulingMessage } from "./coachingSchedulingMessage.js";
+// Hybrid Coaching Booking exports
+export { TutorCoachingProfile } from "./tutorCoachingProfile.js";
+export { TutorAvailability } from "./tutorAvailability.js";
+export { CoachingBookingRequest } from "./coachingBookingRequest.js";
 // Community exports
 export { Community } from "./community.js";
 export { CommunityMember } from "./communityMember.js";

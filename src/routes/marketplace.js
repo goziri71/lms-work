@@ -237,6 +237,40 @@ import {
   getSessionMessages,
   markMessagesAsRead,
 } from "../controllers/marketplace/coachingMessaging.js";
+// Hybrid Coaching Booking imports
+import {
+  getCoachingProfile,
+  updateCoachingProfile,
+  getAvailability,
+  addAvailability,
+  updateAvailability,
+  deleteAvailability,
+  bulkDeleteAvailability,
+} from "../controllers/marketplace/coachingProfile.js";
+import {
+  browseTutors,
+  getTutorCoachingDetails,
+  createBookingRequest,
+  getMyBookingRequests,
+  cancelBookingRequest,
+} from "../controllers/marketplace/coachingBooking.js";
+import {
+  getTutorBookingRequests,
+  getTutorBookingRequestDetail,
+  acceptBookingRequest,
+  declineBookingRequest,
+  counterProposeBooking,
+  acceptCounterProposal,
+  declineCounterProposal,
+} from "../controllers/marketplace/coachingNegotiation.js";
+import {
+  processBookingPayment,
+  getBookingPaymentPreview,
+} from "../controllers/marketplace/coachingBookingPayment.js";
+import {
+  studentCancelBookedSession,
+  tutorCancelBookedSession,
+} from "../controllers/marketplace/coachingBookingCancellation.js";
 import {
   createCommunity,
   getMyCommunities,
@@ -784,6 +818,28 @@ router.post("/tutor/coaching/sessions/:id/token", tutorAuthorize, getJoinToken);
 router.delete("/tutor/coaching/sessions/:id", tutorAuthorize, cancelSession);
 
 // ============================================
+// HYBRID COACHING BOOKING - TUTOR ENDPOINTS
+// ============================================
+// Coaching Profile
+router.get("/tutor/coaching/profile", tutorAuthorize, getCoachingProfile);
+router.put("/tutor/coaching/profile", tutorAuthorize, updateCoachingProfile);
+
+// Availability Management
+router.get("/tutor/coaching/availability", tutorAuthorize, getAvailability);
+router.post("/tutor/coaching/availability", tutorAuthorize, addAvailability);
+router.put("/tutor/coaching/availability/:slotId", tutorAuthorize, updateAvailability);
+router.delete("/tutor/coaching/availability/bulk", tutorAuthorize, bulkDeleteAvailability);
+router.delete("/tutor/coaching/availability/:slotId", tutorAuthorize, deleteAvailability);
+
+// Booking Request Management (Tutor)
+router.get("/tutor/coaching/booking-requests", tutorAuthorize, getTutorBookingRequests);
+router.get("/tutor/coaching/booking-requests/:id", tutorAuthorize, getTutorBookingRequestDetail);
+router.post("/tutor/coaching/booking-requests/:id/accept", tutorAuthorize, acceptBookingRequest);
+router.post("/tutor/coaching/booking-requests/:id/decline", tutorAuthorize, declineBookingRequest);
+router.post("/tutor/coaching/booking-requests/:id/counter", tutorAuthorize, counterProposeBooking);
+router.post("/tutor/coaching/booking-requests/:id/cancel-session", tutorAuthorize, tutorCancelBookedSession);
+
+// ============================================
 // STUDENT COACHING SESSION ENDPOINTS
 // ============================================
 // Browse sessions - optional auth (public can browse, authenticated students see purchase status)
@@ -813,6 +869,25 @@ router.put(
   authorize,
   markMessagesAsRead
 );
+
+// ============================================
+// HYBRID COACHING BOOKING - STUDENT ENDPOINTS
+// ============================================
+// Browse tutors offering coaching (public/optional auth)
+router.get("/coaching/tutors", optionalAuthorize, browseTutors);
+router.get("/coaching/tutors/:tutorId", optionalAuthorize, getTutorCoachingDetails);
+
+// Booking requests (student auth required)
+router.post("/coaching/booking-request", authorize, createBookingRequest);
+router.get("/coaching/my-booking-requests", authorize, getMyBookingRequests);
+router.post("/coaching/booking-request/:id/cancel", authorize, cancelBookingRequest);
+router.post("/coaching/booking-request/:id/accept-counter", authorize, acceptCounterProposal);
+router.post("/coaching/booking-request/:id/decline-counter", authorize, declineCounterProposal);
+
+// Booking payment (student auth required)
+router.get("/coaching/booking/:id/payment-preview", authorize, getBookingPaymentPreview);
+router.post("/coaching/booking/:id/process-payment", authorize, processBookingPayment);
+router.post("/coaching/booking/:id/cancel-session", authorize, studentCancelBookedSession);
 
 // COMMUNITY MANAGEMENT
 router.post(

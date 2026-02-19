@@ -86,6 +86,9 @@ import {
   TutorKyc,
   GoogleDriveConnection,
   ExternalFile,
+  TutorCoachingProfile,
+  TutorAvailability,
+  CoachingBookingRequest,
 } from "./marketplace/index.js";
 
 export const setupAssociations = () => {
@@ -1315,5 +1318,90 @@ export const setupAssociations = () => {
   ExternalFile.belongsTo(GoogleDriveConnection, {
     foreignKey: "google_drive_connection_id",
     as: "google_drive_connection",
+  });
+
+  // ============================================
+  // HYBRID COACHING BOOKING ASSOCIATIONS
+  // ============================================
+
+  // Tutor Coaching Profiles
+  SoleTutor.hasOne(TutorCoachingProfile, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "sole_tutor" },
+    as: "coachingProfile",
+  });
+  Organization.hasOne(TutorCoachingProfile, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "organization" },
+    as: "coachingProfile",
+  });
+  TutorCoachingProfile.belongsTo(SoleTutor, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    as: "soleTutor",
+  });
+  TutorCoachingProfile.belongsTo(Organization, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    as: "organization",
+  });
+
+  // Tutor Availability
+  SoleTutor.hasMany(TutorAvailability, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "sole_tutor" },
+    as: "coachingAvailability",
+  });
+  Organization.hasMany(TutorAvailability, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "organization" },
+    as: "coachingAvailability",
+  });
+
+  // Coaching Booking Requests
+  Students.hasMany(CoachingBookingRequest, {
+    foreignKey: "student_id",
+    as: "coachingBookingRequests",
+  });
+  CoachingBookingRequest.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  SoleTutor.hasMany(CoachingBookingRequest, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "sole_tutor" },
+    as: "coachingBookingRequests",
+  });
+  Organization.hasMany(CoachingBookingRequest, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    scope: { tutor_type: "organization" },
+    as: "coachingBookingRequests",
+  });
+
+  CoachingBookingRequest.belongsTo(SoleTutor, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    as: "soleTutor",
+  });
+  CoachingBookingRequest.belongsTo(Organization, {
+    foreignKey: "tutor_id",
+    constraints: false,
+    as: "organization",
+  });
+
+  CoachingBookingRequest.belongsTo(CoachingSession, {
+    foreignKey: "session_id",
+    as: "coachingSession",
+  });
+  CoachingSession.hasOne(CoachingBookingRequest, {
+    foreignKey: "session_id",
+    as: "bookingRequest",
   });
 };
