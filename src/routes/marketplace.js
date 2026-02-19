@@ -208,6 +208,7 @@ import {
   getSubscription,
   subscribe,
   getSubscriptionLimits,
+  getSubscriptionTiers,
 } from "../controllers/marketplace/tutorSubscription.js";
 import {
   getHoursBalance,
@@ -745,9 +746,10 @@ router.post(
 // ============================================
 // SUBSCRIPTION MANAGEMENT
 // ============================================
+router.get("/tutor/subscription/tiers", tutorAuthorize, getSubscriptionTiers);
+router.get("/tutor/subscription/limits", tutorAuthorize, getSubscriptionLimits);
 router.get("/tutor/subscription", tutorAuthorize, getSubscription);
 router.post("/tutor/subscription", tutorAuthorize, subscribe);
-router.get("/tutor/subscription/limits", tutorAuthorize, getSubscriptionLimits);
 
 // ============================================
 // COACHING HOURS MANAGEMENT

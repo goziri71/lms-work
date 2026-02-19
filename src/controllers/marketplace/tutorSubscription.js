@@ -37,6 +37,32 @@ function getTutorInfo(req) {
 }
 
 /**
+ * Get all subscription tiers with prices and limits
+ * GET /api/marketplace/tutor/subscription/tiers
+ */
+export const getSubscriptionTiers = TryCatchFunction(async (req, res) => {
+  const tiers = Object.entries(SUBSCRIPTION_TIERS).map(([key, tier]) => ({
+    id: key,
+    name: tier.name,
+    price: tier.price,
+    currency: "USD",
+    billing_period: key === "free" ? null : "monthly",
+    courses_limit: tier.courses_limit,
+    communities_limit: tier.communities_limit,
+    community_member_limit: tier.community_member_limit,
+    digital_downloads_limit: tier.digital_downloads_limit,
+    memberships_limit: tier.memberships_limit,
+    unlimited_coaching: tier.unlimited_coaching,
+    commission_rate: tier.commission_rate,
+  }));
+
+  res.json({
+    success: true,
+    data: { tiers },
+  });
+});
+
+/**
  * Get current subscription
  * GET /api/marketplace/tutor/subscription
  */
