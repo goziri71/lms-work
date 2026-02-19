@@ -273,18 +273,20 @@ export async function generateToken(req, res) {
 }
 
 /**
- * List calls for a course
- * GET /api/video/calls?courseId=123
+ * List calls for a course or for the current user
+ * GET /api/video/calls?courseId=123&status=active
  */
 export async function listCalls(req, res) {
   try {
-    const { courseId } = req.query;
+    const { courseId, status } = req.query;
     const userId = req.user?.id;
     const userType = req.user?.userType;
 
+    const { Op } = await import("sequelize");
     const where = {};
+
     if (courseId) {
-      // Verify access
+      // Verify access to the specific course
       if (userType === "staff") {
         const [rows] = await db.query(
           "SELECT 1 FROM courses WHERE id = ? AND staff_id = ?",
@@ -309,6 +311,47 @@ export async function listCalls(req, res) {
         }
       }
       where.course_id = courseId;
+    } else {
+      // No courseId: scope to calls the user has access to
+      if (userType === "staff") {
+        where.created_by = userId;
+      } else if (userType === "student") {
+        // Get call IDs where this student is a participant
+        const participantCalls = await VideoCallParticipant.findAll({
+          where: { user_id: userId, user_type: "student" },
+          attributes: ["call_id"],
+        });
+        const participantCallIds = participantCalls.map((p) => p.call_id);
+
+        // Get course IDs the student is enrolled in
+        const [enrolledRows] = await db.query(
+          "SELECT course_id FROM course_reg WHERE student_id = ?",
+          { replacements: [userId] }
+        );
+        const enrolledCourseIds = enrolledRows.map((r) => r.course_id);
+
+        // Show calls where student is participant OR enrolled in the course
+        const orConditions = [];
+        if (participantCallIds.length > 0) {
+          orConditions.push({ id: { [Op.in]: participantCallIds } });
+        }
+        if (enrolledCourseIds.length > 0) {
+          orConditions.push({ course_id: { [Op.in]: enrolledCourseIds } });
+        }
+
+        if (orConditions.length === 0) {
+          return res.json({ success: true, data: [] });
+        }
+
+        where[Op.or] = orConditions;
+      }
+    }
+
+    // Filter by status
+    if (status === "active") {
+      where.ended_at = { [Op.is]: null };
+    } else if (status === "ended") {
+      where.ended_at = { [Op.not]: null };
     }
 
     const calls = await VideoCall.findAll({
