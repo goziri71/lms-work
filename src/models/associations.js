@@ -89,6 +89,7 @@ import {
   TutorCoachingProfile,
   TutorAvailability,
   CoachingBookingRequest,
+  SavedJob,
 } from "./marketplace/index.js";
 
 export const setupAssociations = () => {
@@ -1403,5 +1404,17 @@ export const setupAssociations = () => {
   CoachingSession.hasOne(CoachingBookingRequest, {
     foreignKey: "session_id",
     as: "bookingRequest",
+  });
+
+  // ============================================
+  // JOB BOARD ASSOCIATIONS
+  // ============================================
+  Students.hasMany(SavedJob, {
+    foreignKey: "student_id",
+    as: "savedJobs",
+  });
+  SavedJob.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
   });
 };

@@ -384,6 +384,12 @@ import {
   summarizeAIContent,
   getContentTypes,
 } from "../controllers/marketplace/aiContent.js";
+import {
+  searchJobListings,
+  saveJob,
+  unsaveJob,
+  getSavedJobs,
+} from "../controllers/marketplace/jobBoard.js";
 
 const router = express.Router();
 
@@ -888,6 +894,14 @@ router.post("/coaching/booking-request/:id/decline-counter", authorize, declineC
 router.get("/coaching/booking/:id/payment-preview", authorize, getBookingPaymentPreview);
 router.post("/coaching/booking/:id/process-payment", authorize, processBookingPayment);
 router.post("/coaching/booking/:id/cancel-session", authorize, studentCancelBookedSession);
+
+// ============================================
+// JOB BOARD (Student Authentication Required)
+// ============================================
+router.get("/jobs/search", authorize, searchJobListings);
+router.get("/jobs/saved", authorize, getSavedJobs);
+router.post("/jobs/save", authorize, saveJob);
+router.delete("/jobs/save/:jobHashId", authorize, unsaveJob);
 
 // COMMUNITY MANAGEMENT
 router.post(
