@@ -56,7 +56,7 @@ export const browseTutors = TryCatchFunction(async (req, res) => {
       {
         model: Organization,
         as: "organization",
-        attributes: ["id", "name", "email", "logo", "slug"],
+        attributes: ["id", "name", "email", "logo"],
         required: false,
       },
     ],
@@ -96,7 +96,7 @@ export const browseTutors = TryCatchFunction(async (req, res) => {
       tutor_id: p.tutor_id,
       tutor_type: p.tutor_type,
       tutor_name: tutorName,
-      tutor_slug: tutor.slug || null,
+      tutor_slug: p.tutor_type === "sole_tutor" ? tutor.slug || null : null,
       tutor_image:
         p.tutor_type === "sole_tutor"
           ? tutor.profile_image || null
@@ -155,7 +155,7 @@ export const getTutorCoachingDetails = TryCatchFunction(async (req, res) => {
       {
         model: Organization,
         as: "organization",
-        attributes: ["id", "name", "email", "logo", "slug", "description"],
+        attributes: ["id", "name", "email", "logo", "description"],
         required: false,
       },
     ],
@@ -196,7 +196,7 @@ export const getTutorCoachingDetails = TryCatchFunction(async (req, res) => {
         id: profile.tutor_id,
         type: profile.tutor_type,
         name: tutorName,
-        slug: tutor?.slug || null,
+        slug: tutorType === "sole_tutor" ? tutor?.slug || null : null,
         image:
           tutorType === "sole_tutor"
             ? tutor?.profile_image || null
@@ -444,7 +444,7 @@ export const getMyBookingRequests = TryCatchFunction(async (req, res) => {
       {
         model: Organization,
         as: "organization",
-        attributes: ["id", "name", "logo", "slug"],
+        attributes: ["id", "name", "logo"],
         required: false,
       },
     ],
@@ -490,7 +490,7 @@ export const getMyBookingRequests = TryCatchFunction(async (req, res) => {
           r.tutor_type === "sole_tutor"
             ? tutor?.profile_image || null
             : tutor?.logo || null,
-        slug: tutor?.slug || null,
+        slug: r.tutor_type === "sole_tutor" ? tutor?.slug || null : null,
       },
       created_at: r.created_at,
     };
