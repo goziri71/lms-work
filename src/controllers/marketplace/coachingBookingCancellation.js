@@ -7,6 +7,7 @@ import { Students } from "../../models/auth/student.js";
 import { Funding } from "../../models/payment/funding.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
+import { TutorWalletTransaction } from "../../models/marketplace/tutorWalletTransaction.js";
 import { WspCommission } from "../../models/marketplace/wspCommission.js";
 import { getWalletBalance } from "../../services/walletBalanceService.js";
 import { refundHours } from "./coachingHours.js";
@@ -113,7 +114,7 @@ async function processCancellation(booking, cancelledBy) {
         );
       }
 
-      // 2. Reverse tutor earnings
+      // 2. Reverse tutor earnings and wallet credit
       const tutorEarnings = parseFloat(purchase.tutor_earnings || 0);
       if (tutorEarnings > 0) {
         let tutor;
@@ -128,12 +129,48 @@ async function processCancellation(booking, cancelledBy) {
         }
 
         if (tutor) {
+          const tutorCurrency = (purchase.currency || "NGN").toUpperCase();
+          let tutorWalletField = "wallet_balance_primary";
+          if (tutorCurrency === "USD") tutorWalletField = "wallet_balance_usd";
+          if (tutorCurrency === "GBP") tutorWalletField = "wallet_balance_gbp";
+
+          const tutorWalletBefore = parseFloat(tutor[tutorWalletField] || 0);
+          const tutorWalletAfter = tutorWalletBefore - tutorEarnings;
           const newTotalEarnings = Math.max(
             0,
             parseFloat(tutor.total_earnings || 0) - tutorEarnings
           );
+
           await tutor.update(
-            { total_earnings: newTotalEarnings },
+            {
+              total_earnings: newTotalEarnings,
+              [tutorWalletField]: tutorWalletAfter,
+            },
+            { transaction: dbTransaction }
+          );
+
+          await TutorWalletTransaction.create(
+            {
+              tutor_id: booking.tutor_id,
+              tutor_type: booking.tutor_type,
+              transaction_type: "debit",
+              amount: tutorEarnings,
+              currency: tutorCurrency,
+              service_name: "One-on-One Coaching Cancellation",
+              transaction_reference: `REVERSAL-${purchase.transaction_ref || booking.id}`,
+              balance_before: tutorWalletBefore,
+              balance_after: tutorWalletAfter,
+              related_id: booking.id,
+              related_type: "coaching_booking_request",
+              status: "successful",
+              notes: "Tutor wallet credit reversed due to session cancellation refund",
+              metadata: {
+                booking_id: booking.id,
+                session_id: session.id,
+                purchase_id: purchase.id,
+                cancelled_by: cancelledBy,
+              },
+            },
             { transaction: dbTransaction }
           );
         }

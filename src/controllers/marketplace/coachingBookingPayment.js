@@ -11,6 +11,7 @@ import { Funding } from "../../models/payment/funding.js";
 import { GeneralSetup } from "../../models/settings/generalSetup.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
+import { TutorWalletTransaction } from "../../models/marketplace/tutorWalletTransaction.js";
 import { WspCommission } from "../../models/marketplace/wspCommission.js";
 import { getWalletBalance } from "../../services/walletBalanceService.js";
 import { streamVideoService } from "../../service/streamVideoService.js";
@@ -252,7 +253,7 @@ export const processBookingPayment = TryCatchFunction(async (req, res) => {
       );
     }
 
-    // 8. Credit tutor earnings
+    // 8. Credit tutor earnings and wallet in the same transaction
     let tutor;
     if (booking.tutor_type === "sole_tutor") {
       tutor = await SoleTutor.findByPk(booking.tutor_id, {
@@ -264,14 +265,53 @@ export const processBookingPayment = TryCatchFunction(async (req, res) => {
       });
     }
 
-    if (tutor) {
-      const newTotalEarnings =
-        parseFloat(tutor.total_earnings || 0) + tutorEarnings;
-      await tutor.update(
-        { total_earnings: newTotalEarnings },
-        { transaction: dbTransaction }
-      );
+    if (!tutor) {
+      throw new ErrorClass("Tutor account not found", 404);
     }
+
+    const tutorCreditCurrency = (studentCurrency || "NGN").toUpperCase();
+    let tutorWalletField = "wallet_balance_primary";
+    if (tutorCreditCurrency === "USD") tutorWalletField = "wallet_balance_usd";
+    if (tutorCreditCurrency === "GBP") tutorWalletField = "wallet_balance_gbp";
+
+    const tutorWalletBefore = parseFloat(tutor[tutorWalletField] || 0);
+    const tutorWalletAfter = tutorWalletBefore + tutorEarnings;
+    const newTotalEarnings = parseFloat(tutor.total_earnings || 0) + tutorEarnings;
+
+    await tutor.update(
+      {
+        total_earnings: newTotalEarnings,
+        [tutorWalletField]: tutorWalletAfter,
+      },
+      { transaction: dbTransaction }
+    );
+
+    await TutorWalletTransaction.create(
+      {
+        tutor_id: booking.tutor_id,
+        tutor_type: booking.tutor_type,
+        transaction_type: "credit",
+        amount: tutorEarnings,
+        currency: tutorCreditCurrency,
+        service_name: "One-on-One Coaching Booking",
+        transaction_reference: txRef,
+        balance_before: tutorWalletBefore,
+        balance_after: tutorWalletAfter,
+        related_id: booking.id,
+        related_type: "coaching_booking_request",
+        status: "successful",
+        notes: "Tutor earnings credited after booking payment",
+        metadata: {
+          booking_id: booking.id,
+          purchase_id: purchase.id,
+          session_id: session.id,
+          student_id: studentId,
+          gross_amount_paid: priceInStudentCurrency,
+          commission_amount: wspCommission,
+        },
+      },
+      { transaction: dbTransaction }
+    );
 
     // 9. Update booking with session reference
     await booking.update(
