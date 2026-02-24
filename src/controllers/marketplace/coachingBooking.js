@@ -50,7 +50,7 @@ export const browseTutors = TryCatchFunction(async (req, res) => {
       {
         model: SoleTutor,
         as: "soleTutor",
-        attributes: ["id", "fname", "lname", "email", "profile_picture", "slug"],
+        attributes: ["id", "fname", "lname", "email", "profile_image", "slug"],
         required: false,
       },
       {
@@ -99,7 +99,7 @@ export const browseTutors = TryCatchFunction(async (req, res) => {
       tutor_slug: tutor.slug || null,
       tutor_image:
         p.tutor_type === "sole_tutor"
-          ? tutor.profile_picture || null
+          ? tutor.profile_image || null
           : tutor.logo || null,
       hourly_rate: parseFloat(p.hourly_rate),
       currency: p.currency,
@@ -149,7 +149,7 @@ export const getTutorCoachingDetails = TryCatchFunction(async (req, res) => {
       {
         model: SoleTutor,
         as: "soleTutor",
-        attributes: ["id", "fname", "lname", "email", "profile_picture", "slug", "bio"],
+        attributes: ["id", "fname", "lname", "email", "profile_image", "slug", "bio"],
         required: false,
       },
       {
@@ -199,7 +199,7 @@ export const getTutorCoachingDetails = TryCatchFunction(async (req, res) => {
         slug: tutor?.slug || null,
         image:
           tutorType === "sole_tutor"
-            ? tutor?.profile_picture || null
+            ? tutor?.profile_image || null
             : tutor?.logo || null,
         bio: tutor?.bio || tutor?.description || null,
       },
@@ -438,7 +438,7 @@ export const getMyBookingRequests = TryCatchFunction(async (req, res) => {
       {
         model: SoleTutor,
         as: "soleTutor",
-        attributes: ["id", "fname", "lname", "profile_picture", "slug"],
+        attributes: ["id", "fname", "lname", "profile_image", "slug"],
         required: false,
       },
       {
@@ -488,7 +488,7 @@ export const getMyBookingRequests = TryCatchFunction(async (req, res) => {
         name: tutorName,
         image:
           r.tutor_type === "sole_tutor"
-            ? tutor?.profile_picture || null
+            ? tutor?.profile_image || null
             : tutor?.logo || null,
         slug: tutor?.slug || null,
       },

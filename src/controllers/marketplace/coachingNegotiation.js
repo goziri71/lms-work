@@ -64,7 +64,7 @@ export const getTutorBookingRequests = TryCatchFunction(async (req, res) => {
       {
         model: Students,
         as: "student",
-        attributes: ["id", "fname", "lname", "email", "profile_picture"],
+        attributes: ["id", "fname", "lname", "email", "profile_image"],
       },
     ],
     order: [["created_at", "DESC"]],
@@ -99,7 +99,7 @@ export const getTutorBookingRequests = TryCatchFunction(async (req, res) => {
           id: r.student.id,
           name: `${r.student.fname || ""} ${r.student.lname || ""}`.trim(),
           email: r.student.email,
-          image: r.student.profile_picture || null,
+          image: r.student.profile_image || null,
         }
       : null,
     created_at: r.created_at,
@@ -133,7 +133,7 @@ export const getTutorBookingRequestDetail = TryCatchFunction(async (req, res) =>
       {
         model: Students,
         as: "student",
-        attributes: ["id", "fname", "lname", "email", "profile_picture"],
+        attributes: ["id", "fname", "lname", "email", "profile_image"],
       },
     ],
   });
