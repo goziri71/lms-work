@@ -11,6 +11,7 @@ const MEMORY_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const DB_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 const memoryCache = new Map();
+let isJobCacheTableAvailable = true;
 
 const BLOCKED_ARBEITSZEIT = ["vz"];
 const ALLOWED_ARBEITSZEIT = ["tz", "ho", "snw", "mj"];
@@ -104,24 +105,31 @@ export async function searchJobs(searchParams = {}) {
   }
 
   // 2. Check database cache
-  try {
-    const dbEntry = await JobCache.findOne({
-      where: {
-        cache_key: cacheKey,
-        expires_at: { [Op.gt]: new Date() },
-      },
-    });
-
-    if (dbEntry) {
-      // Refresh memory cache from DB
-      memoryCache.set(cacheKey, {
-        data: dbEntry.response_data,
-        expiresAt: Date.now() + MEMORY_CACHE_TTL_MS,
+  if (isJobCacheTableAvailable) {
+    try {
+      const dbEntry = await JobCache.findOne({
+        where: {
+          cache_key: cacheKey,
+          expires_at: { [Op.gt]: new Date() },
+        },
       });
-      return { ...dbEntry.response_data, cache_source: "database" };
+
+      if (dbEntry) {
+        // Refresh memory cache from DB
+        memoryCache.set(cacheKey, {
+          data: dbEntry.response_data,
+          expiresAt: Date.now() + MEMORY_CACHE_TTL_MS,
+        });
+        return { ...dbEntry.response_data, cache_source: "database" };
+      }
+    } catch (dbErr) {
+      if (dbErr?.message?.includes('relation "job_cache" does not exist')) {
+        isJobCacheTableAvailable = false;
+        console.warn("Job cache table missing; continuing with memory/API cache only.");
+      } else {
+        console.warn("Job cache DB lookup failed:", dbErr.message);
+      }
     }
-  } catch (dbErr) {
-    console.warn("Job cache DB lookup failed:", dbErr.message);
   }
 
   // 3. Call external API
@@ -149,13 +157,22 @@ export async function searchJobs(searchParams = {}) {
     });
 
     // Save to database cache (non-blocking)
-    JobCache.upsert({
-      cache_key: cacheKey,
-      search_params: queryParams,
-      response_data: responseData,
-      total_results: responseData.total,
-      expires_at: new Date(Date.now() + DB_CACHE_TTL_MS),
-    }).catch((err) => console.warn("Job cache DB save failed:", err.message));
+    if (isJobCacheTableAvailable) {
+      JobCache.upsert({
+        cache_key: cacheKey,
+        search_params: queryParams,
+        response_data: responseData,
+        total_results: responseData.total,
+        expires_at: new Date(Date.now() + DB_CACHE_TTL_MS),
+      }).catch((err) => {
+        if (err?.message?.includes('relation "job_cache" does not exist')) {
+          isJobCacheTableAvailable = false;
+          console.warn("Job cache table missing; DB cache disabled.");
+          return;
+        }
+        console.warn("Job cache DB save failed:", err.message);
+      });
+    }
 
     return { ...responseData, cache_source: "api" };
   } catch (apiErr) {
@@ -163,16 +180,22 @@ export async function searchJobs(searchParams = {}) {
 
     // Fallback: serve stale DB cache if available
     try {
-      const staleEntry = await JobCache.findOne({
-        where: { cache_key: cacheKey },
-        order: [["updated_at", "DESC"]],
-      });
+      if (isJobCacheTableAvailable) {
+        const staleEntry = await JobCache.findOne({
+          where: { cache_key: cacheKey },
+          order: [["updated_at", "DESC"]],
+        });
 
-      if (staleEntry) {
-        return { ...staleEntry.response_data, cache_source: "stale_database" };
+        if (staleEntry) {
+          return { ...staleEntry.response_data, cache_source: "stale_database" };
+        }
       }
     } catch (fallbackErr) {
-      console.warn("Stale cache fallback failed:", fallbackErr.message);
+      if (fallbackErr?.message?.includes('relation "job_cache" does not exist')) {
+        isJobCacheTableAvailable = false;
+      } else {
+        console.warn("Stale cache fallback failed:", fallbackErr.message);
+      }
     }
 
     throw new Error(
@@ -187,6 +210,7 @@ export async function searchJobs(searchParams = {}) {
  */
 export async function cleanupExpiredCache() {
   try {
+    if (!isJobCacheTableAvailable) return 0;
     const deleted = await JobCache.destroy({
       where: { expires_at: { [Op.lt]: new Date() } },
     });
@@ -195,6 +219,10 @@ export async function cleanupExpiredCache() {
     }
     return deleted;
   } catch (err) {
+    if (err?.message?.includes('relation "job_cache" does not exist')) {
+      isJobCacheTableAvailable = false;
+      return 0;
+    }
     console.warn("Job cache cleanup failed:", err.message);
     return 0;
   }

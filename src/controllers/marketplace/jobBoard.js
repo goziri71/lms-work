@@ -4,6 +4,8 @@ import { SavedJob } from "../../models/marketplace/savedJob.js";
 import { searchJobs, cleanupExpiredCache } from "../../services/jobSearchService.js";
 import { Op } from "sequelize";
 
+let isSavedJobsTableAvailable = true;
+
 /**
  * Search jobs from the German Federal Employment Agency
  * GET /api/marketplace/jobs/search
@@ -52,15 +54,24 @@ export const searchJobListings = TryCatchFunction(async (req, res) => {
       .map((j) => j.hashId || j.refnr || null)
       .filter(Boolean);
 
-    if (hashIds.length > 0) {
-      const savedEntries = await SavedJob.findAll({
-        where: {
-          student_id: studentId,
-          job_hash_id: { [Op.in]: hashIds },
-        },
-        attributes: ["job_hash_id"],
-      });
-      savedJobIds = savedEntries.map((s) => s.job_hash_id);
+    if (hashIds.length > 0 && isSavedJobsTableAvailable) {
+      try {
+        const savedEntries = await SavedJob.findAll({
+          where: {
+            student_id: studentId,
+            job_hash_id: { [Op.in]: hashIds },
+          },
+          attributes: ["job_hash_id"],
+        });
+        savedJobIds = savedEntries.map((s) => s.job_hash_id);
+      } catch (savedErr) {
+        if (savedErr?.message?.includes('relation "saved_jobs" does not exist')) {
+          isSavedJobsTableAvailable = false;
+          console.warn("saved_jobs table missing; returning jobs with is_saved=false.");
+        } else {
+          throw savedErr;
+        }
+      }
     }
   }
 
