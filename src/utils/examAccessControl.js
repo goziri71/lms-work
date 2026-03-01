@@ -11,7 +11,7 @@ import { Modules } from "../models/modules/modules.js";
  * @param {number} courseId - Course ID
  * @returns {Promise<boolean>} - True if user can access the course
  */
-export async function canAccessCourse(userType, userId, courseId) {
+export async function canAccessCourse(userType, userId, courseId, authUser = null) {
   // Admins can access all courses
   if (userType === "admin" || userType === "super_admin") {
     return true;
@@ -21,6 +21,48 @@ export async function canAccessCourse(userType, userId, courseId) {
   if (userType === "staff") {
     const course = await Courses.findOne({
       where: { id: courseId, staff_id: userId },
+    });
+    return !!course;
+  }
+
+  // Sole tutors can access courses they own
+  if (userType === "sole_tutor") {
+    const course = await Courses.findOne({
+      where: {
+        id: courseId,
+        owner_type: "sole_tutor",
+        owner_id: userId,
+      },
+    });
+    return !!course;
+  }
+
+  // Organization accounts can access courses owned by their organization
+  if (userType === "organization") {
+    const course = await Courses.findOne({
+      where: {
+        id: courseId,
+        owner_type: "organization",
+        owner_id: userId,
+      },
+    });
+    return !!course;
+  }
+
+  // Organization users can access courses owned by their parent organization
+  if (userType === "organization_user") {
+    const organizationId = Number(
+      authUser?.organizationId || authUser?.organization_id || 0
+    );
+    if (!Number.isInteger(organizationId) || organizationId <= 0) {
+      return false;
+    }
+    const course = await Courses.findOne({
+      where: {
+        id: courseId,
+        owner_type: "organization",
+        owner_id: organizationId,
+      },
     });
     return !!course;
   }
@@ -75,7 +117,7 @@ export async function canModifyExam(userType, userId, examId) {
  * @param {number} quizId - Quiz ID
  * @returns {Promise<{allowed: boolean, quiz: object|null, originalCreatorId: number|null}>}
  */
-export async function canModifyQuiz(userType, userId, quizId) {
+export async function canModifyQuiz(userType, userId, quizId, authUser = null) {
   const quiz = await Quiz.findByPk(quizId);
   if (!quiz) {
     return { allowed: false, quiz: null, originalCreatorId: null };
@@ -100,7 +142,34 @@ export async function canModifyQuiz(userType, userId, quizId) {
 
   // Staff can only modify their own quizzes or quizzes for their courses
   if (userType === "staff") {
-    const hasAccess = await canAccessCourse(userType, userId, module.course_id);
+    const hasAccess = await canAccessCourse(
+      userType,
+      userId,
+      module.course_id,
+      authUser
+    );
+    const isCreator = quiz.created_by === userId;
+    return {
+      allowed: hasAccess || isCreator,
+      quiz,
+      originalCreatorId: quiz.created_by,
+      isAdminModification: false,
+      courseId: module.course_id,
+    };
+  }
+
+  // Tutors (individual/org/org_user) can modify quizzes for courses they own/manage
+  if (
+    userType === "sole_tutor" ||
+    userType === "organization" ||
+    userType === "organization_user"
+  ) {
+    const hasAccess = await canAccessCourse(
+      userType,
+      userId,
+      module.course_id,
+      authUser
+    );
     const isCreator = quiz.created_by === userId;
     return {
       allowed: hasAccess || isCreator,

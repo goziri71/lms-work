@@ -22,17 +22,27 @@ import {
 } from "../../utils/examAccessControl.js";
 import { logAdminActivity } from "../../middlewares/adminAuthorize.js";
 
+function canManageQuizzes(userType) {
+  return [
+    "staff",
+    "admin",
+    "super_admin",
+    "sole_tutor",
+    "organization",
+    "organization_user",
+  ].includes(userType);
+}
+
 export const createQuiz = TryCatchFunction(async (req, res) => {
   const userId = Number(req.user?.id);
   const userType = req.user?.userType;
   const { module_id, duration_minutes, title, description, status } = req.body;
 
-  if (
-    userType !== "staff" &&
-    userType !== "admin" &&
-    userType !== "super_admin"
-  ) {
-    throw new ErrorClass("Only staff and admins can create quizzes", 403);
+  if (!canManageQuizzes(userType)) {
+    throw new ErrorClass(
+      "Only authorized tutors, staff, and admins can create quizzes",
+      403
+    );
   }
 
   if (!Number.isInteger(userId) || userId <= 0) {
@@ -51,7 +61,12 @@ export const createQuiz = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, module.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    module.course_id,
+    req.user
+  );
   if (!hasAccess) {
     throw new ErrorClass(
       "You don't have permission to create quiz for this module",
@@ -123,7 +138,7 @@ export const addQuizQuestionsBatch = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can modify this quiz (admin can modify all, staff only their own)
-  const accessCheck = await canModifyQuiz(userType, userId, quizId);
+  const accessCheck = await canModifyQuiz(userType, userId, quizId, req.user);
   if (!accessCheck.allowed) {
     throw new ErrorClass("You don't have permission to modify this quiz", 403);
   }
@@ -228,15 +243,10 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
   // console.log("[getStudentQuizzes] courseIdParam:", courseIdParam);
   // console.log("[getStudentQuizzes] moduleIdParam:", moduleIdParam);
 
-  // Allow students, staff, and admins to access quizzes
-  if (
-    userType !== "student" &&
-    userType !== "staff" &&
-    userType !== "admin" &&
-    userType !== "super_admin"
-  ) {
+  // Allow enrolled learners plus quiz managers
+  if (!canManageQuizzes(userType) && userType !== "student") {
     throw new ErrorClass(
-      "Only students, staff, and admins can view quiz list",
+      "Only enrolled learners, authorized tutors, staff, and admins can view quiz list",
       403
     );
   }
@@ -259,6 +269,40 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
       attributes: ["id"],
     });
     allowedCourseIds = staffCourses.map((c) => c.id);
+  } else if (userType === "sole_tutor") {
+    const tutorCourses = await Courses.findAll({
+      where: {
+        owner_type: "sole_tutor",
+        owner_id: userId,
+      },
+      attributes: ["id"],
+    });
+    allowedCourseIds = tutorCourses.map((c) => c.id);
+  } else if (userType === "organization") {
+    const orgCourses = await Courses.findAll({
+      where: {
+        owner_type: "organization",
+        owner_id: userId,
+      },
+      attributes: ["id"],
+    });
+    allowedCourseIds = orgCourses.map((c) => c.id);
+  } else if (userType === "organization_user") {
+    const organizationId = Number(
+      req.user?.organizationId || req.user?.organization_id || 0
+    );
+    if (Number.isInteger(organizationId) && organizationId > 0) {
+      const orgCourses = await Courses.findAll({
+        where: {
+          owner_type: "organization",
+          owner_id: organizationId,
+        },
+        attributes: ["id"],
+      });
+      allowedCourseIds = orgCourses.map((c) => c.id);
+    } else {
+      allowedCourseIds = [];
+    }
   } else {
     // For students, get enrolled courses via the junction table
     const enrolledCourses = await Courses.findAll({
@@ -347,12 +391,9 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
             {
               model: QuizOptions,
               as: "options",
-              attributes:
-                userType === "staff" ||
-                userType === "admin" ||
-                userType === "super_admin"
-                  ? ["id", "option_text", "is_correct"]
-                  : ["id", "option_text"],
+              attributes: canManageQuizzes(userType)
+                ? ["id", "option_text", "is_correct"]
+                : ["id", "option_text"],
             },
           ],
         },
@@ -409,9 +450,7 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
           options: q.options?.map((opt) => ({
             id: opt.id,
             text: opt.option_text,
-            ...((userType === "staff" ||
-              userType === "admin" ||
-              userType === "super_admin") && { is_correct: opt.is_correct }), // Staff and admins see correct answers
+            ...(canManageQuizzes(userType) && { is_correct: opt.is_correct }), // Managers see correct answers
           })),
         })) || [],
     };
@@ -432,7 +471,7 @@ export const getStudentQuizzes = TryCatchFunction(async (req, res) => {
           : null,
       };
     } else {
-      // Staff and admins see additional management info
+      // Quiz managers see additional management info
       return {
         ...baseResponse,
         created_by: quiz.created_by,
@@ -471,12 +510,9 @@ export const getQuiz = TryCatchFunction(async (req, res) => {
           {
             model: QuizOptions,
             as: "options",
-            attributes:
-              userType === "staff" ||
-              userType === "admin" ||
-              userType === "super_admin"
-                ? ["id", "option_text", "is_correct"]
-                : ["id", "option_text"], // Hide correct answers from students
+            attributes: canManageQuizzes(userType)
+              ? ["id", "option_text", "is_correct"]
+              : ["id", "option_text"], // Hide correct answers from learners
           },
         ],
       },
@@ -504,6 +540,20 @@ export const getQuiz = TryCatchFunction(async (req, res) => {
       where: { id: module.course_id, staff_id: userId },
     });
     if (!course) {
+      throw new ErrorClass("You don't have permission to view this quiz", 403);
+    }
+  } else if (
+    userType === "sole_tutor" ||
+    userType === "organization" ||
+    userType === "organization_user"
+  ) {
+    const hasAccess = await canAccessCourse(
+      userType,
+      userId,
+      module.course_id,
+      req.user
+    );
+    if (!hasAccess) {
       throw new ErrorClass("You don't have permission to view this quiz", 403);
     }
   } else if (userType === "student") {
@@ -908,12 +958,11 @@ export const getQuizStats = TryCatchFunction(async (req, res) => {
   const sort = (req.query?.sort || "date").toString(); // 'score' | 'date'
   const search = (req.query?.search || "").toString().trim().toLowerCase();
 
-  if (
-    userType !== "staff" &&
-    userType !== "admin" &&
-    userType !== "super_admin"
-  ) {
-    throw new ErrorClass("Only staff and admins can view quiz stats", 403);
+  if (!canManageQuizzes(userType)) {
+    throw new ErrorClass(
+      "Only authorized tutors, staff, and admins can view quiz stats",
+      403
+    );
   }
   if (!Number.isInteger(userId) || userId <= 0) {
     throw new ErrorClass("Unauthorized or invalid user id", 401);
@@ -932,7 +981,12 @@ export const getQuizStats = TryCatchFunction(async (req, res) => {
   if (!module) {
     throw new ErrorClass("Module not found", 404);
   }
-  const hasAccess = await canAccessCourse(userType, userId, module.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    module.course_id,
+    req.user
+  );
   if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
@@ -1337,12 +1391,11 @@ export const updateQuizAttempt = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const quizId = Number(req.params.quizId);
 
-  if (
-    userType !== "staff" &&
-    userType !== "admin" &&
-    userType !== "super_admin"
-  ) {
-    throw new ErrorClass("Only staff and admins can update quizzes", 403);
+  if (!canManageQuizzes(userType)) {
+    throw new ErrorClass(
+      "Only authorized tutors, staff, and admins can update quizzes",
+      403
+    );
   }
   if (!Number.isInteger(userId) || userId <= 0) {
     throw new ErrorClass("Unauthorized or invalid user id", 401);
@@ -1359,7 +1412,7 @@ export const updateQuizAttempt = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can modify this quiz (admin can modify all, staff only their own)
-  const accessCheck = await canModifyQuiz(userType, userId, quizId);
+  const accessCheck = await canModifyQuiz(userType, userId, quizId, req.user);
   if (!accessCheck.allowed) {
     throw new ErrorClass("You don't have permission to modify this quiz", 403);
   }
@@ -1649,12 +1702,11 @@ export const deleteQuiz = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const quizId = Number(req.params.quizId);
 
-  if (
-    userType !== "staff" &&
-    userType !== "admin" &&
-    userType !== "super_admin"
-  ) {
-    throw new ErrorClass("Only staff and admins can delete quizzes", 403);
+  if (!canManageQuizzes(userType)) {
+    throw new ErrorClass(
+      "Only authorized tutors, staff, and admins can delete quizzes",
+      403
+    );
   }
   if (!Number.isInteger(userId) || userId <= 0) {
     throw new ErrorClass("Unauthorized or invalid user id", 401);
@@ -1669,7 +1721,7 @@ export const deleteQuiz = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can modify this quiz (admin can modify all, staff only their own)
-  const accessCheck = await canModifyQuiz(userType, userId, quizId);
+  const accessCheck = await canModifyQuiz(userType, userId, quizId, req.user);
   if (!accessCheck.allowed) {
     throw new ErrorClass("You don't have permission to delete this quiz", 403);
   }
