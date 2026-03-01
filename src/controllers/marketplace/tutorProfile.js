@@ -3,6 +3,7 @@ import { ErrorClass } from "../../utils/errorClass/index.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { authService } from "../../service/authservice.js";
+import { getCurrencyFromCountry } from "../../services/currencyService.js";
 
 /**
  * Get tutor profile
@@ -110,6 +111,22 @@ export const updateProfile = TryCatchFunction(async (req, res) => {
     if (profile_image !== undefined)
       updateData.profile_image = profile_image || null;
 
+    const hasExplicitCurrency =
+      req.body.currency !== undefined &&
+      req.body.currency !== null &&
+      String(req.body.currency).trim() !== "";
+    if (hasExplicitCurrency) {
+      // Manual override path
+      const normalized = String(req.body.currency).trim().toUpperCase();
+      updateData.currency = normalized;
+      updateData.local_currency = normalized;
+    } else if (country !== undefined) {
+      // Default auto path: derive from country when country changes
+      const derived = getCurrencyFromCountry(updateData.country || tutor.country) || "NGN";
+      updateData.currency = derived;
+      updateData.local_currency = derived;
+    }
+
     // Validation
     if (fname !== undefined && !fname) {
       throw new ErrorClass("First name is required", 400);
@@ -161,6 +178,22 @@ export const updateProfile = TryCatchFunction(async (req, res) => {
       updateData.contact_email = contact_email?.trim() || null;
     if (contact_phone !== undefined)
       updateData.contact_phone = contact_phone?.trim() || null;
+
+    const hasExplicitCurrency =
+      req.body.currency !== undefined &&
+      req.body.currency !== null &&
+      String(req.body.currency).trim() !== "";
+    if (hasExplicitCurrency) {
+      // Manual override path
+      const normalized = String(req.body.currency).trim().toUpperCase();
+      updateData.currency = normalized;
+      updateData.local_currency = normalized;
+    } else if (country !== undefined) {
+      // Default auto path: derive from country when country changes
+      const derived = getCurrencyFromCountry(updateData.country || tutor.country) || "NGN";
+      updateData.currency = derived;
+      updateData.local_currency = derived;
+    }
 
     // Validation
     if (name !== undefined && !name) {
@@ -296,6 +329,7 @@ export const updateSettings = TryCatchFunction(async (req, res) => {
       throw new ErrorClass("Invalid currency code", 400);
     }
     updateData.currency = currencyUpper;
+    updateData.local_currency = currencyUpper;
   }
 
   if (Object.keys(updateData).length === 0) {

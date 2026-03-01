@@ -34,6 +34,8 @@ export const registerSoleTutor = TryCatchFunction(async (req, res) => {
     experience_years,
     address,
     country,
+    currency,
+    currency_override,
   } = req.body;
 
   if (!email || !password || !fname || !lname) {
@@ -64,7 +66,7 @@ export const registerSoleTutor = TryCatchFunction(async (req, res) => {
   // Auto-detect country and currency from IP if not provided
   let finalCountry = country?.trim() || null;
   let finalCountryCode = null;
-  let finalCurrency = "NGN"; // safe fallback
+  let finalCurrency = null;
 
   try {
     const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip;
@@ -72,17 +74,27 @@ export const registerSoleTutor = TryCatchFunction(async (req, res) => {
     if (geoData.success && geoData.country) {
       if (!finalCountry) finalCountry = geoData.country;
       finalCountryCode = geoData.country_code || null;
-      finalCurrency = getCurrencyFromCountry(finalCountry) || "NGN";
     }
   } catch (geoErr) {
     // Geo detection failed - proceed with defaults, don't block registration
     console.warn("Geo detection failed during tutor registration:", geoErr.message);
   }
 
-  // If frontend provided country but geo didn't run, still derive currency
-  if (finalCountry && finalCurrency === "NGN" && finalCountry.toLowerCase() !== "nigeria") {
+  const explicitCurrency =
+    currency !== undefined && currency !== null && String(currency).trim() !== "";
+  const allowManualCurrency = currency_override === true || currency_override === "true";
+
+  if (explicitCurrency && allowManualCurrency) {
+    // Manual override path
+    finalCurrency = String(currency).trim().toUpperCase();
+  } else if (finalCountry) {
+    // Default auto path: derive from country
     finalCurrency = getCurrencyFromCountry(finalCountry) || "NGN";
+  } else if (explicitCurrency) {
+    // No country available, fallback to provided currency
+    finalCurrency = String(currency).trim().toUpperCase();
   }
+  if (!finalCurrency) finalCurrency = "NGN";
 
   // Create tutor (auto-approved)
   const tutor = await SoleTutor.create({
@@ -140,6 +152,8 @@ export const registerOrganization = TryCatchFunction(async (req, res) => {
     contact_person,
     contact_email,
     contact_phone,
+    currency,
+    currency_override,
   } = req.body;
 
   if (!name || !email || !password) {
@@ -161,7 +175,7 @@ export const registerOrganization = TryCatchFunction(async (req, res) => {
   // Auto-detect country and currency from IP if not provided
   let finalCountry = country?.trim() || null;
   let finalCountryCode = null;
-  let finalCurrency = "NGN"; // safe fallback
+  let finalCurrency = null;
 
   try {
     const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip;
@@ -169,16 +183,26 @@ export const registerOrganization = TryCatchFunction(async (req, res) => {
     if (geoData.success && geoData.country) {
       if (!finalCountry) finalCountry = geoData.country;
       finalCountryCode = geoData.country_code || null;
-      finalCurrency = getCurrencyFromCountry(finalCountry) || "NGN";
     }
   } catch (geoErr) {
     console.warn("Geo detection failed during org registration:", geoErr.message);
   }
 
-  // If frontend provided country but geo didn't run, still derive currency
-  if (finalCountry && finalCurrency === "NGN" && finalCountry.toLowerCase() !== "nigeria") {
+  const explicitCurrency =
+    currency !== undefined && currency !== null && String(currency).trim() !== "";
+  const allowManualCurrency = currency_override === true || currency_override === "true";
+
+  if (explicitCurrency && allowManualCurrency) {
+    // Manual override path
+    finalCurrency = String(currency).trim().toUpperCase();
+  } else if (finalCountry) {
+    // Default auto path: derive from country
     finalCurrency = getCurrencyFromCountry(finalCountry) || "NGN";
+  } else if (explicitCurrency) {
+    // No country available, fallback to provided currency
+    finalCurrency = String(currency).trim().toUpperCase();
   }
+  if (!finalCurrency) finalCurrency = "NGN";
 
   // Create organization (auto-approved)
   const organization = await Organization.create({
@@ -367,6 +391,8 @@ export const soleTutorLogin = TryCatchFunction(async (req, res) => {
         status: tutor.status,
         wallet_balance: tutor.wallet_balance,
         rating: tutor.rating,
+        currency: tutor.currency || "NGN",
+        local_currency: tutor.local_currency || tutor.currency || "NGN",
       },
       subscription: subscriptionInfo,
       accessToken,
@@ -527,6 +553,10 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
         currency:
           organization.currency ||
           getCurrencyFromCountry(organization.country || "USD"),
+        local_currency:
+          organization.local_currency ||
+          organization.currency ||
+          getCurrencyFromCountry(organization.country || "USD"),
       },
       subscription: subscriptionInfo,
       accessToken,
@@ -552,7 +582,7 @@ export const organizationUserLogin = TryCatchFunction(async (req, res) => {
       {
         model: Organization,
         as: "organization",
-        attributes: ["id", "name", "status"],
+        attributes: ["id", "name", "status", "currency", "local_currency"],
       },
     ],
   });
@@ -675,6 +705,11 @@ export const organizationUserLogin = TryCatchFunction(async (req, res) => {
         organization: {
           id: orgUser.organization.id,
           name: orgUser.organization.name,
+          currency: orgUser.organization.currency || "NGN",
+          local_currency:
+            orgUser.organization.local_currency ||
+            orgUser.organization.currency ||
+            "NGN",
         },
       },
       subscription: subscriptionInfo,
@@ -823,6 +858,8 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
           status: tutor.status,
           wallet_balance: tutor.wallet_balance,
           rating: tutor.rating,
+          currency: tutor.currency || "NGN",
+          local_currency: tutor.local_currency || tutor.currency || "NGN",
         },
         subscription: subscriptionInfo,
         accessToken,
@@ -958,6 +995,13 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
           status: organization.status,
           wallet_balance: organization.wallet_balance,
           rating: organization.rating,
+          currency:
+            organization.currency ||
+            getCurrencyFromCountry(organization.country || "USD"),
+          local_currency:
+            organization.local_currency ||
+            organization.currency ||
+            getCurrencyFromCountry(organization.country || "USD"),
         },
         subscription: subscriptionInfo,
         accessToken,

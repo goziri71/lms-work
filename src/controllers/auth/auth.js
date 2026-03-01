@@ -76,6 +76,8 @@ export const studentLogin = TryCatchFunction(async (req, res) => {
       adminStatus: student.admin_status,
       walletBalance: student.wallet_balance,
       profileImage: student.profile_image,
+      currency: student.currency || "NGN",
+      local_currency: student.currency || "NGN",
     };
 
     res.status(200).json({
@@ -344,6 +346,8 @@ export const login = TryCatchFunction(async (req, res) => {
       adminStatus: user.admin_status,
       walletBalance: user.wallet_balance,
       profileImage: user.profile_image,
+      currency: user.currency || "NGN",
+      local_currency: user.currency || "NGN",
     };
   } else {
     userData = {
@@ -507,6 +511,22 @@ export const updateStudentProfile = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Student not found", 404);
   }
 
+  // Hybrid currency policy:
+  // - If currency is explicitly provided, treat as manual override.
+  // - If country changes without explicit currency, auto-sync currency from country.
+  const hasExplicitCurrency =
+    updateData.currency !== undefined &&
+    updateData.currency !== null &&
+    String(updateData.currency).trim() !== "";
+  const hasCountryUpdate = updateData.country !== undefined;
+
+  if (hasExplicitCurrency) {
+    updateData.currency = String(updateData.currency).trim().toUpperCase();
+  } else if (hasCountryUpdate) {
+    const nextCountry = String(updateData.country || "").trim();
+    updateData.currency = getCurrencyFromCountry(nextCountry) || "NGN";
+  }
+
   await student.update(updateData);
 
   // Return updated student data (excluding sensitive fields)
@@ -583,6 +603,7 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
     level,
     study_mode,
     currency,
+    currency_override,
     foreign_student,
     ...otherData
   } = req.body;
@@ -609,24 +630,34 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
 
   // Auto-detect country and currency from IP if not provided
   let finalCountry = country?.trim() || null;
-  let finalCurrency = currency || null;
+  let finalCurrency = null;
 
   try {
     const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip;
     const geoData = await getIPGeolocation(clientIp);
     if (geoData.success && geoData.country) {
       if (!finalCountry) finalCountry = geoData.country;
-      if (!finalCurrency) finalCurrency = getCurrencyFromCountry(finalCountry) || "NGN";
     }
   } catch (geoErr) {
     // Geo detection failed - proceed with defaults, don't block registration
     console.warn("Geo detection failed during student registration:", geoErr.message);
   }
 
-  // If frontend provided country but geo didn't run, still derive currency
-  if (!finalCurrency && finalCountry) {
+  const explicitCurrency =
+    currency !== undefined && currency !== null && String(currency).trim() !== "";
+  const allowManualCurrency = currency_override === true || currency_override === "true";
+
+  if (explicitCurrency && allowManualCurrency) {
+    // Manual override path
+    finalCurrency = String(currency).trim().toUpperCase();
+  } else if (finalCountry) {
+    // Default auto path: derive from country
     finalCurrency = getCurrencyFromCountry(finalCountry) || "NGN";
+  } else if (explicitCurrency) {
+    // No country available, fallback to provided currency
+    finalCurrency = String(currency).trim().toUpperCase();
   }
+
   if (!finalCurrency) finalCurrency = "NGN"; // ultimate fallback
 
   // Create student with required defaults
