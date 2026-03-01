@@ -78,7 +78,7 @@ export async function canAccessCourse(userType, userId, courseId, authUser = nul
  * @param {number} examId - Exam ID
  * @returns {Promise<{allowed: boolean, exam: object|null, originalCreatorId: number|null}>}
  */
-export async function canModifyExam(userType, userId, examId) {
+export async function canModifyExam(userType, userId, examId, authUser = null) {
   const exam = await Exam.findByPk(examId);
   if (!exam) {
     return { allowed: false, exam: null, originalCreatorId: null };
@@ -96,7 +96,33 @@ export async function canModifyExam(userType, userId, examId) {
 
   // Staff can only modify their own exams or exams for their courses
   if (userType === "staff") {
-    const hasAccess = await canAccessCourse(userType, userId, exam.course_id);
+    const hasAccess = await canAccessCourse(
+      userType,
+      userId,
+      exam.course_id,
+      authUser
+    );
+    const isCreator = exam.created_by === userId;
+    return {
+      allowed: hasAccess || isCreator,
+      exam,
+      originalCreatorId: exam.created_by,
+      isAdminModification: false,
+    };
+  }
+
+  // Tutors (individual/org/org_user) can modify exams for courses they own/manage
+  if (
+    userType === "sole_tutor" ||
+    userType === "organization" ||
+    userType === "organization_user"
+  ) {
+    const hasAccess = await canAccessCourse(
+      userType,
+      userId,
+      exam.course_id,
+      authUser
+    );
     const isCreator = exam.created_by === userId;
     return {
       allowed: hasAccess || isCreator,

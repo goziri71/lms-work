@@ -23,6 +23,17 @@ import {
 } from "../../utils/examAccessControl.js";
 import { logAdminActivity } from "../../middlewares/adminAuthorize.js";
 
+function canManageExams(userType) {
+  return [
+    "staff",
+    "admin",
+    "super_admin",
+    "sole_tutor",
+    "organization",
+    "organization_user",
+  ].includes(userType);
+}
+
 /**
  * GET ATTEMPTS FOR GRADING (Staff and Admin)
  * GET /api/exams/:examId/attempts
@@ -32,8 +43,11 @@ export const getExamAttempts = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const examId = Number(req.params.examId);
 
-  if (userType !== "staff" && userType !== "admin") {
-    throw new ErrorClass("Only staff and admins can access grading", 403);
+  if (!canManageExams(userType)) {
+    throw new ErrorClass(
+      "Only authorized tutors, staff, and admins can access grading",
+      403
+    );
   }
 
   const exam = await Exam.findByPk(examId);
@@ -42,7 +56,12 @@ export const getExamAttempts = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, exam.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    exam.course_id,
+    req.user
+  );
   if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
@@ -104,8 +123,11 @@ export const getAttemptForGrading = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const attemptId = Number(req.params.attemptId);
 
-  if (userType !== "staff" && userType !== "admin") {
-    throw new ErrorClass("Only staff and admins can access grading", 403);
+  if (!canManageExams(userType)) {
+    throw new ErrorClass(
+      "Only authorized tutors, staff, and admins can access grading",
+      403
+    );
   }
 
   const attempt = await ExamAttempt.findByPk(attemptId, {
@@ -165,7 +187,12 @@ export const getAttemptForGrading = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, attempt.exam.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    attempt.exam.course_id,
+    req.user
+  );
   if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
@@ -195,8 +222,11 @@ export const gradeTheoryAnswer = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const answerId = Number(req.params.answerId);
 
-  if (userType !== "staff" && userType !== "admin") {
-    throw new ErrorClass("Only staff and admins can grade answers", 403);
+  if (!canManageExams(userType)) {
+    throw new ErrorClass(
+      "Only authorized tutors, staff, and admins can grade answers",
+      403
+    );
   }
 
   const { awarded_score, feedback } = req.body;
@@ -231,14 +261,19 @@ export const gradeTheoryAnswer = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, answer.attempt.exam.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    answer.attempt.exam.course_id,
+    req.user
+  );
   if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
 
   // Get exam info for audit log
   const exam = answer.attempt.exam;
-  const accessCheck = await canModifyExam(userType, userId, exam.id);
+  const accessCheck = await canModifyExam(userType, userId, exam.id, req.user);
   const isAdminModification = accessCheck.isAdminModification && accessCheck.originalCreatorId !== userId;
 
   // Validate score doesn't exceed max
@@ -332,8 +367,11 @@ export const bulkGradeTheory = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const attemptId = Number(req.params.attemptId);
 
-  if (userType !== "staff" && userType !== "admin") {
-    throw new ErrorClass("Only staff and admins can grade answers", 403);
+  if (!canManageExams(userType)) {
+    throw new ErrorClass(
+      "Only authorized tutors, staff, and admins can grade answers",
+      403
+    );
   }
 
   const { grades } = req.body; // Array of { answer_id, awarded_score, feedback }
@@ -351,13 +389,23 @@ export const bulkGradeTheory = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, attempt.exam.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    attempt.exam.course_id,
+    req.user
+  );
   if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
 
   // Get exam info for audit log
-  const accessCheck = await canModifyExam(userType, userId, attempt.exam_id);
+  const accessCheck = await canModifyExam(
+    userType,
+    userId,
+    attempt.exam_id,
+    req.user
+  );
   const isAdminModification = accessCheck.isAdminModification && accessCheck.originalCreatorId !== userId;
 
   // Grade each answer
@@ -465,8 +513,11 @@ export const getExamStatistics = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const examId = Number(req.params.examId);
 
-  if (userType !== "staff" && userType !== "admin") {
-    throw new ErrorClass("Only staff and admins can view statistics", 403);
+  if (!canManageExams(userType)) {
+    throw new ErrorClass(
+      "Only authorized tutors, staff, and admins can view statistics",
+      403
+    );
   }
 
   const exam = await Exam.findByPk(examId);
@@ -475,7 +526,12 @@ export const getExamStatistics = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, exam.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    exam.course_id,
+    req.user
+  );
   if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }

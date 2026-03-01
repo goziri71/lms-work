@@ -12,6 +12,17 @@ import {
 } from "../../utils/examAccessControl.js";
 import { logAdminActivity } from "../../middlewares/adminAuthorize.js";
 
+function canManageExams(userType) {
+  return [
+    "staff",
+    "admin",
+    "super_admin",
+    "sole_tutor",
+    "organization",
+    "organization_user",
+  ].includes(userType);
+}
+
 /**
  * CREATE OBJECTIVE QUESTION
  * POST /api/exams/bank/questions/objective
@@ -20,8 +31,11 @@ export const createObjectiveQuestion = TryCatchFunction(async (req, res) => {
   const userId = Number(req.user?.id);
   const userType = req.user?.userType;
 
-  if (userType !== "staff" && userType !== "admin") {
-    throw new ErrorClass("Only staff and admins can create questions", 403);
+  if (!canManageExams(userType)) {
+    throw new ErrorClass(
+      "Only authorized tutors, staff, and admins can create questions",
+      403
+    );
   }
 
   const {
@@ -59,7 +73,7 @@ export const createObjectiveQuestion = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, course_id);
+  const hasAccess = await canAccessCourse(userType, userId, course_id, req.user);
   if (!hasAccess) {
     throw new ErrorClass("Course not found or access denied", 403);
   }
@@ -130,8 +144,11 @@ export const createTheoryQuestion = TryCatchFunction(async (req, res) => {
   const userId = Number(req.user?.id);
   const userType = req.user?.userType;
 
-  if (userType !== "staff" && userType !== "admin") {
-    throw new ErrorClass("Only staff and admins can create questions", 403);
+  if (!canManageExams(userType)) {
+    throw new ErrorClass(
+      "Only authorized tutors, staff, and admins can create questions",
+      403
+    );
   }
 
   const {
@@ -154,7 +171,7 @@ export const createTheoryQuestion = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, course_id);
+  const hasAccess = await canAccessCourse(userType, userId, course_id, req.user);
   if (!hasAccess) {
     throw new ErrorClass("Course not found or access denied", 403);
   }
@@ -225,8 +242,11 @@ export const updateObjectiveQuestion = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const questionId = Number(req.params.questionId);
 
-  if (userType !== "staff" && userType !== "admin") {
-    throw new ErrorClass("Only staff and admins can update questions", 403);
+  if (!canManageExams(userType)) {
+    throw new ErrorClass(
+      "Only authorized tutors, staff, and admins can update questions",
+      403
+    );
   }
 
   const questionBank = await QuestionBank.findByPk(questionId, {
@@ -238,7 +258,12 @@ export const updateObjectiveQuestion = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, questionBank.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    questionBank.course_id,
+    req.user
+  );
   if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
@@ -350,8 +375,11 @@ export const updateTheoryQuestion = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const questionId = Number(req.params.questionId);
 
-  if (userType !== "staff" && userType !== "admin") {
-    throw new ErrorClass("Only staff and admins can update questions", 403);
+  if (!canManageExams(userType)) {
+    throw new ErrorClass(
+      "Only authorized tutors, staff, and admins can update questions",
+      403
+    );
   }
 
   const questionBank = await QuestionBank.findByPk(questionId, {
@@ -363,7 +391,12 @@ export const updateTheoryQuestion = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, questionBank.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    questionBank.course_id,
+    req.user
+  );
   if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
@@ -456,8 +489,11 @@ export const deleteQuestion = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const questionId = Number(req.params.questionId);
 
-  if (userType !== "staff" && userType !== "admin") {
-    throw new ErrorClass("Only staff and admins can delete questions", 403);
+  if (!canManageExams(userType)) {
+    throw new ErrorClass(
+      "Only authorized tutors, staff, and admins can delete questions",
+      403
+    );
   }
 
   const questionBank = await QuestionBank.findByPk(questionId);
@@ -467,7 +503,12 @@ export const deleteQuestion = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, questionBank.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    questionBank.course_id,
+    req.user
+  );
   if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
@@ -518,8 +559,11 @@ export const getQuestionById = TryCatchFunction(async (req, res) => {
   const userType = req.user?.userType;
   const questionIdParam = req.params.questionId;
 
-  if (userType !== "staff" && userType !== "admin") {
-    throw new ErrorClass("Only staff and admins can access questions", 403);
+  if (!canManageExams(userType)) {
+    throw new ErrorClass(
+      "Only authorized tutors, staff, and admins can access questions",
+      403
+    );
   }
 
   // Validate questionId is a valid number
@@ -541,7 +585,12 @@ export const getQuestionById = TryCatchFunction(async (req, res) => {
   }
 
   // Verify user can access the course (admin can access all, staff only their own)
-  const hasAccess = await canAccessCourse(userType, userId, questionExists.course_id);
+  const hasAccess = await canAccessCourse(
+    userType,
+    userId,
+    questionExists.course_id,
+    req.user
+  );
   if (!hasAccess) {
     throw new ErrorClass("Access denied", 403);
   }
