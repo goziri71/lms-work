@@ -240,23 +240,29 @@ export const subscribe = TryCatchFunction(async (req, res) => {
         "USD",
         tutorCurrency
       );
+      if (
+        conversion?.rateInfo?.fallback === true ||
+        !Number.isFinite(Number(conversion?.rate)) ||
+        Number(conversion?.rate) <= 0 ||
+        !Number.isFinite(Number(conversion?.convertedAmount)) ||
+        Number(conversion?.convertedAmount) <= 0
+      ) {
+        throw new ErrorClass(
+          "Live exchange rate is temporarily unavailable. Please try again shortly.",
+          503
+        );
+      }
       subscriptionPrice = conversion.convertedAmount;
       currency = tutorCurrency;
     } catch (error) {
       console.error("FX conversion error:", error);
-      // Fallback: Use a simple exchange rate if FX service fails
-      // Default rates (approximate, should be updated from FX service)
-      const defaultRates = {
-        NGN: 1500,
-        GHS: 12,
-        KES: 130,
-        ZAR: 18,
-        GBP: 0.8,
-        EUR: 0.92,
-      };
-      const rate = defaultRates[tutorCurrency] || 1;
-      subscriptionPrice = subscriptionPriceUSD * rate;
-      currency = tutorCurrency;
+      if (error instanceof ErrorClass) {
+        throw error;
+      }
+      throw new ErrorClass(
+        "Live exchange rate is temporarily unavailable. Please try again shortly.",
+        503
+      );
     }
   } else if (subscriptionPriceUSD > 0) {
     currency = "USD";
