@@ -113,7 +113,7 @@ export const SUBSCRIPTION_TIERS = {
   },
   basic: {
     name: "Basic",
-    price: 19.5,
+    price: 10,
     courses_limit: 5,
     communities_limit: 1,
     community_member_limit: 10,
@@ -124,7 +124,7 @@ export const SUBSCRIPTION_TIERS = {
   },
   professional: {
     name: "Professional",
-    price: 49.5,
+    price: 35,
     courses_limit: 25,
     communities_limit: 3,
     community_member_limit: 30,
@@ -135,7 +135,7 @@ export const SUBSCRIPTION_TIERS = {
   },
   expert: {
     name: "Expert",
-    price: 124.5,
+    price: 85,
     courses_limit: 100,
     communities_limit: 5,
     community_member_limit: 50,
@@ -146,7 +146,7 @@ export const SUBSCRIPTION_TIERS = {
   },
   grand_master: {
     name: "Grand Master",
-    price: 249.5,
+    price: 180,
     courses_limit: null, // unlimited
     communities_limit: null, // unlimited
     community_member_limit: 100,
