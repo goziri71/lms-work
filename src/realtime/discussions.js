@@ -8,7 +8,7 @@ import mongoose from "mongoose";
 const authService = new AuthService();
 
 // Cache course metadata to avoid repeated DB lookups
-const courseMetaCache = new Map(); // courseId -> { data, expiresAt }
+const courseMetaCache = new Map();
 const COURSE_META_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 async function getCourseMeta(courseId) {
@@ -20,7 +20,7 @@ async function getCourseMeta(courseId) {
 
   const [rows] = await db.query(
     "SELECT id, is_marketplace, owner_type, owner_id, staff_id FROM courses WHERE id = ? LIMIT 1",
-    { replacements: [id] }
+    { replacements: [id] },
   );
 
   const data = rows?.[0] || null;
@@ -49,7 +49,7 @@ async function canAccessDiscussion({
   if (userType === "staff") {
     const [rows] = await db.query(
       "SELECT 1 FROM courses WHERE id = ? AND staff_id = ?",
-      { replacements: [courseId, userId] }
+      { replacements: [courseId, userId] },
     );
     return rows.length > 0;
   }
@@ -59,7 +59,7 @@ async function canAccessDiscussion({
     // Only allow tutors to access discussions for courses they own
     const [rows] = await db.query(
       "SELECT 1 FROM courses WHERE id = ? AND owner_type = ? AND owner_id = ?",
-      { replacements: [courseId, userType, userId] }
+      { replacements: [courseId, userType, userId] },
     );
     return rows.length > 0;
   }
@@ -70,7 +70,7 @@ async function canAccessDiscussion({
       // Marketplace purchase enrollment: academic_year/semester are NULL
       const [rows] = await db.query(
         "SELECT 1 FROM course_reg WHERE course_id = ? AND student_id = ? AND registration_status = 'marketplace_purchased' LIMIT 1",
-        { replacements: [courseId, userId] }
+        { replacements: [courseId, userId] },
       );
       return rows.length > 0;
     }
@@ -78,7 +78,7 @@ async function canAccessDiscussion({
     // School enrollment: requires academic year + semester match
     const [rows] = await db.query(
       "SELECT 1 FROM course_reg WHERE course_id = ? AND student_id = ? AND academic_year = ? AND semester = ?",
-      { replacements: [courseId, userId, academicYear, semester] }
+      { replacements: [courseId, userId, academicYear, semester] },
     );
     return rows.length > 0;
   }
@@ -143,7 +143,11 @@ export function setupDiscussionsSocket(io) {
             },
           });
 
-          const room = roomName(courseId, normalized.academicYear, normalized.semester);
+          const room = roomName(
+            courseId,
+            normalized.academicYear,
+            normalized.semester,
+          );
           socket.join(room);
 
           console.log("🔍 DEBUG User joined room:", {
@@ -157,7 +161,7 @@ export function setupDiscussionsSocket(io) {
           // Check MongoDB connection
           if (mongoose.connection.readyState !== 1) {
             throw new Error(
-              "MongoDB not connected. Check MONGO_URI and restart server."
+              "MongoDB not connected. Check MONGO_URI and restart server.",
             );
           }
 
@@ -185,7 +189,7 @@ export function setupDiscussionsSocket(io) {
         } catch (err) {
           cb?.({ ok: false, error: err.message });
         }
-      }
+      },
     );
 
     socket.on(
@@ -236,7 +240,7 @@ export function setupDiscussionsSocket(io) {
           // Check MongoDB connection
           if (mongoose.connection.readyState !== 1) {
             throw new Error(
-              "MongoDB not connected. Check MONGO_URI and restart server."
+              "MongoDB not connected. Check MONGO_URI and restart server.",
             );
           }
 
@@ -259,7 +263,11 @@ export function setupDiscussionsSocket(io) {
             created_at: created.created_at,
           };
 
-          const room = roomName(courseId, normalized.academicYear, normalized.semester);
+          const room = roomName(
+            courseId,
+            normalized.academicYear,
+            normalized.semester,
+          );
           console.log("🔍 DEBUG Broadcasting message:", {
             room,
             payload,
@@ -271,14 +279,14 @@ export function setupDiscussionsSocket(io) {
         } catch (err) {
           cb?.({ ok: false, error: err.message });
         }
-      }
+      },
     );
 
     socket.on(
       "loadMoreMessages",
       async (
         { courseId, academicYear, semester, beforeMessageId, limit = 50 },
-        cb
+        cb,
       ) => {
         try {
           const userId = Number(socket.user?.id);
@@ -313,7 +321,7 @@ export function setupDiscussionsSocket(io) {
           // Check MongoDB connection
           if (mongoose.connection.readyState !== 1) {
             throw new Error(
-              "MongoDB not connected. Check MONGO_URI and restart server."
+              "MongoDB not connected. Check MONGO_URI and restart server.",
             );
           }
 
@@ -346,7 +354,7 @@ export function setupDiscussionsSocket(io) {
         } catch (err) {
           cb?.({ ok: false, error: err.message });
         }
-      }
+      },
     );
   });
 }
