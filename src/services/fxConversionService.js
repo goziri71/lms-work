@@ -206,20 +206,12 @@ export async function convertCurrency(amount, fromCurrency, toCurrency) {
     };
   }
 
-  // Get exchange rate - pass the amount since Flutterwave requires it
-  // Flutterwave will return the converted amount directly
+  // Get exchange rate for source -> destination pair
   const rateInfo = await getExchangeRate(from, to, amount);
 
-  // Calculate converted amount
-  let convertedAmount;
-  if (rateInfo.destination.amount && rateInfo.source.amount) {
-    // Flutterwave returns the converted amount in destination.amount
-    // Use it directly since it's already calculated for our specific amount
-    convertedAmount = rateInfo.destination.amount;
-  } else {
-    // Fallback: Use rate directly if amounts not provided
-    convertedAmount = amount * rateInfo.rate;
-  }
+  // Always calculate from explicit source amount to avoid ambiguity in
+  // third-party API response semantics (prevents USD 19 -> KES 19 bugs).
+  let convertedAmount = amount * rateInfo.rate;
 
   // Round to 2 decimal places
   convertedAmount = Math.round(convertedAmount * 100) / 100;

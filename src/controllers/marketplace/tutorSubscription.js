@@ -219,8 +219,11 @@ export const subscribe = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Tutor not found", 404);
   }
 
-  const tutorCurrency = (tutor.currency || "NGN").toUpperCase();
-  const walletBalance = parseFloat(tutor.wallet_balance || 0);
+  const tutorCurrency = (
+    tutor.local_currency ||
+    tutor.currency ||
+    "NGN"
+  ).toUpperCase();
 
   // Convert USD price to tutor's local currency
   let subscriptionPrice = subscriptionPriceUSD;
@@ -263,6 +266,14 @@ export const subscribe = TryCatchFunction(async (req, res) => {
 
   // Free tier doesn't require payment
   if (subscriptionPrice > 0) {
+    const walletField =
+      currency === "USD"
+        ? "wallet_balance_usd"
+        : currency === "GBP"
+          ? "wallet_balance_gbp"
+          : "wallet_balance_primary";
+    const walletBalance = parseFloat(tutor[walletField] || 0);
+
     // Check if wallet has sufficient balance
     if (walletBalance < subscriptionPrice) {
       throw new ErrorClass(
@@ -277,7 +288,7 @@ export const subscribe = TryCatchFunction(async (req, res) => {
     try {
       // Deduct from wallet
       const newBalance = walletBalance - subscriptionPrice;
-      await tutor.update({ wallet_balance: newBalance }, { transaction });
+      await tutor.update({ [walletField]: newBalance }, { transaction });
 
       // Create subscription record
       const subscriptionData = {
