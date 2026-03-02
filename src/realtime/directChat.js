@@ -6,6 +6,7 @@ import {
   cacheMessages,
   getChatKey,
   invalidateChatCache,
+  invalidateChatList,
 } from "../utils/chatCache.js";
 
 const authService = new AuthService();
@@ -145,8 +146,8 @@ export function setupDirectChatSocket(io) {
           }
 
           // Invalidate chat list cache for BOTH users (sender and receiver)
-          await invalidateChatListCache(userId);
-          await invalidateChatListCache(peerUserId);
+          await invalidateChatList(userId);
+          await invalidateChatList(Number(peerUserId));
 
           // Notify sender that messages were read
           const room = dmRoom(userType, userId, peerUserType, peerUserId);
@@ -216,6 +217,11 @@ export function setupDirectChatSocket(io) {
 
           const room = dmRoom(userType, userId, peerUserType, peerUserId);
           io.to(room).emit("dm:newMessage", payload);
+
+          // Invalidate chat list cache for both users so thread list updates
+          await invalidateChatList(userId);
+          await invalidateChatList(Number(peerUserId));
+
           cb?.({ ok: true, message: payload });
         } catch (err) {
           cb?.({ ok: false, error: err.message });
@@ -268,8 +274,8 @@ export function setupDirectChatSocket(io) {
           await msg.save();
 
           // Invalidate chat list cache for BOTH users
-          await invalidateChatListCache(userId);
-          await invalidateChatListCache(msg.senderId);
+          await invalidateChatList(userId);
+          await invalidateChatList(msg.senderId);
         }
         const room = dmRoom(
           msg.senderType,
