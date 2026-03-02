@@ -40,11 +40,15 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
     }
   }
 
-  // Aggregate threads grouped by typed peer (type + id)
+  // Aggregate threads grouped by peerId only (avoids duplicate threads when peerType is null)
+  // Exclude self-messages (senderId === receiverId)
   const pipeline = [
     {
       $match: {
-        $or: [{ senderId: userId }, { receiverId: userId }],
+        $and: [
+          { $or: [{ senderId: userId }, { receiverId: userId }] },
+          { $expr: { $ne: ["$senderId", "$receiverId"] } },
+        ],
       },
     },
     {
@@ -67,7 +71,7 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
     { $sort: { created_at: -1 } },
     {
       $group: {
-        _id: { peerId: "$peerId", peerType: "$peerType" },
+        _id: "$peerId",
         lastMessage: { $first: "$$ROOT" },
         unreadCount: { $sum: { $cond: ["$isUnreadForUser", 1, 0] } },
       },
@@ -78,20 +82,22 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
   ];
 
   const grouped = await DirectMessage.aggregate(pipeline).exec();
-  const peerIds = grouped.map((g) => g._id.peerId);
-  const peerTypes = grouped.map((g) => g._id.peerType);
+  const peerIds = grouped.map((g) => g._id);
 
-  // Fetch peer details from Staff and Students
+  // Collect all user IDs we need for lookups (peers + current user for deriving types)
+  const allIds = [...new Set([...peerIds, userId])];
+
+  // Fetch peer details from Staff and Students (try both tables for each id)
   const [staffList, studentList] = await Promise.all([
-    peerIds.length
+    allIds.length
       ? Staff.findAll({
-          where: { id: { [Op.in]: peerIds } },
+          where: { id: { [Op.in]: allIds } },
           attributes: ["id", "full_name", "email", "phone"],
         })
       : [],
-    peerIds.length
+    allIds.length
       ? Students.findAll({
-          where: { id: { [Op.in]: peerIds } },
+          where: { id: { [Op.in]: allIds } },
           attributes: [
             "id",
             "fname",
@@ -106,42 +112,56 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
 
   const staffMap = new Map(staffList.map((s) => [s.id, s]));
   const studentMap = new Map(studentList.map((s) => [s.id, s]));
+  const userType = req.user?.userType;
 
-  const threads = grouped.map((g) => {
-    const lm = g.lastMessage;
-    const sid = g._id.peerId;
-    const stype = g._id.peerType;
-    let peer = null;
-    if (stype === "staff" && staffMap.has(sid)) {
+  const resolveUserType = (id) => {
+    if (staffMap.has(id)) return "staff";
+    if (studentMap.has(id)) return "student";
+    return null;
+  };
+
+  const buildPeer = (sid) => {
+    if (staffMap.has(sid)) {
       const s = staffMap.get(sid);
-      peer = {
+      return {
         id: s.id,
         full_name: s.full_name,
         email: s.email,
         role: "staff",
       };
-    } else if (stype === "student" && studentMap.has(sid)) {
+    }
+    if (studentMap.has(sid)) {
       const s = studentMap.get(sid);
       const name = [s.fname, s.mname, s.lname].filter(Boolean).join(" ").trim();
-      peer = {
+      return {
         id: s.id,
         full_name: name,
         email: s.email,
         matric_number: s.matric_number,
         role: "student",
       };
-    } else {
-      peer = { id: sid, full_name: "Unknown", role: stype || "unknown" };
     }
+    return { id: sid, full_name: "Unknown", role: "unknown" };
+  };
+
+  const threads = grouped.map((g) => {
+    const lm = g.lastMessage;
+    const sid = g._id;
+    const peer = buildPeer(sid);
+
+    const senderType =
+      lm.senderType ?? resolveUserType(lm.senderId) ?? (lm.senderId === userId ? userType : null);
+    const receiverType =
+      lm.receiverType ?? resolveUserType(lm.receiverId) ?? (lm.receiverId === userId ? userType : null);
 
     return {
       peer,
       lastMessage: {
         id: lm._id,
         sender_id: lm.senderId,
-        sender_type: lm.senderType,
+        sender_type: senderType ?? null,
         receiver_id: lm.receiverId,
-        receiver_type: lm.receiverType,
+        receiver_type: receiverType ?? null,
         message_text: lm.messageText,
         created_at: lm.created_at,
         delivered_at: lm.deliveredAt || null,

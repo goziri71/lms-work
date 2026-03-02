@@ -189,6 +189,8 @@ export function setupDirectChatSocket(io) {
           if (!Number.isInteger(userId) || userId <= 0)
             throw new Error("Unauthorized");
           if (!message_text) throw new Error("message_text required");
+          if (Number(peerUserId) === userId)
+            throw new Error("Cannot send message to yourself");
 
           const roomKey = dmRoomKey(userType, userId, peerUserType, peerUserId);
           const created = await DirectMessage.create({
