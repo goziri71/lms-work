@@ -864,6 +864,24 @@ export const getMySubscriptions = TryCatchFunction(async (req, res) => {
           "price",
           "currency",
         ],
+        include: [
+          {
+            model: MembershipProduct,
+            as: "products",
+            required: false,
+          },
+        ],
+      },
+      {
+        model: MembershipTier,
+        as: "tier",
+        required: false,
+        include: [
+          {
+            model: MembershipTierProduct,
+            as: "products",
+          },
+        ],
       },
     ],
     limit: parseInt(limit),
@@ -873,22 +891,113 @@ export const getMySubscriptions = TryCatchFunction(async (req, res) => {
 
   const total = await MembershipSubscription.count({ where });
 
-  const subscriptionsWithDetails = subscriptions.map((sub) => ({
-    id: sub.id,
-    membership_id: sub.membership_id,
-    membership_name: sub.membership?.name,
-    membership_image: sub.membership?.image_url,
-    pricing_type: sub.membership?.pricing_type,
-    price: sub.membership?.price,
-    currency: sub.membership?.currency,
-    status: sub.status,
-    start_date: sub.start_date,
-    end_date: sub.end_date,
-    next_payment_date: sub.next_payment_date,
-    auto_renew: sub.auto_renew,
-    cancelled_at: sub.cancelled_at,
-    created_at: sub.created_at,
-  }));
+  const resolveProductDetails = async (product) => {
+    let productDetails = null;
+    switch (product.product_type) {
+      case "course":
+        const course = await Courses.findByPk(product.product_id);
+        if (course) {
+          productDetails = {
+            id: course.id,
+            title: course.title,
+            image_url: course.image_url,
+            price: course.price,
+          };
+        }
+        break;
+      case "ebook":
+        const ebook = await EBooks.findByPk(product.product_id);
+        if (ebook) {
+          productDetails = {
+            id: ebook.id,
+            title: ebook.title,
+            cover_image: ebook.cover_image,
+            price: ebook.price,
+          };
+        }
+        break;
+      case "digital_download":
+        const download = await DigitalDownloads.findByPk(product.product_id);
+        if (download) {
+          productDetails = {
+            id: download.id,
+            title: download.title,
+            image_url: download.cover_image || download.image_url,
+            price: download.price,
+          };
+        }
+        break;
+      case "coaching_session":
+        const session = await CoachingSession.findByPk(product.product_id);
+        if (session) {
+          productDetails = {
+            id: session.id,
+            title: session.title,
+            image_url: session.image_url,
+            price: session.price,
+          };
+        }
+        break;
+      case "community":
+        const community = await Community.findByPk(product.product_id);
+        if (community) {
+          productDetails = {
+            id: community.id,
+            name: community.name,
+            image_url: community.image_url,
+            price: community.price,
+          };
+        }
+        break;
+    }
+    return {
+      product_type: product.product_type,
+      product_id: product.product_id,
+      product_details: productDetails,
+    };
+  };
+
+  const subscriptionsWithDetails = await Promise.all(
+    subscriptions.map(async (sub) => {
+      const products =
+        sub.tier?.products?.length > 0
+          ? sub.tier.products
+          : sub.membership?.products || [];
+
+      const productsWithDetails = await Promise.all(
+        products.map((p) => resolveProductDetails(p))
+      );
+
+      return {
+        id: sub.id,
+        membership_id: sub.membership_id,
+        membership_name: sub.membership?.name,
+        membership_image: sub.membership?.image_url,
+        pricing_type: sub.membership?.pricing_type,
+        price: sub.membership?.price,
+        currency: sub.membership?.currency,
+        tier: sub.tier
+          ? {
+              id: sub.tier.id,
+              tier_name: sub.tier.tier_name,
+              description: sub.tier.description,
+              monthly_price: sub.tier.monthly_price,
+              yearly_price: sub.tier.yearly_price,
+              lifetime_price: sub.tier.lifetime_price,
+              currency: sub.tier.currency,
+            }
+          : null,
+        products: productsWithDetails,
+        status: sub.status,
+        start_date: sub.start_date,
+        end_date: sub.end_date,
+        next_payment_date: sub.next_payment_date,
+        auto_renew: sub.auto_renew,
+        cancelled_at: sub.cancelled_at,
+        created_at: sub.created_at,
+      };
+    })
+  );
 
   res.json({
     status: true,
