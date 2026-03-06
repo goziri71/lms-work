@@ -6,11 +6,11 @@
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { DigitalDownloads } from "../../models/marketplace/digitalDownloads.js";
-import { DigitalDownloadPurchase } from "../../models/marketplace/digitalDownloadPurchase.js";
 import { ReadSession } from "../../models/marketplace/readSession.js";
 import { Students } from "../../models/auth/student.js";
 import crypto from "crypto";
 import { Op } from "sequelize";
+import { checkProductAccess } from "../../services/membershipAccessService.js";
 
 /**
  * Create or get read session for a read-only document
@@ -41,17 +41,16 @@ export const createReadSession = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Document is not available", 404);
   }
 
-  // Verify student has purchased access
-  const purchase = await DigitalDownloadPurchase.findOne({
-    where: {
-      digital_download_id: id,
-      student_id: studentId,
-      status: "completed",
-    },
-  });
-
-  if (!purchase) {
-    throw new ErrorClass("You must purchase this document to read it", 403);
+  const accessInfo = await checkProductAccess(
+    studentId,
+    "digital_download",
+    Number(id)
+  );
+  if (!accessInfo?.has_access) {
+    throw new ErrorClass(
+      "You must purchase this document or have membership access to read it",
+      403
+    );
   }
 
   // Check for existing session
@@ -272,16 +271,12 @@ export const streamReadOnlyDocument = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Document not found or not available", 404);
   }
 
-  // Verify purchase
-  const purchase = await DigitalDownloadPurchase.findOne({
-    where: {
-      digital_download_id: id,
-      student_id: session.student_id,
-      status: "completed",
-    },
-  });
-
-  if (!purchase) {
+  const accessInfo = await checkProductAccess(
+    session.student_id,
+    "digital_download",
+    Number(id)
+  );
+  if (!accessInfo?.has_access) {
     throw new ErrorClass("Access denied", 403);
   }
 

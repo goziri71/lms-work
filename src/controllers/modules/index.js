@@ -19,6 +19,7 @@ import {
 } from "../../utils/examAccessControl.js";
 import { logAdminActivity } from "../../middlewares/adminAuthorize.js";
 import { trackLearnerActivity } from "../../middlewares/learnerActivityTracker.js";
+import { checkProductAccess } from "../../services/membershipAccessService.js";
 
 // Helper function to normalize userType (handle admin with super_admin role)
 function normalizeUserType(req) {
@@ -195,7 +196,7 @@ export const getModulesByCourse = TryCatchFunction(async (req, res) => {
   else if (course.staff_id === userId) {
     authorized = true;
   }
-  // Student path: enrolled via course_reg
+  // Student path: enrolled via course_reg OR active membership access
   else {
     const [rows] = await db.query(
       "SELECT 1 FROM course_reg WHERE course_id = :courseId AND student_id = :studentId LIMIT 1",
@@ -203,6 +204,15 @@ export const getModulesByCourse = TryCatchFunction(async (req, res) => {
     );
     if (Array.isArray(rows) && rows.length > 0) {
       authorized = true;
+    } else {
+      const membershipAccess = await checkProductAccess(
+        userId,
+        "course",
+        courseId
+      );
+      if (membershipAccess?.has_access) {
+        authorized = true;
+      }
     }
   }
   if (!authorized) {

@@ -1,7 +1,8 @@
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
-import { DigitalDownloads, DigitalDownloadPurchase } from "../../models/marketplace/index.js";
+import { DigitalDownloads } from "../../models/marketplace/index.js";
 import { supabase } from "../../utils/supabase.js";
+import { checkProductAccess } from "../../services/membershipAccessService.js";
 
 /**
  * Get signed URL for purchased digital download file (for download)
@@ -17,27 +18,25 @@ export const getDigitalDownloadUrl = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Only students can access download URLs", 403);
   }
 
-  // Verify student has purchased this product
-  const purchase = await DigitalDownloadPurchase.findOne({
-    where: {
-      digital_download_id: id,
-      student_id: studentId,
-    },
-    include: [
-      {
-        model: DigitalDownloads,
-        as: "digitalDownload",
-        attributes: ["id", "file_url", "download_enabled"],
-        required: true,
-      },
-    ],
+  const download = await DigitalDownloads.findOne({
+    where: { id, status: "published" },
+    attributes: ["id", "file_url", "download_enabled"],
   });
-
-  if (!purchase) {
-    throw new ErrorClass("Product not found or you haven't purchased it", 404);
+  if (!download) {
+    throw new ErrorClass("Product not found", 404);
   }
 
-  const download = purchase.digitalDownload;
+  const accessInfo = await checkProductAccess(
+    studentId,
+    "digital_download",
+    Number(id)
+  );
+  if (!accessInfo?.has_access) {
+    throw new ErrorClass(
+      "Product not found or you don't have access through purchase or membership",
+      403
+    );
+  }
   
   if (!download.download_enabled) {
     throw new ErrorClass("Download is not enabled for this product. Please use streaming instead.", 400);
@@ -101,27 +100,25 @@ export const getDigitalDownloadStreamUrl = TryCatchFunction(async (req, res) => 
     throw new ErrorClass("Only students can access streaming URLs", 403);
   }
 
-  // Verify student has purchased this product
-  const purchase = await DigitalDownloadPurchase.findOne({
-    where: {
-      digital_download_id: id,
-      student_id: studentId,
-    },
-    include: [
-      {
-        model: DigitalDownloads,
-        as: "digitalDownload",
-        attributes: ["id", "file_url", "streaming_enabled", "product_type"],
-        required: true,
-      },
-    ],
+  const download = await DigitalDownloads.findOne({
+    where: { id, status: "published" },
+    attributes: ["id", "file_url", "streaming_enabled", "product_type"],
   });
-
-  if (!purchase) {
-    throw new ErrorClass("Product not found or you haven't purchased it", 404);
+  if (!download) {
+    throw new ErrorClass("Product not found", 404);
   }
 
-  const download = purchase.digitalDownload;
+  const accessInfo = await checkProductAccess(
+    studentId,
+    "digital_download",
+    Number(id)
+  );
+  if (!accessInfo?.has_access) {
+    throw new ErrorClass(
+      "Product not found or you don't have access through purchase or membership",
+      403
+    );
+  }
   
   if (!download.streaming_enabled) {
     throw new ErrorClass("Streaming is not enabled for this product. Please use download instead.", 400);

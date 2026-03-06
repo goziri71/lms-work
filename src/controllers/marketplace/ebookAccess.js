@@ -1,7 +1,8 @@
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
-import { EBooks, EBookPurchase } from "../../models/marketplace/index.js";
+import { EBooks } from "../../models/marketplace/index.js";
 import { supabase } from "../../utils/supabase.js";
+import { checkProductAccess } from "../../services/membershipAccessService.js";
 
 /**
  * Get signed URL for purchased e-book PDF
@@ -17,27 +18,21 @@ export const getEBookSignedUrl = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Only students can access e-book signed URLs", 403);
   }
 
-  // Verify student has purchased this e-book
-  const purchase = await EBookPurchase.findOne({
-    where: {
-      ebook_id: id,
-      student_id: studentId,
-    },
-    include: [
-      {
-        model: EBooks,
-        as: "ebook",
-        attributes: ["id", "pdf_url"],
-        required: true,
-      },
-    ],
+  const ebook = await EBooks.findByPk(id, {
+    attributes: ["id", "pdf_url", "status"],
   });
-
-  if (!purchase) {
-    throw new ErrorClass("E-book not found or you haven't purchased it", 404);
+  if (!ebook || ebook.status !== "published") {
+    throw new ErrorClass("E-book not found", 404);
   }
 
-  const ebook = purchase.ebook;
+  const accessInfo = await checkProductAccess(studentId, "ebook", Number(id));
+  if (!accessInfo?.has_access) {
+    throw new ErrorClass(
+      "E-book not found or you don't have access through purchase or membership",
+      403
+    );
+  }
+
   if (!ebook.pdf_url) {
     throw new ErrorClass("E-book PDF not available", 404);
   }

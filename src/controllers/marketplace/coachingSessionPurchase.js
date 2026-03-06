@@ -10,6 +10,7 @@ import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { WspCommission } from "../../models/marketplace/wspCommission.js";
 import { db } from "../../database/database.js";
+import { checkProductAccess } from "../../services/membershipAccessService.js";
 
 /**
  * Purchase access to a paid coaching session
@@ -259,6 +260,16 @@ export async function hasPurchasedAccess(sessionId, studentId) {
     },
   });
 
-  return !!purchase;
+  if (purchase) {
+    return true;
+  }
+
+  // Allow access through active membership for coaching sessions
+  const accessInfo = await checkProductAccess(
+    Number(studentId),
+    "coaching_session",
+    Number(sessionId)
+  );
+  return !!accessInfo?.has_access;
 }
 
