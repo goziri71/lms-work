@@ -56,7 +56,6 @@ export async function checkProductAccess(studentId, productType, productId) {
         where: {
           student_id: studentId,
           digital_download_id: productId,
-          status: "completed",
         },
       });
       isOwned = !!downloadPurchase;
