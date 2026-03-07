@@ -216,7 +216,7 @@ export const getModulesByCourse = TryCatchFunction(async (req, res) => {
     }
   }
   if (!authorized) {
-    throw new ErrorClass("Unauthorized", 401);
+    throw new ErrorClass("You do not have access to this course", 403);
   }
 
   const modules = await Modules.findAll({

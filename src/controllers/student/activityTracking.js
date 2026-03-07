@@ -3,6 +3,24 @@ import { ErrorClass } from "../../utils/errorClass/index.js";
 import { trackLearnerActivity } from "../../middlewares/learnerActivityTracker.js";
 import { Courses } from "../../models/course/courses.js";
 import { CourseReg } from "../../models/course_reg.js";
+import { checkProductAccess } from "../../services/membershipAccessService.js";
+
+async function hasCourseAccess(studentId, courseId) {
+  const registration = await CourseReg.findOne({
+    where: {
+      student_id: studentId,
+      course_id: courseId,
+    },
+  });
+  if (registration) return true;
+
+  const membershipAccess = await checkProductAccess(
+    Number(studentId),
+    "course",
+    Number(courseId)
+  );
+  return !!membershipAccess?.has_access;
+}
 
 /**
  * Track single activity event from frontend
@@ -59,15 +77,8 @@ export const trackActivity = TryCatchFunction(async (req, res) => {
       throw new ErrorClass("Course not found", 404);
     }
 
-    // Check if student has access to course
-    const registration = await CourseReg.findOne({
-      where: {
-        student_id: studentId,
-        course_id: course_id,
-      },
-    });
-
-    if (!registration) {
+    const hasAccess = await hasCourseAccess(studentId, course_id);
+    if (!hasAccess) {
       throw new ErrorClass("You do not have access to this course", 403);
     }
   }
@@ -182,14 +193,8 @@ export const sendHeartbeat = TryCatchFunction(async (req, res) => {
       throw new ErrorClass("Course not found", 404);
     }
 
-    const registration = await CourseReg.findOne({
-      where: {
-        student_id: studentId,
-        course_id: course_id,
-      },
-    });
-
-    if (!registration) {
+    const hasAccess = await hasCourseAccess(studentId, course_id);
+    if (!hasAccess) {
       throw new ErrorClass("You do not have access to this course", 403);
     }
   }
@@ -282,14 +287,8 @@ export const trackBatch = TryCatchFunction(async (req, res) => {
           continue;
         }
 
-        const registration = await CourseReg.findOne({
-          where: {
-            student_id: studentId,
-            course_id: event.course_id,
-          },
-        });
-
-        if (!registration) {
+        const hasAccess = await hasCourseAccess(studentId, event.course_id);
+        if (!hasAccess) {
           errors.push({ index: i, error: "No access to course" });
           continue;
         }
