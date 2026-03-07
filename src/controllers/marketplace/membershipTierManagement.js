@@ -124,6 +124,12 @@ async function validateProductOwnership(
           404
         );
       }
+      if (community.status !== "published") {
+        throw new ErrorClass(
+          `Community ${productId} is not published and cannot be added to a membership`,
+          400
+        );
+      }
       break;
     default:
       throw new ErrorClass(`Invalid product type: ${productType}`, 400);

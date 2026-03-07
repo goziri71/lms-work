@@ -4,6 +4,32 @@ import { DigitalDownloads } from "../../models/marketplace/index.js";
 import { supabase } from "../../utils/supabase.js";
 import { checkProductAccess } from "../../services/membershipAccessService.js";
 
+function parseSupabaseObjectUrl(fileUrl) {
+  const urlParts = fileUrl.split("/storage/v1/object/");
+  if (urlParts.length < 2) {
+    throw new ErrorClass("Invalid file URL format", 400);
+  }
+
+  const pathPart = urlParts[1].split("?")[0];
+  const pathParts = pathPart.split("/").filter((p) => p);
+
+  if (pathParts.length < 2) {
+    throw new ErrorClass("Invalid file URL format: missing bucket or path", 400);
+  }
+
+  const hasPrefix = pathParts[0] === "public" || pathParts[0] === "sign";
+  const bucket = hasPrefix ? pathParts[1] : pathParts[0];
+  const objectPath = hasPrefix
+    ? pathParts.slice(2).join("/")
+    : pathParts.slice(1).join("/");
+
+  if (!bucket || !objectPath) {
+    throw new ErrorClass("Invalid file URL format: missing bucket or path", 400);
+  }
+
+  return { bucket, objectPath };
+}
+
 /**
  * Get signed URL for purchased digital download file (for download)
  * POST /api/marketplace/digital-downloads/:id/download-url
@@ -46,25 +72,7 @@ export const getDigitalDownloadUrl = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Product file not available", 404);
   }
 
-  // Extract file path from URL
-  // Handle both formats:
-  // - https://{supabase-url}/storage/v1/object/public/{bucket}/{path}
-  // - https://{supabase-url}/storage/v1/object/sign/{bucket}/{path}?token=...
-  const urlParts = download.file_url.split("/storage/v1/object/");
-  if (urlParts.length < 2) {
-    throw new ErrorClass("Invalid file URL format", 400);
-  }
-
-  const pathPart = urlParts[1].split("?")[0]; // Remove query params if any
-  const pathParts = pathPart.split("/").filter(p => p); // Remove empty strings
-  
-  // Bucket is the second element (first is "public" or "sign")
-  if (pathParts.length < 2) {
-    throw new ErrorClass("Invalid file URL format: missing bucket or path", 400);
-  }
-  
-  const bucket = pathParts[1]; // Second element is the bucket
-  const objectPath = pathParts.slice(2).join("/"); // Path starts from third element
+  const { bucket, objectPath } = parseSupabaseObjectUrl(download.file_url);
 
   // Generate new signed URL (expires in 7 days for downloads)
   const { data: signedUrlData, error } = await supabase.storage
@@ -134,25 +142,7 @@ export const getDigitalDownloadStreamUrl = TryCatchFunction(async (req, res) => 
     throw new ErrorClass("Product file not available", 404);
   }
 
-  // Extract file path from URL
-  // Handle both formats:
-  // - https://{supabase-url}/storage/v1/object/public/{bucket}/{path}
-  // - https://{supabase-url}/storage/v1/object/sign/{bucket}/{path}?token=...
-  const urlParts = download.file_url.split("/storage/v1/object/");
-  if (urlParts.length < 2) {
-    throw new ErrorClass("Invalid file URL format", 400);
-  }
-
-  const pathPart = urlParts[1].split("?")[0]; // Remove query params if any
-  const pathParts = pathPart.split("/").filter(p => p); // Remove empty strings
-  
-  // Bucket is the second element (first is "public" or "sign")
-  if (pathParts.length < 2) {
-    throw new ErrorClass("Invalid file URL format: missing bucket or path", 400);
-  }
-  
-  const bucket = pathParts[1]; // Second element is the bucket
-  const objectPath = pathParts.slice(2).join("/"); // Path starts from third element
+  const { bucket, objectPath } = parseSupabaseObjectUrl(download.file_url);
 
   // Generate new signed URL (expires in 1 hour for streaming)
   const { data: signedUrlData, error } = await supabase.storage
@@ -199,9 +189,6 @@ export const getDigitalDownloadPreviewUrl = TryCatchFunction(async (req, res) =>
   }
 
   // Extract file path from URL
-  // Handle both formats:
-  // - https://{supabase-url}/storage/v1/object/public/{bucket}/{path}
-  // - https://{supabase-url}/storage/v1/object/sign/{bucket}/{path}?token=...
   const urlParts = download.preview_url.split("/storage/v1/object/");
   if (urlParts.length < 2) {
     // If it's not a Supabase storage URL, return as-is
@@ -215,11 +202,11 @@ export const getDigitalDownloadPreviewUrl = TryCatchFunction(async (req, res) =>
     });
   }
 
-  const pathPart = urlParts[1].split("?")[0]; // Remove query params if any
-  const pathParts = pathPart.split("/").filter(p => p); // Remove empty strings
-  
-  // Bucket is the second element (first is "public" or "sign")
-  if (pathParts.length < 2) {
+  let bucket;
+  let objectPath;
+  try {
+    ({ bucket, objectPath } = parseSupabaseObjectUrl(download.preview_url));
+  } catch {
     // If URL format is invalid, return original URL
     return res.status(200).json({
       success: true,
@@ -230,9 +217,6 @@ export const getDigitalDownloadPreviewUrl = TryCatchFunction(async (req, res) =>
       },
     });
   }
-  
-  const bucket = pathParts[1]; // Second element is the bucket
-  const objectPath = pathParts.slice(2).join("/"); // Path starts from third element
 
   // Generate signed URL for preview (expires in 1 hour)
   const { data: signedUrlData, error } = await supabase.storage

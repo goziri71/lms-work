@@ -12,6 +12,7 @@ import { Students } from "../../models/auth/student.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { Op } from "sequelize";
+import { checkProductAccess } from "../../services/membershipAccessService.js";
 
 /**
  * Get current student's subscription/membership status for a community
@@ -238,7 +239,7 @@ export const getCommunityMembers = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Community not found", 404);
   }
 
-  // Verify student is a member
+  // Verify student is a member (or has active membership access to this community)
   const myMembership = await CommunityMember.findOne({
     where: {
       community_id: communityId,
@@ -246,8 +247,19 @@ export const getCommunityMembers = TryCatchFunction(async (req, res) => {
       status: "active",
     },
   });
+
   if (!myMembership) {
-    throw new ErrorClass("You must be a member of this community to view members", 403);
+    const accessInfo = await checkProductAccess(
+      Number(studentId),
+      "community",
+      Number(communityId)
+    );
+    if (!accessInfo?.has_access) {
+      throw new ErrorClass(
+        "You must be a member of this community or have membership access to view members",
+        403
+      );
+    }
   }
 
   const where = {
