@@ -86,7 +86,8 @@ export async function checkProductAccess(studentId, productType, productId) {
   }
 
   // Check tier-based access first (new system)
-  let tierProduct = await MembershipTierProduct.findOne({
+  // IMPORTANT: use findAll (not findOne) because the same product can be in multiple tiers/memberships.
+  const tierProducts = await MembershipTierProduct.findAll({
     where: {
       product_type: productType,
       product_id: productId,
@@ -108,37 +109,34 @@ export async function checkProductAccess(studentId, productType, productId) {
     ],
   });
 
-  // Verify tutor subscription is active for tier-based access
-  if (tierProduct?.tier?.membership) {
-    const tutorSubscription = await TutorSubscription.findOne({
-      where: {
-        tutor_id: tierProduct.tier.membership.tutor_id,
-        tutor_type: tierProduct.tier.membership.tutor_type,
-        status: "active",
-      },
-    });
+  if (tierProducts?.length) {
+    for (const tierProduct of tierProducts) {
+      if (!tierProduct?.tier?.membership) continue;
 
-    if (!tutorSubscription) {
-      tierProduct = null;
-    }
-  }
+      // Verify tutor subscription is active for this membership
+      const tutorSubscription = await TutorSubscription.findOne({
+        where: {
+          tutor_id: tierProduct.tier.membership.tutor_id,
+          tutor_type: tierProduct.tier.membership.tutor_type,
+          status: "active",
+        },
+      });
+      if (!tutorSubscription) continue;
 
-  if (tierProduct && tierProduct.tier) {
-    // Check if student has active subscription to this tier
-    const subscription = await MembershipSubscription.findOne({
-      where: {
-        student_id: studentId,
-        membership_id: tierProduct.tier.membership_id,
-        tier_id: tierProduct.tier_id,
-        status: "active",
-      },
-    });
+      // Check if student has active subscription to this tier
+      const subscription = await MembershipSubscription.findOne({
+        where: {
+          student_id: studentId,
+          membership_id: tierProduct.tier.membership_id,
+          tier_id: tierProduct.tier_id,
+          status: "active",
+        },
+      });
+      if (!subscription) continue;
 
-    if (subscription) {
       // Check if subscription hasn't expired (for monthly/yearly)
       const now = new Date();
       let isActive = false;
-
       if (subscription.end_date) {
         const endDate = new Date(subscription.end_date);
         isActive = now <= endDate;
@@ -146,33 +144,35 @@ export async function checkProductAccess(studentId, productType, productId) {
         // Lifetime subscription
         isActive = true;
       }
+      if (!isActive) continue;
 
-      if (isActive) {
-        // Determine pricing period from subscription
-        let pricingPeriod = "monthly"; // default
-        if (subscription.end_date) {
-          const startDate = new Date(subscription.start_date);
-          const endDate = new Date(subscription.end_date);
-          const daysDiff = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
-          pricingPeriod = daysDiff > 180 ? "yearly" : "monthly";
-        } else {
-          pricingPeriod = "lifetime";
-        }
-
-        // Get access level for this pricing period
-        const accessLevelField = `${pricingPeriod}_access_level`;
-        const accessLevel = tierProduct[accessLevelField];
-
-        hasMembershipAccess = true;
-        membershipInfo = {
-          membership_id: tierProduct.tier.membership_id,
-          membership_name: tierProduct.tier.membership?.name,
-          tier_id: tierProduct.tier_id,
-          tier_name: tierProduct.tier.tier_name,
-          access_level: accessLevel,
-          pricing_period: pricingPeriod,
-        };
+      // Determine pricing period from subscription
+      let pricingPeriod = "monthly"; // default
+      if (subscription.end_date) {
+        const startDate = new Date(subscription.start_date);
+        const endDate = new Date(subscription.end_date);
+        const daysDiff = Math.ceil(
+          (endDate - startDate) / (1000 * 60 * 60 * 24)
+        );
+        pricingPeriod = daysDiff > 180 ? "yearly" : "monthly";
+      } else {
+        pricingPeriod = "lifetime";
       }
+
+      // Get access level for this pricing period
+      const accessLevelField = `${pricingPeriod}_access_level`;
+      const accessLevel = tierProduct[accessLevelField];
+
+      hasMembershipAccess = true;
+      membershipInfo = {
+        membership_id: tierProduct.tier.membership_id,
+        membership_name: tierProduct.tier.membership?.name,
+        tier_id: tierProduct.tier_id,
+        tier_name: tierProduct.tier.tier_name,
+        access_level: accessLevel,
+        pricing_period: pricingPeriod,
+      };
+      break;
     }
   }
 

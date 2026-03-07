@@ -170,7 +170,11 @@ export const createModule = TryCatchFunction(async (req, res) => {
 
 // List modules for a course (Library DB)
 export const getModulesByCourse = TryCatchFunction(async (req, res) => {
-  const userId = Number(req.user?.id);
+  const tokenUserId =
+    typeof req.user?.id === "object"
+      ? req.user?.id?.id
+      : (req.user?.id ?? req.user?.student_id ?? req.user?.user_id);
+  const userId = Number(tokenUserId);
   let userType = normalizeUserType(req);
   const courseId = Number(req.params.courseId);
 
