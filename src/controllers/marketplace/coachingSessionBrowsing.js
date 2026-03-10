@@ -250,6 +250,7 @@ export const getSessionDetails = TryCatchFunction(async (req, res) => {
     success: true,
     data: {
       id: session.id,
+      callid: session.stream_call_id || null,
       title: session.title,
       description: session.description,
       start_time: session.start_time,
