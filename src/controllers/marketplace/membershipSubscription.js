@@ -395,6 +395,65 @@ export const getMembershipDetails = TryCatchFunction(async (req, res) => {
     })
   );
 
+  const tiersWithProductTitles = await Promise.all(
+    (membership.tiers || []).map(async (tier) => {
+      const tierJson = tier.toJSON();
+      const productsWithTitles = await Promise.all(
+        (tierJson.products || []).map(async (product) => {
+          let productTitle = null;
+
+          switch (product.product_type) {
+            case "course": {
+              const course = await Courses.findByPk(product.product_id, {
+                attributes: ["title"],
+              });
+              productTitle = course?.title || null;
+              break;
+            }
+            case "ebook": {
+              const ebook = await EBooks.findByPk(product.product_id, {
+                attributes: ["title"],
+              });
+              productTitle = ebook?.title || null;
+              break;
+            }
+            case "digital_download": {
+              const download = await DigitalDownloads.findByPk(product.product_id, {
+                attributes: ["title"],
+              });
+              productTitle = download?.title || null;
+              break;
+            }
+            case "coaching_session": {
+              const session = await CoachingSession.findByPk(product.product_id, {
+                attributes: ["title"],
+              });
+              productTitle = session?.title || null;
+              break;
+            }
+            case "community": {
+              const community = await Community.findByPk(product.product_id, {
+                attributes: ["name"],
+              });
+              productTitle = community?.name || null;
+              break;
+            }
+          }
+
+          return {
+            ...product,
+            product_title: productTitle,
+          };
+        })
+      );
+
+      return {
+        ...tierJson,
+        products: productsWithTitles,
+      };
+    })
+  );
+
   // Check if student is subscribed
   let subscription = null;
   let isSubscribed = false;
@@ -428,7 +487,7 @@ export const getMembershipDetails = TryCatchFunction(async (req, res) => {
         currency: membership.currency,
         status: membership.status,
         products: productsWithDetails,
-        tiers: membership.tiers || [],
+        tiers: tiersWithProductTitles,
         is_subscribed: isSubscribed,
         subscription: subscription,
         created_at: membership.created_at,
