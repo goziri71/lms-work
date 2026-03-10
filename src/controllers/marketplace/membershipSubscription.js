@@ -385,6 +385,10 @@ export const getMembershipDetails = TryCatchFunction(async (req, res) => {
         id: product.id,
         product_type: product.product_type,
         product_id: product.product_id,
+        product_title:
+          productDetails?.title ||
+          productDetails?.name ||
+          null,
         product_details: productDetails,
         is_owned: isOwned,
       };
