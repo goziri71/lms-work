@@ -3,19 +3,15 @@ import crypto from "crypto";
 import { JobCache } from "../models/marketplace/jobCache.js";
 import { Op } from "sequelize";
 
-const BASE_URL =
-  "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs";
-const API_KEY = "jobboerse-jobsuche";
+const BASE_URL = "https://search.api.careerjet.net/v4/query";
+const API_KEY = process.env.CAREERJET_API_KEY || process.env.CAREERJET_KEY || "";
+const DEFAULT_LOCALE = process.env.CAREERJET_LOCALE || "en_NG";
 
 const MEMORY_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const DB_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 const memoryCache = new Map();
 let isJobCacheTableAvailable = true;
-
-const BLOCKED_ARBEITSZEIT = ["vz"];
-const ALLOWED_ARBEITSZEIT = ["tz", "ho", "snw", "mj"];
-const ALLOWED_ANGEBOTSART = ["1", "2", "4", "34"];
 
 function buildCacheKey(params) {
   const sorted = Object.keys(params)
@@ -44,6 +40,7 @@ function cleanExpiredMemoryCache() {
 export async function searchJobs(searchParams = {}) {
   const {
     was,
+    location,
     berufsfeld,
     arbeitszeit,
     angebotsart,
@@ -51,49 +48,46 @@ export async function searchJobs(searchParams = {}) {
     veroeffentlichtseit,
     zeitarbeit,
     arbeitgeber,
+    user_ip,
+    user_agent,
     page = 1,
     size = 25,
   } = searchParams;
 
-  // Build the query parameters for the external API
+  if (!API_KEY) {
+    throw new Error(
+      "Careerjet API key not configured. Set CAREERJET_API_KEY in environment."
+    );
+  }
+
+  // Build the query parameters for Careerjet API
   const queryParams = {};
-
-  if (was && was.trim()) queryParams.was = was.trim();
-  if (berufsfeld && berufsfeld.trim()) queryParams.berufsfeld = berufsfeld.trim();
-
-  if (arbeitszeit) {
-    const values = arbeitszeit
-      .split(";")
-      .map((v) => v.trim().toLowerCase())
-      .filter((v) => ALLOWED_ARBEITSZEIT.includes(v) && !BLOCKED_ARBEITSZEIT.includes(v));
-    if (values.length > 0) queryParams.arbeitszeit = values.join(";");
+  const keywordParts = [];
+  if (was && String(was).trim()) keywordParts.push(String(was).trim());
+  if (berufsfeld && String(berufsfeld).trim()) {
+    keywordParts.push(String(berufsfeld).trim());
+  }
+  if (arbeitgeber && String(arbeitgeber).trim()) {
+    keywordParts.push(String(arbeitgeber).trim());
   }
 
-  if (angebotsart) {
-    const val = String(angebotsart).trim();
-    if (ALLOWED_ANGEBOTSART.includes(val)) queryParams.angebotsart = val;
+  queryParams.locale_code = DEFAULT_LOCALE;
+  queryParams.keywords = keywordParts.join(" ").trim() || "jobs";
+  if (location && String(location).trim()) {
+    queryParams.location = String(location).trim();
   }
-
-  if (befristung) {
-    const val = String(befristung).trim();
-    if (["1", "2"].includes(val)) queryParams.befristung = val;
-  }
-
-  if (veroeffentlichtseit !== undefined && veroeffentlichtseit !== null) {
-    const days = parseInt(veroeffentlichtseit, 10);
-    if (!isNaN(days) && days >= 0 && days <= 100) {
-      queryParams.veroeffentlichtseit = days;
-    }
-  }
-
-  if (zeitarbeit !== undefined) {
-    queryParams.zeitarbeit = zeitarbeit === "true" || zeitarbeit === true;
-  }
-
-  if (arbeitgeber && arbeitgeber.trim()) queryParams.arbeitgeber = arbeitgeber.trim();
-
+  queryParams.user_ip = user_ip || "127.0.0.1";
+  queryParams.user_agent = user_agent || "Mozilla/5.0";
   queryParams.page = Math.max(1, parseInt(page, 10) || 1);
-  queryParams.size = Math.min(100, Math.max(1, parseInt(size, 10) || 25));
+  queryParams.page_size = Math.min(100, Math.max(1, parseInt(size, 10) || 25));
+  // Keep these for cache/debug visibility in returned metadata
+  if (arbeitszeit) queryParams.arbeitszeit = arbeitszeit;
+  if (angebotsart) queryParams.angebotsart = angebotsart;
+  if (befristung) queryParams.befristung = befristung;
+  if (veroeffentlichtseit !== undefined) {
+    queryParams.veroeffentlichtseit = veroeffentlichtseit;
+  }
+  if (zeitarbeit !== undefined) queryParams.zeitarbeit = zeitarbeit;
 
   const cacheKey = buildCacheKey(queryParams);
 
@@ -134,19 +128,21 @@ export async function searchJobs(searchParams = {}) {
 
   // 3. Call external API
   try {
+    const basicAuthHeader = `Basic ${Buffer.from(`${API_KEY}:`).toString("base64")}`;
     const response = await axios.get(BASE_URL, {
       headers: {
-        "X-API-Key": API_KEY,
+        Authorization: basicAuthHeader,
       },
       params: queryParams,
       timeout: 15000,
     });
 
+    const data = response.data || {};
     const responseData = {
-      jobs: response.data?.stellenangebote || response.data?.jobs || [],
-      total: response.data?.maxErgebnisse || response.data?.total || 0,
+      jobs: data.jobs || [],
+      total: data.hits ?? data.total ?? 0,
       page: queryParams.page,
-      size: queryParams.size,
+      size: queryParams.page_size,
       search_params: queryParams,
     };
 
@@ -176,7 +172,7 @@ export async function searchJobs(searchParams = {}) {
 
     return { ...responseData, cache_source: "api" };
   } catch (apiErr) {
-    console.error("German Job API call failed:", apiErr.message);
+    console.error("Careerjet API call failed:", apiErr.message);
 
     // Fallback: serve stale DB cache if available
     try {

@@ -21,6 +21,7 @@ export const searchJobListings = TryCatchFunction(async (req, res) => {
 
   const {
     was,
+    location,
     berufsfeld,
     arbeitszeit,
     angebotsart,
@@ -32,8 +33,15 @@ export const searchJobListings = TryCatchFunction(async (req, res) => {
     size,
   } = req.query;
 
+  const forwardedFor = req.headers["x-forwarded-for"];
+  const userIp = Array.isArray(forwardedFor)
+    ? forwardedFor[0]
+    : (forwardedFor ? String(forwardedFor).split(",")[0].trim() : req.ip);
+  const userAgent = req.headers["user-agent"] || "Mozilla/5.0";
+
   const result = await searchJobs({
     was,
+    location,
     berufsfeld,
     arbeitszeit,
     angebotsart,
@@ -41,6 +49,8 @@ export const searchJobListings = TryCatchFunction(async (req, res) => {
     veroeffentlichtseit,
     zeitarbeit,
     arbeitgeber,
+    user_ip: userIp,
+    user_agent: userAgent,
     page,
     size,
   });
@@ -76,17 +86,31 @@ export const searchJobListings = TryCatchFunction(async (req, res) => {
   }
 
   const jobsList = jobs.map((job) => {
-    const jobId = job.hashId || job.refnr || null;
+    const jobId =
+      job.hashId ||
+      job.refnr ||
+      job.id ||
+      (job.url
+        ? Buffer.from(String(job.url)).toString("base64").replace(/=+$/g, "")
+        : null);
     return {
       id: jobId,
       title: job.titel || job.title || null,
-      employer: job.arbeitgeber || job.employer || null,
-      location: job.arbeitsort?.ort || job.location || null,
+      employer: job.arbeitgeber || job.company || job.employer || null,
+      location:
+        job.arbeitsort?.ort ||
+        job.locations ||
+        job.location ||
+        null,
       region: job.arbeitsort?.region || null,
-      country: job.arbeitsort?.land || "Deutschland",
-      published_date: job.eintrittsdatum || job.aktuelleVeroeffentlichungsdatum || null,
+      country: job.arbeitsort?.land || "Nigeria",
+      published_date:
+        job.eintrittsdatum ||
+        job.aktuelleVeroeffentlichungsdatum ||
+        job.date ||
+        null,
       work_type: job.arbeitszeit || null,
-      contract_type: job.befristung || null,
+      contract_type: job.befristung || job.contract_type || null,
       offer_type: job.angebotsart || null,
       job_url: job.externeUrl || job.url || null,
       logo_url: job.logoHashId
