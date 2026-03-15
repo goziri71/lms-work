@@ -18,13 +18,31 @@ import {
 } from "../../services/googleDriveService.js";
 import { Op } from "sequelize";
 
+function getTutorInfo(req) {
+  const userType = req.user?.userType;
+
+  if (userType === "sole_tutor") {
+    return { tutorId: req.tutor?.id, tutorType: "sole_tutor" };
+  }
+  if (userType === "organization") {
+    return { tutorId: req.tutor?.id, tutorType: "organization" };
+  }
+  if (userType === "organization_user") {
+    return {
+      tutorId: req.tutor?.organization_id || req.user?.organizationId,
+      tutorType: "organization",
+    };
+  }
+
+  return { tutorId: null, tutorType: null };
+}
+
 /**
  * Initiate Google Drive OAuth connection
  * GET /api/marketplace/google-drive/connect
  */
 export const initiateGoogleDriveConnection = TryCatchFunction(async (req, res) => {
-  const tutorId = req.tutor?.id;
-  const tutorType = req.tutor?.tutorType;
+  const { tutorId, tutorType } = getTutorInfo(req);
 
   if (!tutorId || !tutorType) {
     throw new ErrorClass("Tutor information not found", 401);
@@ -73,8 +91,7 @@ export const initiateGoogleDriveConnection = TryCatchFunction(async (req, res) =
  */
 export const handleGoogleDriveCallback = TryCatchFunction(async (req, res) => {
   const { code, state } = req.query;
-  const tutorId = req.tutor?.id;
-  const tutorType = req.tutor?.tutorType;
+  const { tutorId, tutorType } = getTutorInfo(req);
 
   if (!code) {
     throw new ErrorClass("Authorization code is required", 400);
@@ -139,8 +156,7 @@ export const handleGoogleDriveCallback = TryCatchFunction(async (req, res) => {
  * GET /api/marketplace/google-drive/connection
  */
 export const getGoogleDriveConnection = TryCatchFunction(async (req, res) => {
-  const tutorId = req.tutor?.id;
-  const tutorType = req.tutor?.tutorType;
+  const { tutorId, tutorType } = getTutorInfo(req);
 
   if (!tutorId || !tutorType) {
     throw new ErrorClass("Tutor information not found", 401);
@@ -181,8 +197,7 @@ export const getGoogleDriveConnection = TryCatchFunction(async (req, res) => {
  * DELETE /api/marketplace/google-drive/connection
  */
 export const disconnectGoogleDrive = TryCatchFunction(async (req, res) => {
-  const tutorId = req.tutor?.id;
-  const tutorType = req.tutor?.tutorType;
+  const { tutorId, tutorType } = getTutorInfo(req);
 
   if (!tutorId || !tutorType) {
     throw new ErrorClass("Tutor information not found", 401);
@@ -214,8 +229,7 @@ export const disconnectGoogleDrive = TryCatchFunction(async (req, res) => {
  * GET /api/marketplace/google-drive/files
  */
 export const listGoogleDriveFiles = TryCatchFunction(async (req, res) => {
-  const tutorId = req.tutor?.id;
-  const tutorType = req.tutor?.tutorType;
+  const { tutorId, tutorType } = getTutorInfo(req);
 
   if (!tutorId || !tutorType) {
     throw new ErrorClass("Tutor information not found", 401);
@@ -277,8 +291,7 @@ export const listGoogleDriveFiles = TryCatchFunction(async (req, res) => {
  * POST /api/marketplace/google-drive/import
  */
 export const importGoogleDriveFiles = TryCatchFunction(async (req, res) => {
-  const tutorId = req.tutor?.id;
-  const tutorType = req.tutor?.tutorType;
+  const { tutorId, tutorType } = getTutorInfo(req);
 
   if (!tutorId || !tutorType) {
     throw new ErrorClass("Tutor information not found", 401);
@@ -422,8 +435,7 @@ export const importGoogleDriveFiles = TryCatchFunction(async (req, res) => {
  * GET /api/marketplace/google-drive/files/imported
  */
 export const getImportedFiles = TryCatchFunction(async (req, res) => {
-  const tutorId = req.tutor?.id;
-  const tutorType = req.tutor?.tutorType;
+  const { tutorId, tutorType } = getTutorInfo(req);
 
   if (!tutorId || !tutorType) {
     throw new ErrorClass("Tutor information not found", 401);
@@ -469,8 +481,7 @@ export const getImportedFiles = TryCatchFunction(async (req, res) => {
  * GET /api/marketplace/google-drive/files/:id
  */
 export const getExternalFile = TryCatchFunction(async (req, res) => {
-  const tutorId = req.tutor?.id;
-  const tutorType = req.tutor?.tutorType;
+  const { tutorId, tutorType } = getTutorInfo(req);
 
   if (!tutorId || !tutorType) {
     throw new ErrorClass("Tutor information not found", 401);
@@ -520,8 +531,7 @@ export const getExternalFile = TryCatchFunction(async (req, res) => {
  * DELETE /api/marketplace/google-drive/files/:id
  */
 export const deleteExternalFile = TryCatchFunction(async (req, res) => {
-  const tutorId = req.tutor?.id;
-  const tutorType = req.tutor?.tutorType;
+  const { tutorId, tutorType } = getTutorInfo(req);
 
   if (!tutorId || !tutorType) {
     throw new ErrorClass("Tutor information not found", 401);
