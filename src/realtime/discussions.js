@@ -3,6 +3,12 @@ import { Config } from "../config/config.js";
 import { db } from "../database/database.js";
 import { Discussions } from "../models/modules/discussions.js";
 import { DiscussionMessage } from "../models/chat/discussionMessage.js";
+import { Staff } from "../models/auth/staff.js";
+import { Students } from "../models/auth/student.js";
+import { SoleTutor } from "../models/marketplace/soleTutor.js";
+import { Organization } from "../models/marketplace/organization.js";
+import { OrganizationUser } from "../models/marketplace/organizationUser.js";
+import { Op } from "sequelize";
 import mongoose from "mongoose";
 
 const authService = new AuthService();
@@ -37,10 +43,142 @@ function normalizeScope(courseMeta, academicYear, semester) {
   return { academicYear, semester };
 }
 
+function isStaffLikeRole(role) {
+  return (
+    role === "staff" ||
+    role === "sole_tutor" ||
+    role === "organization" ||
+    role === "organization_user"
+  );
+}
+
+function toStoredSenderType(role) {
+  return isStaffLikeRole(role) ? "staff" : "student";
+}
+
+function parseSocketActor(socketUser) {
+  const tokenId = socketUser?.id;
+  const normalizedId =
+    typeof tokenId === "object"
+      ? tokenId?.id ??
+        tokenId?.user_id ??
+        tokenId?.student_id ??
+        tokenId?.staff_id ??
+        tokenId?.organization_user_id ??
+        tokenId?.organization_id
+      : tokenId;
+  const userId = Number(normalizedId);
+
+  const organizationIdRaw =
+    socketUser?.organizationId ??
+    socketUser?.organization_id ??
+    (typeof tokenId === "object" ? tokenId?.organization_id : null);
+  const organizationId = Number(organizationIdRaw);
+
+  return {
+    userId,
+    userType: socketUser?.userType,
+    organizationId: Number.isInteger(organizationId) && organizationId > 0 ? organizationId : null,
+  };
+}
+
+function studentName(student) {
+  return [student?.fname, student?.mname, student?.lname]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+}
+
+function personName(person) {
+  return [person?.fname, person?.mname, person?.lname]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+}
+
+async function getIdentityMaps(ids) {
+  const userIds = [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+  if (!userIds.length) {
+    return {
+      staffMap: new Map(),
+      studentMap: new Map(),
+      tutorMap: new Map(),
+      organizationMap: new Map(),
+      organizationUserMap: new Map(),
+    };
+  }
+
+  const [staffRows, studentRows, tutorRows, organizationRows, orgUserRows] = await Promise.all([
+    Staff.findAll({ where: { id: { [Op.in]: userIds } }, attributes: ["id", "full_name"] }),
+    Students.findAll({ where: { id: { [Op.in]: userIds } }, attributes: ["id", "fname", "mname", "lname"] }),
+    SoleTutor.findAll({ where: { id: { [Op.in]: userIds } }, attributes: ["id", "fname", "mname", "lname"] }),
+    Organization.findAll({ where: { id: { [Op.in]: userIds } }, attributes: ["id", "name"] }),
+    OrganizationUser.findAll({ where: { id: { [Op.in]: userIds } }, attributes: ["id", "fname", "mname", "lname"] }),
+  ]);
+
+  return {
+    staffMap: new Map(staffRows.map((r) => [Number(r.id), r])),
+    studentMap: new Map(studentRows.map((r) => [Number(r.id), r])),
+    tutorMap: new Map(tutorRows.map((r) => [Number(r.id), r])),
+    organizationMap: new Map(organizationRows.map((r) => [Number(r.id), r])),
+    organizationUserMap: new Map(orgUserRows.map((r) => [Number(r.id), r])),
+  };
+}
+
+function resolveSenderIdentity({ senderId, senderType, courseMeta, maps }) {
+  let senderRole = senderType === "staff" ? "staff" : "student";
+
+  if (courseMeta?.staff_id && Number(courseMeta.staff_id) === Number(senderId)) {
+    senderRole = "staff";
+  } else if (
+    courseMeta?.owner_id &&
+    Number(courseMeta.owner_id) === Number(senderId) &&
+    courseMeta?.owner_type === "sole_tutor"
+  ) {
+    senderRole = "sole_tutor";
+  } else if (
+    courseMeta?.owner_id &&
+    Number(courseMeta.owner_id) === Number(senderId) &&
+    courseMeta?.owner_type === "organization"
+  ) {
+    senderRole = "organization";
+  } else if (maps.organizationUserMap.has(Number(senderId))) {
+    senderRole = "organization_user";
+  } else if (maps.tutorMap.has(Number(senderId))) {
+    senderRole = "sole_tutor";
+  } else if (maps.organizationMap.has(Number(senderId))) {
+    senderRole = "organization";
+  } else if (maps.staffMap.has(Number(senderId))) {
+    senderRole = "staff";
+  } else if (maps.studentMap.has(Number(senderId))) {
+    senderRole = "student";
+  }
+
+  let senderName = null;
+  if (senderRole === "staff") {
+    senderName = maps.staffMap.get(Number(senderId))?.full_name || null;
+  } else if (senderRole === "student") {
+    senderName = studentName(maps.studentMap.get(Number(senderId))) || null;
+  } else if (senderRole === "sole_tutor") {
+    senderName = personName(maps.tutorMap.get(Number(senderId))) || null;
+  } else if (senderRole === "organization") {
+    senderName = maps.organizationMap.get(Number(senderId))?.name || null;
+  } else if (senderRole === "organization_user") {
+    senderName = personName(maps.organizationUserMap.get(Number(senderId))) || null;
+  }
+
+  return {
+    sender_type: toStoredSenderType(senderRole),
+    sender_role: senderRole,
+    sender_name: senderName || "Unknown",
+  };
+}
+
 async function canAccessDiscussion({
   courseMeta,
   userType,
   userId,
+  organizationId,
   courseId,
   academicYear,
   semester,
@@ -60,6 +198,15 @@ async function canAccessDiscussion({
     const [rows] = await db.query(
       "SELECT 1 FROM courses WHERE id = ? AND owner_type = ? AND owner_id = ?",
       { replacements: [courseId, userType, userId] },
+    );
+    return rows.length > 0;
+  }
+  if (userType === "organization_user") {
+    const orgId = Number(organizationId || userId);
+    if (!Number.isInteger(orgId) || orgId <= 0) return false;
+    const [rows] = await db.query(
+      "SELECT 1 FROM courses WHERE id = ? AND owner_type = 'organization' AND owner_id = ?",
+      { replacements: [courseId, orgId] },
     );
     return rows.length > 0;
   }
@@ -109,8 +256,9 @@ export function setupDiscussionsSocket(io) {
       "joinDiscussion",
       async ({ courseId, academicYear, semester }, cb) => {
         try {
-          const userId = Number(socket.user?.id);
-          const userType = socket.user?.userType;
+          const actor = parseSocketActor(socket.user);
+          const userId = actor.userId;
+          const userType = actor.userType;
           if (!Number.isInteger(userId) || userId <= 0)
             throw new Error("Unauthorized");
 
@@ -122,6 +270,7 @@ export function setupDiscussionsSocket(io) {
             courseMeta,
             userType,
             userId,
+            organizationId: actor.organizationId,
             courseId,
             academicYear: normalized.academicYear,
             semester: normalized.semester,
@@ -176,14 +325,25 @@ export function setupDiscussionsSocket(io) {
             .maxTimeMS(2000)
             .lean();
 
-          const messages = mongoMessages.map((m) => ({
-            id: m._id,
-            discussion_id: discussion.id,
-            sender_type: m.senderType,
-            sender_id: m.senderId,
-            message_text: m.messageText,
-            created_at: m.created_at,
-          }));
+          const maps = await getIdentityMaps(mongoMessages.map((m) => m.senderId));
+          const messages = mongoMessages.map((m) => {
+            const identity = resolveSenderIdentity({
+              senderId: m.senderId,
+              senderType: m.senderType,
+              courseMeta,
+              maps,
+            });
+            return {
+              id: m._id,
+              discussion_id: discussion.id,
+              sender_type: identity.sender_type,
+              sender_role: identity.sender_role,
+              sender_id: m.senderId,
+              sender_name: identity.sender_name,
+              message_text: m.messageText,
+              created_at: m.created_at,
+            };
+          });
 
           cb?.({ ok: true, discussionId: discussion.id, messages });
         } catch (err) {
@@ -196,9 +356,10 @@ export function setupDiscussionsSocket(io) {
       "postMessage",
       async ({ courseId, academicYear, semester, message_text }, cb) => {
         try {
-          const userId = Number(socket.user?.id);
-          const userType = socket.user?.userType;
-          const sender_type = userType === "staff" ? "staff" : "student";
+          const actor = parseSocketActor(socket.user);
+          const userId = actor.userId;
+          const userType = actor.userType;
+          const sender_type = toStoredSenderType(userType);
 
           // Debug logging
           console.log("🔍 DEBUG postMessage:", {
@@ -222,6 +383,7 @@ export function setupDiscussionsSocket(io) {
             courseMeta,
             userType,
             userId,
+            organizationId: actor.organizationId,
             courseId,
             academicYear: normalized.academicYear,
             semester: normalized.semester,
@@ -254,11 +416,21 @@ export function setupDiscussionsSocket(io) {
             messageText: message_text,
           });
 
+          const maps = await getIdentityMaps([userId]);
+          const identity = resolveSenderIdentity({
+            senderId: userId,
+            senderType: sender_type,
+            courseMeta,
+            maps,
+          });
+
           const payload = {
             id: created._id,
             discussion_id: discussion.id,
-            sender_type,
+            sender_type: identity.sender_type,
+            sender_role: identity.sender_role,
             sender_id: userId,
+            sender_name: identity.sender_name,
             message_text: message_text,
             created_at: created.created_at,
           };
@@ -289,8 +461,9 @@ export function setupDiscussionsSocket(io) {
         cb,
       ) => {
         try {
-          const userId = Number(socket.user?.id);
-          const userType = socket.user?.userType;
+          const actor = parseSocketActor(socket.user);
+          const userId = actor.userId;
+          const userType = actor.userType;
           if (!Number.isInteger(userId) || userId <= 0)
             throw new Error("Unauthorized");
 
@@ -302,6 +475,7 @@ export function setupDiscussionsSocket(io) {
             courseMeta,
             userType,
             userId,
+            organizationId: actor.organizationId,
             courseId,
             academicYear: normalized.academicYear,
             semester: normalized.semester,
@@ -341,14 +515,25 @@ export function setupDiscussionsSocket(io) {
             .maxTimeMS(2000)
             .lean();
 
-          const messages = mongoMessages.map((m) => ({
-            id: m._id,
-            discussion_id: discussion.id,
-            sender_type: m.senderType,
-            sender_id: m.senderId,
-            message_text: m.messageText,
-            created_at: m.created_at,
-          }));
+          const maps = await getIdentityMaps(mongoMessages.map((m) => m.senderId));
+          const messages = mongoMessages.map((m) => {
+            const identity = resolveSenderIdentity({
+              senderId: m.senderId,
+              senderType: m.senderType,
+              courseMeta,
+              maps,
+            });
+            return {
+              id: m._id,
+              discussion_id: discussion.id,
+              sender_type: identity.sender_type,
+              sender_role: identity.sender_role,
+              sender_id: m.senderId,
+              sender_name: identity.sender_name,
+              message_text: m.messageText,
+              created_at: m.created_at,
+            };
+          });
 
           cb?.({ ok: true, messages, hasMore: mongoMessages.length === limit });
         } catch (err) {

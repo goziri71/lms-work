@@ -6,23 +6,47 @@
 import { google } from "googleapis";
 import { ErrorClass } from "../utils/errorClass/index.js";
 import crypto from "crypto";
+import dotenv from "dotenv";
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || `${process.env.APP_URL || "http://localhost:3000"}/api/marketplace/google-drive/callback`;
+dotenv.config({ debug: false });
+
+function getGoogleOAuthConfig() {
+  const clientId =
+    process.env.GOOGLE_CLIENT_ID ||
+    process.env.GOOGLE_OAUTH_CLIENT_ID ||
+    process.env.GOOGLE_DRIVE_CLIENT_ID ||
+    null;
+  const clientSecret =
+    process.env.GOOGLE_CLIENT_SECRET ||
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET ||
+    process.env.GOOGLE_DRIVE_CLIENT_SECRET ||
+    null;
+  const redirectUri =
+    process.env.GOOGLE_REDIRECT_URI ||
+    process.env.GOOGLE_OAUTH_REDIRECT_URI ||
+    process.env.GOOGLE_DRIVE_REDIRECT_URI ||
+    `${process.env.APP_URL || "http://localhost:3000"}/api/marketplace/google-drive/callback`;
+
+  return { clientId, clientSecret, redirectUri };
+}
 
 /**
  * Get OAuth2 client for Google Drive
  */
 function getOAuth2Client() {
-  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
-    throw new ErrorClass("Google OAuth credentials not configured", 500);
+  const { clientId, clientSecret, redirectUri } = getGoogleOAuthConfig();
+
+  if (!clientId || !clientSecret) {
+    throw new ErrorClass(
+      "Google OAuth credentials not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.",
+      500
+    );
   }
 
   return new google.auth.OAuth2(
-    GOOGLE_CLIENT_ID,
-    GOOGLE_CLIENT_SECRET,
-    GOOGLE_REDIRECT_URI
+    clientId,
+    clientSecret,
+    redirectUri
   );
 }
 

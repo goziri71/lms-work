@@ -30,6 +30,11 @@ export const EBooks = db.define(
       allowNull: false,
       defaultValue: 0,
     },
+    price_usd: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      comment: "USD price set by tutor",
+    },
     currency: {
       type: DataTypes.STRING(5),
       allowNull: false,

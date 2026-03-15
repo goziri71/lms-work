@@ -126,6 +126,7 @@ export const createSession = TryCatchFunction(async (req, res) => {
     student_ids,
     pricing_type = "free",
     price,
+    price_usd,
     currency = "NGN",
     category,
     image_url,
@@ -157,6 +158,12 @@ export const createSession = TryCatchFunction(async (req, res) => {
     if (!price || price <= 0) {
       throw new ErrorClass(
         "Price is required and must be greater than 0 for paid sessions",
+        400
+      );
+    }
+    if (!price_usd || parseFloat(price_usd) <= 0) {
+      throw new ErrorClass(
+        "USD price (price_usd) is required and must be greater than 0 for paid sessions",
         400
       );
     }
@@ -339,6 +346,7 @@ export const createSession = TryCatchFunction(async (req, res) => {
         student_count: student_ids?.length || 0,
         pricing_type: pricing_type || "free",
         price: pricing_type === "paid" ? price : null,
+        price_usd: pricing_type === "paid" ? price_usd : null,
         currency: pricing_type === "paid" ? currency : null,
         category: category || null,
         image_url: finalImageUrl,

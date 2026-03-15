@@ -29,15 +29,30 @@ export const MembershipTier = db.define(
       allowNull: true,
       comment: "Price for monthly subscription to this tier",
     },
+    monthly_price_usd: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      comment: "USD price for monthly subscription to this tier",
+    },
     yearly_price: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: true,
       comment: "Price for yearly subscription to this tier",
     },
+    yearly_price_usd: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      comment: "USD price for yearly subscription to this tier",
+    },
     lifetime_price: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: true,
       comment: "Price for lifetime subscription to this tier",
+    },
+    lifetime_price_usd: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      comment: "USD price for lifetime subscription to this tier",
     },
     currency: {
       type: DataTypes.STRING(10),

@@ -180,6 +180,7 @@ export const createEBook = TryCatchFunction(async (req, res) => {
     author,
     pages,
     price,
+    price_usd,
     currency = "NGN",
     pdf_url,
     cover_image,
@@ -196,6 +197,9 @@ export const createEBook = TryCatchFunction(async (req, res) => {
   if (status === "published" && (!price || parseFloat(price) < 0)) {
     throw new ErrorClass("Published e-books must have a price >= 0", 400);
   }
+  if (parseFloat(price || 0) > 0 && (!price_usd || parseFloat(price_usd) <= 0)) {
+    throw new ErrorClass("Paid e-books must include a valid USD price (price_usd)", 400);
+  }
 
   const ownerType = userType === "sole_tutor" ? "sole_tutor" : "organization";
   const ownerId = tutorId;
@@ -211,6 +215,7 @@ export const createEBook = TryCatchFunction(async (req, res) => {
     author: author || null,
     pages: pages ? parseInt(pages) : null,
     price: parseFloat(price || 0),
+    price_usd: price_usd ? parseFloat(price_usd) : null,
     currency: currency,
     pdf_url: pdf_url,
     cover_image: cover_image || null,
@@ -230,6 +235,7 @@ export const createEBook = TryCatchFunction(async (req, res) => {
         title: ebook.title,
         author: ebook.author,
         price: parseFloat(ebook.price || 0),
+        price_usd: ebook.price_usd ? parseFloat(ebook.price_usd) : null,
         status: ebook.status,
       },
     },
@@ -267,6 +273,7 @@ export const updateEBook = TryCatchFunction(async (req, res) => {
     author,
     pages,
     price,
+    price_usd,
     currency,
     pdf_url,
     cover_image,
@@ -282,6 +289,14 @@ export const updateEBook = TryCatchFunction(async (req, res) => {
       throw new ErrorClass("Published e-books must have a price >= 0", 400);
     }
   }
+  const effectivePrice = price !== undefined ? parseFloat(price || 0) : parseFloat(ebook.price || 0);
+  const effectiveUsdPrice =
+    price_usd !== undefined
+      ? parseFloat(price_usd || 0)
+      : parseFloat(ebook.price_usd || 0);
+  if (effectivePrice > 0 && (!(effectiveUsdPrice > 0) || Number.isNaN(effectiveUsdPrice))) {
+    throw new ErrorClass("Paid e-books must include a valid USD price (price_usd)", 400);
+  }
 
   // Update e-book
   const updateData = {};
@@ -296,6 +311,7 @@ export const updateEBook = TryCatchFunction(async (req, res) => {
   if (author !== undefined) updateData.author = author;
   if (pages !== undefined) updateData.pages = pages ? parseInt(pages) : null;
   if (price !== undefined) updateData.price = parseFloat(price);
+  if (price_usd !== undefined) updateData.price_usd = parseFloat(price_usd || 0);
   if (currency !== undefined) updateData.currency = currency;
   if (pdf_url !== undefined) updateData.pdf_url = pdf_url;
   if (cover_image !== undefined) updateData.cover_image = cover_image;
@@ -314,6 +330,7 @@ export const updateEBook = TryCatchFunction(async (req, res) => {
         title: ebook.title,
         author: ebook.author,
         price: parseFloat(ebook.price || 0),
+        price_usd: ebook.price_usd ? parseFloat(ebook.price_usd) : null,
         status: ebook.status,
       },
     },

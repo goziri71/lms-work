@@ -160,6 +160,7 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
     description,
     category,
     price,
+    price_usd,
     currency = "NGN",
     trial_days = 0,
     member_limit,
@@ -173,8 +174,8 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
     intro_video_thumbnail_url,
   } = req.body;
 
-  if (!name || !price) {
-    throw new ErrorClass("Name and price are required", 400);
+  if (!name || !price || !price_usd) {
+    throw new ErrorClass("Name, local price, and USD price are required", 400);
   }
 
   // Upload image if provided
@@ -322,6 +323,7 @@ export const createCommunity = TryCatchFunction(async (req, res) => {
     category: normalizeCategory(category),
     image_url: imageUrl,
     price: parseFloat(price),
+    price_usd: parseFloat(price_usd),
     currency,
     trial_days: parseInt(trial_days) || 0,
     member_limit: member_limit ? parseInt(member_limit) : null,
@@ -449,6 +451,7 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
     description,
     category,
     price,
+    price_usd,
     currency,
     trial_days,
     member_limit,
@@ -642,6 +645,7 @@ export const updateCommunity = TryCatchFunction(async (req, res) => {
   if (description !== undefined) community.description = description;
   if (category !== undefined) community.category = normalizeCategory(category);
   if (price !== undefined) community.price = parseFloat(price);
+  if (price_usd !== undefined) community.price_usd = parseFloat(price_usd);
   if (currency !== undefined) community.currency = currency;
   if (trial_days !== undefined)
     community.trial_days = parseInt(trial_days) || 0;

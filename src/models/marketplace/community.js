@@ -57,6 +57,11 @@ export const Community = db.define(
       allowNull: false,
       comment: "Monthly subscription price",
     },
+    price_usd: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      comment: "Monthly subscription price in USD",
+    },
     currency: {
       type: DataTypes.STRING(10),
       allowNull: false,

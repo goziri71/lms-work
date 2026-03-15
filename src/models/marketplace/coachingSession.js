@@ -103,6 +103,11 @@ export const CoachingSession = db.define(
       allowNull: true,
       comment: "Price for paid sessions",
     },
+    price_usd: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      comment: "USD price for paid sessions",
+    },
     currency: {
       type: DataTypes.STRING(10),
       allowNull: true,

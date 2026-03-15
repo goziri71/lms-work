@@ -167,8 +167,11 @@ export const createTier = TryCatchFunction(async (req, res) => {
     tier_name,
     description,
     monthly_price,
+    monthly_price_usd,
     yearly_price,
+    yearly_price_usd,
     lifetime_price,
+    lifetime_price_usd,
     currency = "NGN",
     display_order = 0,
   } = req.body;
@@ -214,6 +217,15 @@ export const createTier = TryCatchFunction(async (req, res) => {
   if (hasLifetime && parseFloat(lifetime_price) < 0) {
     throw new ErrorClass("Lifetime price must be 0 or greater", 400);
   }
+  if (hasMonthly && parseFloat(monthly_price) > 0 && (!monthly_price_usd || parseFloat(monthly_price_usd) <= 0)) {
+    throw new ErrorClass("Monthly USD price is required for paid monthly pricing", 400);
+  }
+  if (hasYearly && parseFloat(yearly_price) > 0 && (!yearly_price_usd || parseFloat(yearly_price_usd) <= 0)) {
+    throw new ErrorClass("Yearly USD price is required for paid yearly pricing", 400);
+  }
+  if (hasLifetime && parseFloat(lifetime_price) > 0 && (!lifetime_price_usd || parseFloat(lifetime_price_usd) <= 0)) {
+    throw new ErrorClass("Lifetime USD price is required for paid lifetime pricing", 400);
+  }
 
   // Create tier
   const tier = await MembershipTier.create({
@@ -221,8 +233,11 @@ export const createTier = TryCatchFunction(async (req, res) => {
     tier_name: tier_name.trim(),
     description: description || null,
     monthly_price: hasMonthly ? parseFloat(monthly_price) : null,
+    monthly_price_usd: hasMonthly ? parseFloat(monthly_price_usd || 0) : null,
     yearly_price: hasYearly ? parseFloat(yearly_price) : null,
+    yearly_price_usd: hasYearly ? parseFloat(yearly_price_usd || 0) : null,
     lifetime_price: hasLifetime ? parseFloat(lifetime_price) : null,
+    lifetime_price_usd: hasLifetime ? parseFloat(lifetime_price_usd || 0) : null,
     currency,
     display_order: parseInt(display_order) || 0,
     status: "active",
@@ -386,8 +401,11 @@ export const updateTier = TryCatchFunction(async (req, res) => {
   const tier_name = body.tier_name ?? body.tierName;
   const description = body.description;
   const monthly_price = body.monthly_price ?? body.monthlyPrice;
+  const monthly_price_usd = body.monthly_price_usd ?? body.monthlyPriceUsd;
   const yearly_price = body.yearly_price ?? body.yearlyPrice;
+  const yearly_price_usd = body.yearly_price_usd ?? body.yearlyPriceUsd;
   const lifetime_price = body.lifetime_price ?? body.lifetimePrice;
+  const lifetime_price_usd = body.lifetime_price_usd ?? body.lifetimePriceUsd;
   const currency = body.currency;
   const display_order = body.display_order ?? body.displayOrder;
   const status = body.status;
@@ -423,6 +441,13 @@ export const updateTier = TryCatchFunction(async (req, res) => {
     }
     tier.monthly_price = price;
   }
+  if (monthly_price_usd !== undefined) {
+    const usdPrice = parseFloat(monthly_price_usd);
+    if (tier.monthly_price > 0 && (!(usdPrice > 0) || Number.isNaN(usdPrice))) {
+      throw new ErrorClass("Monthly USD price must be greater than 0", 400);
+    }
+    tier.monthly_price_usd = usdPrice;
+  }
   if (yearly_price !== undefined) {
     const price = parseFloat(yearly_price);
     if (price < 0) {
@@ -430,12 +455,26 @@ export const updateTier = TryCatchFunction(async (req, res) => {
     }
     tier.yearly_price = price;
   }
+  if (yearly_price_usd !== undefined) {
+    const usdPrice = parseFloat(yearly_price_usd);
+    if (tier.yearly_price > 0 && (!(usdPrice > 0) || Number.isNaN(usdPrice))) {
+      throw new ErrorClass("Yearly USD price must be greater than 0", 400);
+    }
+    tier.yearly_price_usd = usdPrice;
+  }
   if (lifetime_price !== undefined) {
     const price = parseFloat(lifetime_price);
     if (price < 0) {
       throw new ErrorClass("Lifetime price must be 0 or greater", 400);
     }
     tier.lifetime_price = price;
+  }
+  if (lifetime_price_usd !== undefined) {
+    const usdPrice = parseFloat(lifetime_price_usd);
+    if (tier.lifetime_price > 0 && (!(usdPrice > 0) || Number.isNaN(usdPrice))) {
+      throw new ErrorClass("Lifetime USD price must be greater than 0", 400);
+    }
+    tier.lifetime_price_usd = usdPrice;
   }
   if (currency !== undefined) tier.currency = currency;
   if (display_order !== undefined)

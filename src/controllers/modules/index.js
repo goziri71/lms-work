@@ -20,6 +20,11 @@ import {
 import { logAdminActivity } from "../../middlewares/adminAuthorize.js";
 import { trackLearnerActivity } from "../../middlewares/learnerActivityTracker.js";
 import { checkProductAccess } from "../../services/membershipAccessService.js";
+import { Staff } from "../../models/auth/staff.js";
+import { Students } from "../../models/auth/student.js";
+import { SoleTutor } from "../../models/marketplace/soleTutor.js";
+import { Organization } from "../../models/marketplace/organization.js";
+import { OrganizationUser } from "../../models/marketplace/organizationUser.js";
 
 // Helper function to normalize userType (handle admin with super_admin role)
 function normalizeUserType(req) {
@@ -1031,6 +1036,104 @@ export const deleteModuleNote = TryCatchFunction(async (req, res) => {
 });
 
 // ========== Discussions ==========
+function buildDisplayNameFromParts(first, middle, last) {
+  return [first, middle, last].filter(Boolean).join(" ").trim();
+}
+
+function isStaffLikeSender(role) {
+  return (
+    role === "staff" ||
+    role === "sole_tutor" ||
+    role === "organization" ||
+    role === "organization_user"
+  );
+}
+
+function normalizeSenderType(role) {
+  return isStaffLikeSender(role) ? "staff" : "student";
+}
+
+function resolveReqActor(req) {
+  const rawId = req.user?.id;
+  const userIdRaw =
+    typeof rawId === "object"
+      ? rawId?.id ?? rawId?.user_id ?? rawId?.student_id ?? rawId?.staff_id
+      : rawId;
+  return {
+    userId: Number(userIdRaw),
+    userType: req.user?.userType,
+  };
+}
+
+async function getDiscussionIdentityMaps(senderIds = []) {
+  const ids = [...new Set(senderIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+  if (!ids.length) {
+    return {
+      staffMap: new Map(),
+      studentMap: new Map(),
+      tutorMap: new Map(),
+      organizationMap: new Map(),
+      orgUserMap: new Map(),
+    };
+  }
+
+  const [staffRows, studentRows, tutorRows, organizationRows, orgUserRows] = await Promise.all([
+    Staff.findAll({ where: { id: { [Op.in]: ids } }, attributes: ["id", "full_name"] }),
+    Students.findAll({ where: { id: { [Op.in]: ids } }, attributes: ["id", "fname", "mname", "lname"] }),
+    SoleTutor.findAll({ where: { id: { [Op.in]: ids } }, attributes: ["id", "fname", "mname", "lname"] }),
+    Organization.findAll({ where: { id: { [Op.in]: ids } }, attributes: ["id", "name"] }),
+    OrganizationUser.findAll({ where: { id: { [Op.in]: ids } }, attributes: ["id", "fname", "mname", "lname"] }),
+  ]);
+
+  return {
+    staffMap: new Map(staffRows.map((r) => [Number(r.id), r])),
+    studentMap: new Map(studentRows.map((r) => [Number(r.id), r])),
+    tutorMap: new Map(tutorRows.map((r) => [Number(r.id), r])),
+    organizationMap: new Map(organizationRows.map((r) => [Number(r.id), r])),
+    orgUserMap: new Map(orgUserRows.map((r) => [Number(r.id), r])),
+  };
+}
+
+function resolveDiscussionSender(msg, maps) {
+  const senderId = Number(msg.sender_id);
+  let senderRole = msg.sender_type === "staff" ? "staff" : "student";
+
+  if (maps.orgUserMap.has(senderId)) {
+    senderRole = "organization_user";
+  } else if (maps.tutorMap.has(senderId)) {
+    senderRole = "sole_tutor";
+  } else if (maps.organizationMap.has(senderId)) {
+    senderRole = "organization";
+  } else if (maps.staffMap.has(senderId)) {
+    senderRole = "staff";
+  } else if (maps.studentMap.has(senderId)) {
+    senderRole = "student";
+  }
+
+  let senderName = "Unknown";
+  if (senderRole === "staff") {
+    senderName = maps.staffMap.get(senderId)?.full_name || senderName;
+  } else if (senderRole === "student") {
+    const s = maps.studentMap.get(senderId);
+    senderName = buildDisplayNameFromParts(s?.fname, s?.mname, s?.lname) || senderName;
+  } else if (senderRole === "sole_tutor") {
+    const t = maps.tutorMap.get(senderId);
+    senderName = buildDisplayNameFromParts(t?.fname, t?.mname, t?.lname) || senderName;
+  } else if (senderRole === "organization") {
+    senderName = maps.organizationMap.get(senderId)?.name || senderName;
+  } else if (senderRole === "organization_user") {
+    const u = maps.orgUserMap.get(senderId);
+    senderName = buildDisplayNameFromParts(u?.fname, u?.mname, u?.lname) || senderName;
+  }
+
+  return {
+    ...msg,
+    sender_type: normalizeSenderType(senderRole),
+    sender_role: senderRole,
+    sender_name: senderName,
+  };
+}
+
 export const listDiscussions = TryCatchFunction(async (req, res) => {
   const { course_id, academic_year, semester } = req.query;
   if (!course_id || !academic_year || !semester) {
@@ -1082,25 +1185,36 @@ export const listDiscussionMessages = TryCatchFunction(async (req, res) => {
     where: { discussion_id: discussionId },
     order: [["created_at", "ASC"]],
   });
+
+  const plainMsgs = msgs.map((m) => m.toJSON());
+  const maps = await getDiscussionIdentityMaps(plainMsgs.map((m) => m.sender_id));
+  const enriched = plainMsgs.map((m) => resolveDiscussionSender(m, maps));
+
   res
     .status(200)
-    .json({ status: true, code: 200, message: "Messages fetched", data: msgs });
+    .json({ status: true, code: 200, message: "Messages fetched", data: enriched });
 });
 
 export const postDiscussionMessage = TryCatchFunction(async (req, res) => {
-  const user = req.user?.id;
+  const actor = resolveReqActor(req);
   const discussionId = Number(req.params.discussionId);
   const { message_text } = req.body;
   if (!message_text) throw new ErrorClass("message_text is required", 400);
-  const sender_type = user.userType === "staff" ? "staff" : "student";
-  const sender_id = Number(user.id);
+  if (!Number.isInteger(actor.userId) || actor.userId <= 0) {
+    throw new ErrorClass("Unauthorized", 401);
+  }
+  const sender_type = normalizeSenderType(actor.userType);
+  const sender_id = actor.userId;
   const msg = await DiscussionMessages.create({
     discussion_id: discussionId,
     sender_type,
     sender_id,
     message_text,
   });
+
+  const maps = await getDiscussionIdentityMaps([sender_id]);
+  const enriched = resolveDiscussionSender(msg.toJSON(), maps);
   res
     .status(201)
-    .json({ status: true, code: 201, message: "Message posted", data: msg });
+    .json({ status: true, code: 201, message: "Message posted", data: enriched });
 });

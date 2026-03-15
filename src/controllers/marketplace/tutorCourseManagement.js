@@ -263,6 +263,7 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     course_code,
     course_unit,
     price,
+    price_usd,
     course_type,
     course_level,
     semester,
@@ -302,6 +303,12 @@ export const createCourse = TryCatchFunction(async (req, res) => {
   ) {
     throw new ErrorClass(
       "Published courses must have a price greater than 0",
+      400
+    );
+  }
+  if (price && parseFloat(price) > 0 && (!price_usd || parseFloat(price_usd) <= 0)) {
+    throw new ErrorClass(
+      "Paid courses must include a valid USD price (price_usd)",
       400
     );
   }
@@ -568,6 +575,7 @@ export const createCourse = TryCatchFunction(async (req, res) => {
         course_code: finalCourseCode,
         course_unit: course_unit || null,
         price: price ? String(price) : "0",
+        price_usd: price_usd ? String(price_usd) : null,
         pricing_type: pricingType,
         course_type: course_type || null,
         course_level: course_level || null,
@@ -609,6 +617,7 @@ export const createCourse = TryCatchFunction(async (req, res) => {
           course_outline: course.course_outline,
           pricing_type: course.pricing_type,
           price: parseFloat(course.price || 0),
+          price_usd: course.price_usd ? parseFloat(course.price_usd) : null,
           duration_days: course.duration_days,
           image_url: course.image_url,
           category: course.category,
@@ -681,6 +690,7 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
     course_code,
     course_unit,
     price,
+    price_usd,
     course_type,
     course_level,
     semester,
@@ -706,6 +716,17 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
         400
       );
     }
+  }
+  const effectivePrice = price !== undefined ? parseFloat(price || 0) : parseFloat(course.price || 0);
+  const effectiveUsdPrice =
+    price_usd !== undefined
+      ? parseFloat(price_usd || 0)
+      : parseFloat(course.price_usd || 0);
+  if (effectivePrice > 0 && (!(effectiveUsdPrice > 0) || Number.isNaN(effectiveUsdPrice))) {
+    throw new ErrorClass(
+      "Paid courses must include a valid USD price (price_usd)",
+      400
+    );
   }
 
   // Validate category if provided
@@ -857,6 +878,7 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
     updateData.price = String(price);
     updateData.pricing_type = pricingType; // Auto-update pricing_type
   }
+  if (price_usd !== undefined) updateData.price_usd = String(price_usd || 0);
   if (course_type !== undefined) updateData.course_type = course_type;
   if (course_level !== undefined) updateData.course_level = course_level;
   if (semester !== undefined) updateData.semester = semester;
@@ -895,6 +917,7 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
         course_outline: course.course_outline,
         pricing_type: course.pricing_type,
         price: parseFloat(course.price || 0),
+        price_usd: course.price_usd ? parseFloat(course.price_usd) : null,
         duration_days: course.duration_days,
         image_url: course.image_url,
         category: course.category,

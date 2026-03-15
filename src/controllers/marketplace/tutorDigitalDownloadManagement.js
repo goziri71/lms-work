@@ -439,6 +439,7 @@ export const createDigitalDownload = TryCatchFunction(async (req, res) => {
     author,
     pages,
     price,
+    price_usd,
     currency = "NGN",
     file_url,
     product_type = "ebook",
@@ -478,6 +479,12 @@ export const createDigitalDownload = TryCatchFunction(async (req, res) => {
 
   if (status === "published" && (!price || parseFloat(price) < 0)) {
     throw new ErrorClass("Published products must have a price >= 0", 400);
+  }
+  if (parseFloat(price || 0) > 0 && (!price_usd || parseFloat(price_usd) <= 0)) {
+    throw new ErrorClass(
+      "Paid products must include a valid USD price (price_usd)",
+      400
+    );
   }
 
   const config = getProductTypeConfig(product_type);
@@ -533,6 +540,7 @@ export const createDigitalDownload = TryCatchFunction(async (req, res) => {
     author: author || null,
     pages: pages ? parseInt(pages) : null,
     price: parseFloat(price || 0),
+    price_usd: price_usd ? parseFloat(price_usd) : null,
     currency: currency,
     file_url: file_url,
     file_type: req.body.file_type || config.defaultFileType,
@@ -561,6 +569,7 @@ export const createDigitalDownload = TryCatchFunction(async (req, res) => {
         title: download.title,
         product_type: download.product_type,
         price: parseFloat(download.price || 0),
+        price_usd: download.price_usd ? parseFloat(download.price_usd) : null,
         status: download.status,
       },
     },
@@ -598,6 +607,7 @@ export const updateDigitalDownload = TryCatchFunction(async (req, res) => {
     author,
     pages,
     price,
+    price_usd,
     currency,
     file_url,
     file_type,
@@ -622,6 +632,18 @@ export const updateDigitalDownload = TryCatchFunction(async (req, res) => {
       throw new ErrorClass("Cannot publish product without file", 400);
     }
   }
+  const effectivePrice =
+    price !== undefined ? parseFloat(price || 0) : parseFloat(download.price || 0);
+  const effectiveUsdPrice =
+    price_usd !== undefined
+      ? parseFloat(price_usd || 0)
+      : parseFloat(download.price_usd || 0);
+  if (effectivePrice > 0 && (!(effectiveUsdPrice > 0) || Number.isNaN(effectiveUsdPrice))) {
+    throw new ErrorClass(
+      "Paid products must include a valid USD price (price_usd)",
+      400
+    );
+  }
 
   // Update digital download
   const updateData = {};
@@ -636,6 +658,7 @@ export const updateDigitalDownload = TryCatchFunction(async (req, res) => {
   if (author !== undefined) updateData.author = author;
   if (pages !== undefined) updateData.pages = pages ? parseInt(pages) : null;
   if (price !== undefined) updateData.price = parseFloat(price);
+  if (price_usd !== undefined) updateData.price_usd = parseFloat(price_usd || 0);
   if (currency !== undefined) updateData.currency = currency;
   if (file_url !== undefined) updateData.file_url = file_url;
   if (file_type !== undefined) updateData.file_type = file_type;
@@ -669,6 +692,7 @@ export const updateDigitalDownload = TryCatchFunction(async (req, res) => {
         title: download.title,
         product_type: download.product_type,
         price: parseFloat(download.price || 0),
+        price_usd: download.price_usd ? parseFloat(download.price_usd) : null,
         status: download.status,
       },
     },

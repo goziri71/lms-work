@@ -29,6 +29,10 @@ export const Courses = db.define(
       type: DataTypes.STRING(12),
       allowNull: true,
     },
+    price_usd: {
+      type: DataTypes.STRING(12),
+      allowNull: true,
+    },
     course_type: {
       type: DataTypes.STRING(20),
       allowNull: true,

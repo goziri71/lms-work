@@ -106,6 +106,7 @@ export const createMembership = TryCatchFunction(async (req, res) => {
     pricing_plan, // Alternative field name (for frontend compatibility)
     pricingType, // CamelCase from frontend
     price, // Legacy field - kept for backward compatibility
+    price_usd,
     currency = "NGN",
     products = [], // Legacy field - Array of { product_type, product_id }
     tiers = [], // New field - Array of tier objects with products
@@ -173,6 +174,12 @@ export const createMembership = TryCatchFunction(async (req, res) => {
       // For paid memberships, price is required
       if (!normalizedPrice || parseFloat(normalizedPrice) <= 0) {
         throw new ErrorClass("Price is required for paid memberships", 400);
+      }
+      if (!price_usd || parseFloat(price_usd) <= 0) {
+        throw new ErrorClass(
+          "USD price (price_usd) is required for paid memberships",
+          400
+        );
       }
     }
   }
@@ -267,6 +274,7 @@ export const createMembership = TryCatchFunction(async (req, res) => {
       ? "monthly"
       : String(normalizedPricingType).toLowerCase().trim() || "monthly", // Use default if using tiers
     price: useTierSystem ? 0 : parseFloat(normalizedPrice) || 0, // Use 0 if using tiers (pricing is in tiers)
+    price_usd: useTierSystem ? null : parseFloat(price_usd) || null,
     currency,
     status: "active",
     commission_rate: 0, // No commission for memberships
@@ -280,8 +288,11 @@ export const createMembership = TryCatchFunction(async (req, res) => {
         tier_name,
         description: tierDescription,
         monthly_price,
+        monthly_price_usd,
         yearly_price,
+        yearly_price_usd,
         lifetime_price,
+        lifetime_price_usd,
         tier_currency = currency,
         display_order = i,
         products: tierProducts = [],
@@ -338,6 +349,24 @@ export const createMembership = TryCatchFunction(async (req, res) => {
           400
         );
       }
+      if (hasMonthly && parseFloat(monthly_price) > 0 && (!monthly_price_usd || parseFloat(monthly_price_usd) <= 0)) {
+        throw new ErrorClass(
+          `Monthly USD price is required for tier "${tier_name}"`,
+          400
+        );
+      }
+      if (hasYearly && parseFloat(yearly_price) > 0 && (!yearly_price_usd || parseFloat(yearly_price_usd) <= 0)) {
+        throw new ErrorClass(
+          `Yearly USD price is required for tier "${tier_name}"`,
+          400
+        );
+      }
+      if (hasLifetime && parseFloat(lifetime_price) > 0 && (!lifetime_price_usd || parseFloat(lifetime_price_usd) <= 0)) {
+        throw new ErrorClass(
+          `Lifetime USD price is required for tier "${tier_name}"`,
+          400
+        );
+      }
 
       // Create tier
       const tier = await MembershipTier.create({
@@ -345,8 +374,11 @@ export const createMembership = TryCatchFunction(async (req, res) => {
         tier_name: tier_name.trim(),
         description: tierDescription || null,
         monthly_price: hasMonthly ? parseFloat(monthly_price) : null,
+        monthly_price_usd: hasMonthly ? parseFloat(monthly_price_usd || 0) : null,
         yearly_price: hasYearly ? parseFloat(yearly_price) : null,
+        yearly_price_usd: hasYearly ? parseFloat(yearly_price_usd || 0) : null,
         lifetime_price: hasLifetime ? parseFloat(lifetime_price) : null,
+        lifetime_price_usd: hasLifetime ? parseFloat(lifetime_price_usd || 0) : null,
         currency: tier_currency,
         display_order: parseInt(display_order) || i,
         status: "active",
@@ -634,7 +666,7 @@ export const updateMembership = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Membership not found", 404);
   }
 
-  const { name, description, category, pricing_type, price, currency } =
+  const { name, description, category, pricing_type, price, price_usd, currency } =
     req.body;
 
   // Regenerate slug if name changed
@@ -712,6 +744,20 @@ export const updateMembership = TryCatchFunction(async (req, res) => {
       );
     }
     membership.price = priceValue;
+  }
+  if (price_usd !== undefined) {
+    const usdPriceValue = parseFloat(price_usd);
+    if (
+      membership.pricing_type !== "free" &&
+      parseFloat(membership.price || 0) > 0 &&
+      (!(usdPriceValue > 0) || Number.isNaN(usdPriceValue))
+    ) {
+      throw new ErrorClass(
+        "USD price (price_usd) must be greater than 0 for paid memberships",
+        400
+      );
+    }
+    membership.price_usd = usdPriceValue;
   }
   if (currency !== undefined) membership.currency = currency;
 

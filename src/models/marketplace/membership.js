@@ -59,6 +59,11 @@ export const Membership = db.define(
       defaultValue: 0,
       comment: "Price (0 for free, monthly/yearly amount for subscription, one-time for lifetime)",
     },
+    price_usd: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      comment: "USD price for legacy non-tier memberships",
+    },
     currency: {
       type: DataTypes.STRING(10),
       allowNull: false,
