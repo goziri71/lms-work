@@ -1098,16 +1098,17 @@ function resolveDiscussionSender(msg, maps) {
   const senderId = Number(msg.sender_id);
   let senderRole = msg.sender_type === "staff" ? "staff" : "student";
 
-  if (maps.orgUserMap.has(senderId)) {
-    senderRole = "organization_user";
-  } else if (maps.tutorMap.has(senderId)) {
-    senderRole = "sole_tutor";
-  } else if (maps.organizationMap.has(senderId)) {
-    senderRole = "organization";
+  // Keep student messages in student lane even when IDs collide across tables.
+  if (msg.sender_type === "student") {
+    senderRole = "student";
   } else if (maps.staffMap.has(senderId)) {
     senderRole = "staff";
-  } else if (maps.studentMap.has(senderId)) {
-    senderRole = "student";
+  } else if (maps.tutorMap.has(senderId)) {
+    senderRole = "sole_tutor";
+  } else if (maps.orgUserMap.has(senderId)) {
+    senderRole = "organization_user";
+  } else if (maps.organizationMap.has(senderId)) {
+    senderRole = "organization";
   }
 
   let senderName = "Unknown";

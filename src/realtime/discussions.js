@@ -56,6 +56,14 @@ function toStoredSenderType(role) {
   return isStaffLikeRole(role) ? "staff" : "student";
 }
 
+function toStoredSenderRole(role) {
+  if (role === "staff") return "staff";
+  if (role === "sole_tutor") return "sole_tutor";
+  if (role === "organization") return "organization";
+  if (role === "organization_user") return "organization_user";
+  return "student";
+}
+
 function parseSocketActor(socketUser) {
   const tokenId = socketUser?.id;
   const normalizedId =
@@ -125,46 +133,65 @@ async function getIdentityMaps(ids) {
   };
 }
 
-function resolveSenderIdentity({ senderId, senderType, courseMeta, maps }) {
-  let senderRole = senderType === "staff" ? "staff" : "student";
+function resolveSenderIdentity({
+  senderId,
+  senderType,
+  senderRole: persistedSenderRole = null,
+  courseMeta,
+  maps,
+}) {
+  const sid = Number(senderId);
+  let senderRole = persistedSenderRole || (senderType === "staff" ? "staff" : "student");
 
-  if (courseMeta?.staff_id && Number(courseMeta.staff_id) === Number(senderId)) {
-    senderRole = "staff";
-  } else if (
-    courseMeta?.owner_id &&
-    Number(courseMeta.owner_id) === Number(senderId) &&
-    courseMeta?.owner_type === "sole_tutor"
-  ) {
-    senderRole = "sole_tutor";
-  } else if (
-    courseMeta?.owner_id &&
-    Number(courseMeta.owner_id) === Number(senderId) &&
-    courseMeta?.owner_type === "organization"
-  ) {
-    senderRole = "organization";
-  } else if (maps.organizationUserMap.has(Number(senderId))) {
-    senderRole = "organization_user";
-  } else if (maps.tutorMap.has(Number(senderId))) {
-    senderRole = "sole_tutor";
-  } else if (maps.organizationMap.has(Number(senderId))) {
-    senderRole = "organization";
-  } else if (maps.staffMap.has(Number(senderId))) {
-    senderRole = "staff";
-  } else if (maps.studentMap.has(Number(senderId))) {
+  // For student messages, never remap into tutor/staff buckets even when IDs overlap.
+  if (senderType === "student") {
     senderRole = "student";
+  } else if (!persistedSenderRole) {
+    // For staff-like messages, infer best role by course ownership and known identities.
+    if (courseMeta?.staff_id && Number(courseMeta.staff_id) === sid) {
+      senderRole = "staff";
+    } else if (
+      courseMeta?.owner_id &&
+      Number(courseMeta.owner_id) === sid &&
+      courseMeta?.owner_type === "sole_tutor"
+    ) {
+      senderRole = "sole_tutor";
+    } else if (
+      courseMeta?.owner_id &&
+      Number(courseMeta.owner_id) === sid &&
+      courseMeta?.owner_type === "organization"
+    ) {
+      senderRole = "organization";
+    } else if (
+      courseMeta?.owner_type === "organization" &&
+      maps.organizationUserMap.has(sid) &&
+      Number(courseMeta?.owner_id) !== sid
+    ) {
+      senderRole = "organization_user";
+    } else if (maps.staffMap.has(sid)) {
+      senderRole = "staff";
+    } else if (maps.tutorMap.has(sid)) {
+      senderRole = "sole_tutor";
+    } else if (maps.organizationUserMap.has(sid)) {
+      senderRole = "organization_user";
+    } else if (maps.organizationMap.has(sid)) {
+      senderRole = "organization";
+    } else {
+      senderRole = "staff";
+    }
   }
 
   let senderName = null;
   if (senderRole === "staff") {
-    senderName = maps.staffMap.get(Number(senderId))?.full_name || null;
+    senderName = maps.staffMap.get(sid)?.full_name || null;
   } else if (senderRole === "student") {
-    senderName = studentName(maps.studentMap.get(Number(senderId))) || null;
+    senderName = studentName(maps.studentMap.get(sid)) || null;
   } else if (senderRole === "sole_tutor") {
-    senderName = personName(maps.tutorMap.get(Number(senderId))) || null;
+    senderName = personName(maps.tutorMap.get(sid)) || null;
   } else if (senderRole === "organization") {
-    senderName = maps.organizationMap.get(Number(senderId))?.name || null;
+    senderName = maps.organizationMap.get(sid)?.name || null;
   } else if (senderRole === "organization_user") {
-    senderName = personName(maps.organizationUserMap.get(Number(senderId))) || null;
+    senderName = personName(maps.organizationUserMap.get(sid)) || null;
   }
 
   return {
@@ -330,6 +357,7 @@ export function setupDiscussionsSocket(io) {
             const identity = resolveSenderIdentity({
               senderId: m.senderId,
               senderType: m.senderType,
+              senderRole: m.senderRole || null,
               courseMeta,
               maps,
             });
@@ -360,6 +388,7 @@ export function setupDiscussionsSocket(io) {
           const userId = actor.userId;
           const userType = actor.userType;
           const sender_type = toStoredSenderType(userType);
+          const sender_role = toStoredSenderRole(userType);
 
           // Debug logging
           console.log("🔍 DEBUG postMessage:", {
@@ -412,6 +441,7 @@ export function setupDiscussionsSocket(io) {
             academicYear: normalized.academicYear,
             semester: normalized.semester,
             senderType: sender_type,
+            senderRole: sender_role,
             senderId: userId,
             messageText: message_text,
           });
@@ -420,6 +450,7 @@ export function setupDiscussionsSocket(io) {
           const identity = resolveSenderIdentity({
             senderId: userId,
             senderType: sender_type,
+            senderRole: sender_role,
             courseMeta,
             maps,
           });
@@ -520,6 +551,7 @@ export function setupDiscussionsSocket(io) {
             const identity = resolveSenderIdentity({
               senderId: m.senderId,
               senderType: m.senderType,
+              senderRole: m.senderRole || null,
               courseMeta,
               maps,
             });

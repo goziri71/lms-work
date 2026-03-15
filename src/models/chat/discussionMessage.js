@@ -6,6 +6,12 @@ const DiscussionMessageSchema = new mongoose.Schema(
     academicYear: { type: String, required: true, index: true },
     semester: { type: String, required: true, index: true },
     senderType: { type: String, enum: ["student", "staff"], required: true },
+    senderRole: {
+      type: String,
+      enum: ["student", "staff", "sole_tutor", "organization", "organization_user"],
+      required: false,
+      default: null,
+    },
     senderId: { type: Number, required: true },
     messageText: { type: String, required: true },
   },
