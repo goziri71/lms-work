@@ -137,6 +137,43 @@ async function validateProductOwnership(
 }
 
 /**
+ * Resolve product title by type/id for tier response payloads
+ */
+async function resolveTierProductTitle(productType, productId) {
+  const pid = Number(productId);
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+
+  switch (productType) {
+    case "course": {
+      const course = await Courses.findByPk(pid, { attributes: ["title"] });
+      return course?.title || null;
+    }
+    case "ebook": {
+      const ebook = await EBooks.findByPk(pid, { attributes: ["title"] });
+      return ebook?.title || null;
+    }
+    case "digital_download": {
+      const download = await DigitalDownloads.findByPk(pid, {
+        attributes: ["title"],
+      });
+      return download?.title || null;
+    }
+    case "coaching_session": {
+      const session = await CoachingSession.findByPk(pid, {
+        attributes: ["title"],
+      });
+      return session?.title || null;
+    }
+    case "community": {
+      const community = await Community.findByPk(pid, { attributes: ["name"] });
+      return community?.name || null;
+    }
+    default:
+      return null;
+  }
+}
+
+/**
  * Create a new tier for a membership
  * POST /api/marketplace/tutor/memberships/:id/tiers
  */
@@ -296,11 +333,30 @@ export const getMembershipTiers = TryCatchFunction(async (req, res) => {
     ],
   });
 
+  const tiersWithProductTitles = await Promise.all(
+    tiers.map(async (tier) => {
+      const tierJson = tier.toJSON();
+      const productsWithTitles = await Promise.all(
+        (tierJson.products || []).map(async (product) => ({
+          ...product,
+          product_title: await resolveTierProductTitle(
+            product.product_type,
+            product.product_id
+          ),
+        }))
+      );
+      return {
+        ...tierJson,
+        products: productsWithTitles,
+      };
+    })
+  );
+
   res.json({
     status: true,
     code: 200,
     message: "Tiers retrieved successfully",
-    data: tiers,
+    data: tiersWithProductTitles,
   });
 });
 
@@ -350,11 +406,25 @@ export const getTier = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Tier not found", 404);
   }
 
+  const tierJson = tier.toJSON();
+  const productsWithTitles = await Promise.all(
+    (tierJson.products || []).map(async (product) => ({
+      ...product,
+      product_title: await resolveTierProductTitle(
+        product.product_type,
+        product.product_id
+      ),
+    }))
+  );
+
   res.json({
     status: true,
     code: 200,
     message: "Tier retrieved successfully",
-    data: tier,
+    data: {
+      ...tierJson,
+      products: productsWithTitles,
+    },
   });
 });
 
