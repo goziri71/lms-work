@@ -10,6 +10,40 @@ const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY?.trim();
 const FLUTTERWAVE_PUBLIC_KEY = process.env.FLUTTERWAVE_PUBLIC_KEY?.trim();
 const FLUTTERWAVE_BASE_URL =
   process.env.FLUTTERWAVE_BASE_URL || "https://api.flutterwave.com/v3";
+const QUOTAGUARD_PROXY_URL =
+  process.env.QUOTAGUARDSTATIC_URL || process.env.QUOTAGUARD_URL || null;
+
+function getQuotaGuardAxiosProxyConfig() {
+  if (!QUOTAGUARD_PROXY_URL) return null;
+
+  try {
+    const parsed = new URL(QUOTAGUARD_PROXY_URL);
+    const host = parsed.hostname;
+    const port = Number(parsed.port);
+    const protocol = parsed.protocol?.replace(":", "");
+    const username = decodeURIComponent(parsed.username || "");
+    const password = decodeURIComponent(parsed.password || "");
+
+    if (!host || !Number.isInteger(port) || port <= 0) {
+      return null;
+    }
+
+    return {
+      protocol: protocol || "http",
+      host,
+      port,
+      auth:
+        username || password
+          ? {
+              username,
+              password,
+            }
+          : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
 
 // Validate Flutterwave key format
 const validateFlutterwaveKey = (key, keyType = "secret") => {
@@ -450,6 +484,8 @@ export const initiateTransfer = async (transferData) => {
       // The amount should be in destination currency
     }
 
+    const proxyConfig = getQuotaGuardAxiosProxyConfig();
+
     const response = await axios.post(
       `${FLUTTERWAVE_BASE_URL}/transfers`,
       payload,
@@ -459,6 +495,7 @@ export const initiateTransfer = async (transferData) => {
           "Content-Type": "application/json",
         },
         timeout: 30000, // 30 second timeout for transfers
+        ...(proxyConfig ? { proxy: proxyConfig } : {}),
       }
     );
 
