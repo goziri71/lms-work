@@ -109,6 +109,124 @@ class EmailService {
   }
 
   /**
+   * Tutor → learner message via ZeptoMail (To + optional CC/BCC + Reply-To).
+   * Body is plain text; HTML is escaped for safety.
+   */
+  async sendTutorLearnerMessage({
+    to,
+    toName,
+    subject,
+    messageText,
+    tutorName,
+    cc = [],
+    bcc = [],
+    replyTo = null,
+  }) {
+    try {
+      if (!this.client) {
+        const errorMsg = "Email service not configured. Missing ZeptoMail credentials.";
+        console.error(`❌ ${errorMsg}`);
+        return { success: false, message: errorMsg };
+      }
+      if (!this.enabled) {
+        console.log(`📧 Email disabled. Tutor message would send to: ${to}`);
+        return { success: true, message: "Email disabled in config" };
+      }
+      if (!this.validateEmail(to)) {
+        throw new Error(`Invalid primary recipient: ${to}`);
+      }
+      if (!this.fromAddress) {
+        throw new Error("From address not configured");
+      }
+
+      const escapeHtml = (s) =>
+        String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+
+      const safeTutor = escapeHtml(tutorName || "Your instructor");
+      const safeBody = escapeHtml(messageText || "");
+      const htmlBody = `<!DOCTYPE html>
+<html><body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#1a1a1a">
+<p>Message from <strong>${safeTutor}</strong> (your instructor on Knomada):</p>
+<div style="white-space:pre-wrap;border-left:3px solid #e5e7eb;padding:12px 16px;margin:16px 0;background:#fafafa">${safeBody}</div>
+<hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
+<p style="font-size:12px;color:#6b7280">This email was sent through Knomada. Replies go to your instructor if your mail client supports it.</p>
+</body></html>`;
+
+      const textbody = `Message from ${tutorName || "Your instructor"}:\n\n${messageText || ""}\n\n---\nSent via Knomada`;
+
+      const toPayload = [
+        {
+          email_address: {
+            address: to,
+            name: (toName && String(toName).trim()) || to,
+          },
+        },
+      ];
+
+      const mapAddr = (list) =>
+        list.map((raw) => {
+          const address = String(raw).trim();
+          return {
+            email_address: {
+              address,
+              name: address,
+            },
+          };
+        });
+
+      const mailOptions = {
+        from: {
+          address: this.fromAddress,
+          name: this.fromName,
+        },
+        to: toPayload,
+        subject: String(subject).trim(),
+        htmlbody: htmlBody,
+        textbody,
+      };
+
+      if (cc.length > 0) {
+        mailOptions.cc = mapAddr(cc);
+      }
+      if (bcc.length > 0) {
+        mailOptions.bcc = mapAddr(bcc);
+      }
+      if (replyTo && replyTo.address && this.validateEmail(replyTo.address)) {
+        mailOptions.reply_to = [
+          {
+            address: replyTo.address,
+            name: (replyTo.name && String(replyTo.name).trim()) || replyTo.address,
+          },
+        ];
+      }
+
+      const response = await this.client.sendMail(mailOptions);
+      console.log(`✅ Tutor learner email sent to ${to} — ${subject}`);
+
+      return {
+        success: true,
+        message: "Email sent successfully",
+        response,
+      };
+    } catch (error) {
+      const errorMessage = error.message || "Unknown error occurred";
+      console.error(`❌ Tutor learner email failed for ${to}:`, errorMessage);
+      if (error.response) {
+        console.error("ZeptoMail API Error:", JSON.stringify(error.response.data || error.response, null, 2));
+      }
+      return {
+        success: false,
+        message: errorMessage,
+        error: error.response?.data || error.message,
+      };
+    }
+  }
+
+  /**
    * Send welcome email to new users
    * @param {Object} user - User object
    * @param {string} user.email - User email

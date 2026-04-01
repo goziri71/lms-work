@@ -63,6 +63,7 @@ import {
   getLearnerActivity,
   getLearnerCourseProgress,
 } from "../controllers/marketplace/tutorLearnerManagement.js";
+import { sendEmailToLearner } from "../controllers/marketplace/tutorLearnerEmail.js";
 import {
   getOrganizationUsers,
   getOrganizationUserById,
@@ -1196,6 +1197,7 @@ router.post("/tutor/ai/summarize", tutorAuthorize, summarizeAIContent);
 
 // Learner Management & Activity Tracking
 router.get("/tutor/learners", tutorAuthorize, getMyLearners);
+router.post("/tutor/learners/email", tutorAuthorize, sendEmailToLearner);
 router.get("/tutor/learners/:learnerId", tutorAuthorize, getLearnerDetails);
 router.get(
   "/tutor/learners/:learnerId/activity",

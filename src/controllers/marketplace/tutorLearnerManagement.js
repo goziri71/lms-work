@@ -16,9 +16,9 @@ import { db } from "../../database/database.js";
 import { Op } from "sequelize";
 
 /**
- * Helper to get tutor info
+ * Helper to get tutor info (used by learner routes and tutor emails)
  */
-function getTutorInfo(req) {
+export function getTutorInfo(req) {
   const userType = req.user.userType;
   let tutorId, tutorType;
 
