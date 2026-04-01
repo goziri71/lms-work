@@ -50,25 +50,58 @@ function getOAuth2Client() {
   );
 }
 
+function normalizeAuthCode(code) {
+  if (code == null) return "";
+  let c = String(code).trim();
+  if (c.includes("%")) {
+    try {
+      c = decodeURIComponent(c);
+    } catch {
+      /* keep c */
+    }
+  }
+  return c;
+}
+
+/**
+ * Build auth URL + signed state with PKCE (required by Google for many OAuth clients).
+ */
+export async function buildGoogleDriveAuthorizationUrl({ tutorId, tutorType }) {
+  const oauth2Client = getOAuth2Client();
+  const { codeVerifier, codeChallenge } = await oauth2Client.generateCodeVerifierAsync();
+  const state = createGoogleOAuthState({ tutorId, tutorType, codeVerifier });
+  const authUrl = getAuthorizationUrl(state, { codeChallenge });
+  return { authUrl, state };
+}
+
 /**
  * Generate OAuth authorization URL
  * @param {string} state - State parameter for CSRF protection
+ * @param {{ codeChallenge?: string }} [options] - PKCE challenge (S256) from generateCodeVerifierAsync
  * @returns {string} Authorization URL
  */
-export function getAuthorizationUrl(state) {
+export function getAuthorizationUrl(state, options = {}) {
   const oauth2Client = getOAuth2Client();
+  const { codeChallenge } = options;
 
   const scopes = [
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/drive.metadata.readonly",
   ];
 
-  const url = oauth2Client.generateAuthUrl({
+  const params = {
     access_type: "offline",
     scope: scopes,
     state: state,
-    prompt: "consent", // Force consent to get refresh token
-  });
+    prompt: "consent",
+  };
+
+  if (codeChallenge) {
+    params.code_challenge = codeChallenge;
+    params.code_challenge_method = "S256";
+  }
+
+  const url = oauth2Client.generateAuthUrl(params);
 
   return url;
 }
@@ -76,13 +109,28 @@ export function getAuthorizationUrl(state) {
 /**
  * Exchange authorization code for tokens
  * @param {string} code - Authorization code from OAuth callback
+ * @param {string|null} codeVerifier - PKCE verifier from signed state (required when auth URL used PKCE)
  * @returns {Promise<Object>} Tokens and user info
  */
-export async function exchangeCodeForTokens(code) {
+export async function exchangeCodeForTokens(code, codeVerifier = null) {
   const oauth2Client = getOAuth2Client();
+  const { redirectUri } = getGoogleOAuthConfig();
+  const normalized = normalizeAuthCode(code);
+
+  if (!normalized) {
+    throw new ErrorClass("Authorization code is missing or empty", 400);
+  }
 
   try {
-    const { tokens } = await oauth2Client.getToken(code);
+    const tokenOpts = {
+      code: normalized,
+      redirect_uri: redirectUri,
+    };
+    if (codeVerifier) {
+      tokenOpts.codeVerifier = codeVerifier;
+    }
+
+    const { tokens } = await oauth2Client.getToken(tokenOpts);
 
     // Get user info
     oauth2Client.setCredentials(tokens);
@@ -97,8 +145,26 @@ export async function exchangeCodeForTokens(code) {
       email: userInfo.email,
     };
   } catch (error) {
-    console.error("Google OAuth token exchange error:", error);
-    throw new ErrorClass("Failed to exchange authorization code for tokens", 500);
+    const data = error?.response?.data;
+    const errCode = data?.error;
+    const errDesc = data?.error_description || error?.message;
+    console.error("Google OAuth token exchange error:", errCode || errDesc || error);
+    if (data) console.error("Google token response:", JSON.stringify(data));
+    const { redirectUri: ru } = getGoogleOAuthConfig();
+    if (errCode === "redirect_uri_mismatch" || String(errDesc || "").includes("redirect_uri")) {
+      throw new ErrorClass(
+        `redirect_uri_mismatch: server uses "${ru}". Add this exact URL to Google Cloud OAuth client Authorized redirect URIs.`,
+        400
+      );
+    }
+    if (errCode === "invalid_grant") {
+      throw new ErrorClass(
+        "Google could not accept this authorization code (invalid_grant). It may already have been used, expired, or the sign-in was interrupted. Click Connect again in the app and finish Google in one go — do not refresh or open the callback URL twice.",
+        400
+      );
+    }
+    const extra = errDesc ? ` ${errDesc}` : "";
+    throw new ErrorClass(`Failed to exchange authorization code for tokens.${extra}`, 500);
   }
 }
 
@@ -234,21 +300,21 @@ export function getEmbedUrl(fileId, mimeType) {
 /**
  * Signed OAuth state so the browser callback (no JWT header) can be tied to a tutor.
  */
-export function createGoogleOAuthState({ tutorId, tutorType }) {
+export function createGoogleOAuthState({ tutorId, tutorType, codeVerifier }) {
   const secret = process.env.JWT_SECRET || "your-secret";
-  return jwt.sign(
-    {
-      purpose: "google_drive_oauth",
-      tutorId,
-      tutorType,
-    },
-    secret,
-    { expiresIn: "15m", algorithm: "HS256" }
-  );
+  const payload = {
+    purpose: "google_drive_oauth",
+    tutorId,
+    tutorType,
+  };
+  if (codeVerifier) {
+    payload.cv = codeVerifier;
+  }
+  return jwt.sign(payload, secret, { expiresIn: "15m", algorithm: "HS256" });
 }
 
 /**
- * Verify state from Google redirect and return tutor identity.
+ * Verify state from Google redirect and return tutor identity + PKCE verifier.
  */
 export function verifyGoogleOAuthState(state) {
   if (!state || typeof state !== "string") {
@@ -266,6 +332,7 @@ export function verifyGoogleOAuthState(state) {
     return {
       tutorId: decoded.tutorId,
       tutorType: decoded.tutorType,
+      codeVerifier: decoded.cv || null,
     };
   } catch {
     throw new ErrorClass(

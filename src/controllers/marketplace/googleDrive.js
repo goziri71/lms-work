@@ -8,13 +8,12 @@ import { ErrorClass } from "../../utils/errorClass/index.js";
 import { GoogleDriveConnection } from "../../models/marketplace/googleDriveConnection.js";
 import { ExternalFile } from "../../models/marketplace/externalFile.js";
 import {
-  getAuthorizationUrl,
+  buildGoogleDriveAuthorizationUrl,
   exchangeCodeForTokens,
   refreshAccessToken,
   listDriveFiles,
   getFileMetadata,
   getEmbedUrl,
-  createGoogleOAuthState,
   verifyGoogleOAuthState,
 } from "../../services/googleDriveService.js";
 import { Op } from "sequelize";
@@ -70,17 +69,17 @@ export const initiateGoogleDriveConnection = TryCatchFunction(async (req, res) =
     });
   }
 
-  const state = createGoogleOAuthState({ tutorId, tutorType });
-
-  // Generate authorization URL
-  const authUrl = getAuthorizationUrl(state);
+  const { authUrl, state } = await buildGoogleDriveAuthorizationUrl({
+    tutorId,
+    tutorType,
+  });
 
   res.status(200).json({
     success: true,
     message: "Google Drive authorization URL generated",
     data: {
       authorization_url: authUrl,
-      state: state, // Signed; returned to Google and verified on callback (no browser JWT)
+      state,
     },
   });
 });
@@ -96,10 +95,10 @@ export const handleGoogleDriveCallback = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Authorization code is required", 400);
   }
 
-  const { tutorId, tutorType } = verifyGoogleOAuthState(state);
+  const { tutorId, tutorType, codeVerifier } = verifyGoogleOAuthState(state);
 
-  // Exchange code for tokens
-  const tokenData = await exchangeCodeForTokens(code);
+  // Exchange code for tokens (PKCE verifier must match authorization request)
+  const tokenData = await exchangeCodeForTokens(code, codeVerifier);
 
   // Check if connection already exists
   let connection = await GoogleDriveConnection.findOne({
