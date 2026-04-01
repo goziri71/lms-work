@@ -4,8 +4,8 @@
  */
 
 import { google } from "googleapis";
+import jwt from "jsonwebtoken";
 import { ErrorClass } from "../utils/errorClass/index.js";
-import crypto from "crypto";
 import dotenv from "dotenv";
 
 dotenv.config({ debug: false });
@@ -232,9 +232,46 @@ export function getEmbedUrl(fileId, mimeType) {
 }
 
 /**
- * Generate state parameter for OAuth (CSRF protection)
- * @returns {string} Random state string
+ * Signed OAuth state so the browser callback (no JWT header) can be tied to a tutor.
  */
-export function generateState() {
-  return crypto.randomBytes(32).toString("hex");
+export function createGoogleOAuthState({ tutorId, tutorType }) {
+  const secret = process.env.JWT_SECRET || "your-secret";
+  return jwt.sign(
+    {
+      purpose: "google_drive_oauth",
+      tutorId,
+      tutorType,
+    },
+    secret,
+    { expiresIn: "15m", algorithm: "HS256" }
+  );
 }
+
+/**
+ * Verify state from Google redirect and return tutor identity.
+ */
+export function verifyGoogleOAuthState(state) {
+  if (!state || typeof state !== "string") {
+    throw new ErrorClass("OAuth state is required", 400);
+  }
+  const secret = process.env.JWT_SECRET || "your-secret";
+  try {
+    const decoded = jwt.verify(state, secret);
+    if (decoded.purpose !== "google_drive_oauth") {
+      throw new Error("invalid purpose");
+    }
+    if (decoded.tutorId == null || !decoded.tutorType) {
+      throw new Error("invalid payload");
+    }
+    return {
+      tutorId: decoded.tutorId,
+      tutorType: decoded.tutorType,
+    };
+  } catch {
+    throw new ErrorClass(
+      "Invalid or expired OAuth state. Please start Google Drive connect again from the app.",
+      400
+    );
+  }
+}
+

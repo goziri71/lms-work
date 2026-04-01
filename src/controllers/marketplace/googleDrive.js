@@ -14,7 +14,8 @@ import {
   listDriveFiles,
   getFileMetadata,
   getEmbedUrl,
-  generateState,
+  createGoogleOAuthState,
+  verifyGoogleOAuthState,
 } from "../../services/googleDriveService.js";
 import { Op } from "sequelize";
 
@@ -69,8 +70,7 @@ export const initiateGoogleDriveConnection = TryCatchFunction(async (req, res) =
     });
   }
 
-  // Generate state for CSRF protection (store in session or return to frontend)
-  const state = generateState();
+  const state = createGoogleOAuthState({ tutorId, tutorType });
 
   // Generate authorization URL
   const authUrl = getAuthorizationUrl(state);
@@ -80,7 +80,7 @@ export const initiateGoogleDriveConnection = TryCatchFunction(async (req, res) =
     message: "Google Drive authorization URL generated",
     data: {
       authorization_url: authUrl,
-      state: state, // Frontend should store this and verify on callback
+      state: state, // Signed; returned to Google and verified on callback (no browser JWT)
     },
   });
 });
@@ -91,15 +91,12 @@ export const initiateGoogleDriveConnection = TryCatchFunction(async (req, res) =
  */
 export const handleGoogleDriveCallback = TryCatchFunction(async (req, res) => {
   const { code, state } = req.query;
-  const { tutorId, tutorType } = getTutorInfo(req);
 
   if (!code) {
     throw new ErrorClass("Authorization code is required", 400);
   }
 
-  if (!tutorId || !tutorType) {
-    throw new ErrorClass("Tutor information not found", 401);
-  }
+  const { tutorId, tutorType } = verifyGoogleOAuthState(state);
 
   // Exchange code for tokens
   const tokenData = await exchangeCodeForTokens(code);

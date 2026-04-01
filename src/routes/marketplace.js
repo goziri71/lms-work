@@ -449,7 +449,7 @@ router.get(
   tutorAuthorize,
   initiateGoogleDriveConnection
 );
-router.get("/google-drive/callback", tutorAuthorize, handleGoogleDriveCallback);
+router.get("/google-drive/callback", handleGoogleDriveCallback);
 router.get(
   "/google-drive/connection",
   tutorAuthorize,
