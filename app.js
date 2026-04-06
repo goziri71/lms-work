@@ -35,6 +35,11 @@ import { setupCoachingMessagingSocket } from "./src/realtime/coachingMessaging.j
 import { performanceMonitor } from "./src/middlewares/performanceMonitor.js";
 import { trackLoginIP } from "./src/middlewares/ipTracker.js";
 import { EmailLog } from "./src/models/email/emailLog.js";
+import {
+  TutorMailbox,
+  MailThread,
+  MailMessage,
+} from "./src/models/marketplace/index.js";
 import { db } from "./src/database/database.js";
 
 const app = express();
@@ -204,6 +209,15 @@ connectDB().then(async (success) => {
           "   Run 'node setup-email-logs-table.js' manually to create the table",
         );
       }
+    }
+
+    try {
+      await TutorMailbox.sync({ alter: false });
+      await MailThread.sync({ alter: false });
+      await MailMessage.sync({ alter: false });
+      console.log("✅ Tutor mailbox tables (tutor_mailboxes, mail_threads, mail_messages) ready");
+    } catch (mbErr) {
+      console.warn("⚠️ Tutor mailbox table sync:", mbErr.message);
     }
 
     // Auto-add author_type columns if missing (for community posts/comments)

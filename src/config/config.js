@@ -60,6 +60,10 @@ export const Config = {
     },
   },
 
+  // Tutor mailbox OAuth (optional; falls back to GOOGLE_* / APP_URL)
+  mailboxGoogleRedirectUri: process.env.GOOGLE_MAILBOX_REDIRECT_URI,
+  mailboxMicrosoftRedirectUri: process.env.MICROSOFT_MAILBOX_REDIRECT_URI,
+
   // Email Configuration (ZeptoMail)
   email: {
     apiUrl: process.env.ZEPTOMAIL_API_URL,

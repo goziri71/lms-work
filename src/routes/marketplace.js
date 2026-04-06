@@ -65,6 +65,19 @@ import {
 } from "../controllers/marketplace/tutorLearnerManagement.js";
 import { sendEmailToLearner } from "../controllers/marketplace/tutorLearnerEmail.js";
 import {
+  getMailboxConnectGmail,
+  getMailboxConnectOutlook,
+  handleGmailMailboxCallback,
+  handleOutlookMailboxCallback,
+  listMailboxes,
+  disconnectMailbox,
+  sendMailboxEmail,
+  listThreads,
+  getThreadDetail,
+  listThreadMessages,
+  syncMailbox,
+} from "../controllers/marketplace/tutorMailbox.js";
+import {
   getOrganizationUsers,
   getOrganizationUserById,
   createOrganizationUser,
@@ -1198,6 +1211,20 @@ router.post("/tutor/ai/summarize", tutorAuthorize, summarizeAIContent);
 // Learner Management & Activity Tracking
 router.get("/tutor/learners", tutorAuthorize, getMyLearners);
 router.post("/tutor/learners/email", tutorAuthorize, sendEmailToLearner);
+
+// Tutor connected mailbox (Gmail / Microsoft Graph) — send & sync as tutor's address
+router.get("/tutor/mailbox/connect/gmail", tutorAuthorize, getMailboxConnectGmail);
+router.get("/tutor/mailbox/connect/outlook", tutorAuthorize, getMailboxConnectOutlook);
+router.get("/tutor/mailbox/google/callback", handleGmailMailboxCallback);
+router.get("/tutor/mailbox/microsoft/callback", handleOutlookMailboxCallback);
+router.get("/tutor/mailbox", tutorAuthorize, listMailboxes);
+router.post("/tutor/mailbox/send", tutorAuthorize, sendMailboxEmail);
+router.post("/tutor/mailbox/sync", tutorAuthorize, syncMailbox);
+router.get("/tutor/mailbox/threads", tutorAuthorize, listThreads);
+router.get("/tutor/mailbox/threads/:id", tutorAuthorize, getThreadDetail);
+router.get("/tutor/mailbox/threads/:id/messages", tutorAuthorize, listThreadMessages);
+router.delete("/tutor/mailbox/:id", tutorAuthorize, disconnectMailbox);
+
 router.get("/tutor/learners/:learnerId", tutorAuthorize, getLearnerDetails);
 router.get(
   "/tutor/learners/:learnerId/activity",

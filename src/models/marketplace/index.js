@@ -75,6 +75,9 @@ export { TutorKyc } from "./tutorKyc.js";
 // External File Storage exports
 export { GoogleDriveConnection } from "./googleDriveConnection.js";
 export { ExternalFile } from "./externalFile.js";
+export { TutorMailbox } from "./tutorMailbox.js";
+export { MailThread } from "./mailThread.js";
+export { MailMessage } from "./mailMessage.js";
 // Job Board exports
 export { JobCache } from "./jobCache.js";
 export { SavedJob } from "./savedJob.js";

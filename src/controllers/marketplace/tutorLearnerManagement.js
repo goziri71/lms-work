@@ -57,7 +57,7 @@ export const getMyLearners = TryCatchFunction(async (req, res) => {
     courseWhere.id = parseInt(course_id);
   }
 
-  const tutorCourses = await Courses.findAll({
+  const tutorCourses = await Courses.findByPk({
     where: courseWhere,
     attributes: ["id"],
   });
@@ -110,7 +110,9 @@ export const getMyLearners = TryCatchFunction(async (req, res) => {
   // Combine and get unique student IDs
   const enrollmentStudentIds = enrollments.map((e) => e.student_id);
   const transactionStudentIds = transactions.map((t) => t.student_id);
-  const studentIds = [...new Set([...enrollmentStudentIds, ...transactionStudentIds])];
+  const studentIds = [
+    ...new Set([...enrollmentStudentIds, ...transactionStudentIds]),
+  ];
 
   if (studentIds.length === 0) {
     return res.json({
@@ -190,7 +192,9 @@ export const getMyLearners = TryCatchFunction(async (req, res) => {
 
   // Format response
   const learners = students.map((student) => {
-    const name = `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim() || student.email;
+    const name =
+      `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim() ||
+      student.email;
 
     return {
       id: student.id,
@@ -200,15 +204,21 @@ export const getMyLearners = TryCatchFunction(async (req, res) => {
       phone: student.phone,
       country: student.country,
       joined_at: student.date,
-      courses: student.courseProgress?.map((progress) => ({
-        course_id: progress.course_id,
-        course_title: progress.course?.title,
-        course_code: progress.course?.course_code,
-        completion_percentage: parseFloat(progress.completion_percentage || 0),
-        is_completed: progress.is_completed,
-        last_accessed_at: progress.last_accessed_at,
-        time_spent_hours: Math.round((progress.total_time_spent_seconds || 0) / 3600 * 100) / 100,
-      })) || [],
+      courses:
+        student.courseProgress?.map((progress) => ({
+          course_id: progress.course_id,
+          course_title: progress.course?.title,
+          course_code: progress.course?.course_code,
+          completion_percentage: parseFloat(
+            progress.completion_percentage || 0,
+          ),
+          is_completed: progress.is_completed,
+          last_accessed_at: progress.last_accessed_at,
+          time_spent_hours:
+            Math.round(
+              ((progress.total_time_spent_seconds || 0) / 3600) * 100,
+            ) / 100,
+        })) || [],
     };
   });
 
@@ -260,7 +270,10 @@ export const getLearnerDetails = TryCatchFunction(async (req, res) => {
   });
 
   if (!enrollment) {
-    throw new ErrorClass("Learner not found or has not purchased any courses from you", 404);
+    throw new ErrorClass(
+      "Learner not found or has not purchased any courses from you",
+      404,
+    );
   }
 
   // Get learner info
@@ -330,7 +343,9 @@ export const getLearnerDetails = TryCatchFunction(async (req, res) => {
     limit: 20,
   });
 
-  const learnerName = `${learner.fname || ""} ${learner.mname || ""} ${learner.lname || ""}`.trim() || learner.email;
+  const learnerName =
+    `${learner.fname || ""} ${learner.mname || ""} ${learner.lname || ""}`.trim() ||
+    learner.email;
 
   res.json({
     success: true,
@@ -360,7 +375,8 @@ export const getLearnerDetails = TryCatchFunction(async (req, res) => {
         started_at: p.started_at,
         last_accessed_at: p.last_accessed_at,
         completed_at: p.completed_at,
-        time_spent_hours: Math.round((p.total_time_spent_seconds || 0) / 3600 * 100) / 100,
+        time_spent_hours:
+          Math.round(((p.total_time_spent_seconds || 0) / 3600) * 100) / 100,
       })),
       recent_activity: recentActivity.map((activity) => ({
         id: activity.id,
@@ -437,7 +453,10 @@ export const getLearnerActivity = TryCatchFunction(async (req, res) => {
   });
 
   if (!enrollment) {
-    throw new ErrorClass("Learner not found or has not purchased any courses from you", 404);
+    throw new ErrorClass(
+      "Learner not found or has not purchased any courses from you",
+      404,
+    );
   }
 
   // Build where clause
@@ -594,8 +613,9 @@ export const getLearnerCourseProgress = TryCatchFunction(async (req, res) => {
       started_at: progress.started_at,
       last_accessed_at: progress.last_accessed_at,
       completed_at: progress.completed_at,
-      time_spent_hours: Math.round((progress.total_time_spent_seconds || 0) / 3600 * 100) / 100,
+      time_spent_hours:
+        Math.round(((progress.total_time_spent_seconds || 0) / 3600) * 100) /
+        100,
     },
   });
 });
-

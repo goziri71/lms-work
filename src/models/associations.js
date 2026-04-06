@@ -86,6 +86,9 @@ import {
   TutorKyc,
   GoogleDriveConnection,
   ExternalFile,
+  TutorMailbox,
+  MailThread,
+  MailMessage,
   TutorCoachingProfile,
   TutorAvailability,
   CoachingBookingRequest,
@@ -1319,6 +1322,38 @@ export const setupAssociations = () => {
   ExternalFile.belongsTo(GoogleDriveConnection, {
     foreignKey: "google_drive_connection_id",
     as: "google_drive_connection",
+  });
+
+  // Tutor connected mailboxes (Gmail / Outlook)
+  TutorMailbox.hasMany(MailThread, {
+    foreignKey: "tutor_mailbox_id",
+    as: "mail_threads",
+  });
+  MailThread.belongsTo(TutorMailbox, {
+    foreignKey: "tutor_mailbox_id",
+    as: "mailbox",
+  });
+  MailThread.hasMany(MailMessage, {
+    foreignKey: "thread_id",
+    as: "messages",
+    onDelete: "CASCADE",
+  });
+  MailMessage.belongsTo(MailThread, {
+    foreignKey: "thread_id",
+    as: "thread",
+  });
+  MailMessage.belongsTo(TutorMailbox, {
+    foreignKey: "tutor_mailbox_id",
+    as: "mailbox",
+  });
+  TutorMailbox.hasMany(MailMessage, {
+    foreignKey: "tutor_mailbox_id",
+    as: "mail_messages",
+  });
+  MailThread.belongsTo(Students, {
+    foreignKey: "learner_student_id",
+    as: "learner",
+    constraints: false,
   });
 
   // ============================================
