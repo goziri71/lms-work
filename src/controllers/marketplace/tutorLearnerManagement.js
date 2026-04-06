@@ -57,12 +57,12 @@ export const getMyLearners = TryCatchFunction(async (req, res) => {
     courseWhere.id = parseInt(course_id);
   }
 
-  const tutorCourses = await Courses.findByPk({
+  const tutorCourses = await Courses.findAll({
     where: courseWhere,
     attributes: ["id"],
   });
 
-  if (tutorCourses.length === 0) {
+  if (!tutorCourses.length) {
     return res.json({
       success: true,
       data: {
