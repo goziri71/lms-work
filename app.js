@@ -40,6 +40,8 @@ import {
   MailThread,
   MailMessage,
 } from "./src/models/marketplace/index.js";
+import { WpuBookUpload } from "./src/models/wpu/wpuBookUpload.js";
+import wpuRoutes from "./src/routes/wpu.js";
 import { db } from "./src/database/database.js";
 
 const app = express();
@@ -77,6 +79,7 @@ app.use("/api/webhooks", webhookRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/notices", noticeRoutes);
 app.use("/api/student/kyc", kycRoutes);
+app.use("/api/wpu", wpuRoutes);
 
 // Public sales page by slug (so /api/public/sales/:slug works without /marketplace)
 app.get("/api/public/sales/:slug", getSalesPageBySlug);
@@ -218,6 +221,13 @@ connectDB().then(async (success) => {
       console.log("✅ Tutor mailbox tables (tutor_mailboxes, mail_threads, mail_messages) ready");
     } catch (mbErr) {
       console.warn("⚠️ Tutor mailbox table sync:", mbErr.message);
+    }
+
+    try {
+      await WpuBookUpload.sync({ alter: true });
+      console.log("✅ wpu_book_uploads table ready");
+    } catch (wpuErr) {
+      console.warn("⚠️ wpu_book_uploads sync:", wpuErr.message);
     }
 
     // Auto-add author_type columns if missing (for community posts/comments)

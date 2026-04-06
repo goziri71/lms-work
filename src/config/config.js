@@ -76,6 +76,10 @@ export const Config = {
   // Frontend URL for email links
   frontendUrl: process.env.FRONTEND_URL || "https://app.knomada.co",
 
+  /** Base URL for WPU PDFs (no trailing slash). Filename appended + encoded. */
+  wpuBooksBaseUrl:
+    process.env.WPU_BOOKS_BASE_URL || "https://app.pinnacleuniversity.co/uploads/files",
+
   // OpenAI Configuration
   openai: {
     apiKey: process.env.OPENAI_API_KEY,

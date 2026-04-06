@@ -23,7 +23,8 @@
     "setup:email-logs": "node setup-email-logs-table.js",
     "cleanup:database": "node scripts/cleanup-database.js",
     "check:quotes": "node scripts/check-remaining-quotes.js",
-    "migrate:marketplace-enum": "node scripts/migrate-marketplace-transaction-enum.js"
+    "migrate:marketplace-enum": "node scripts/migrate-marketplace-transaction-enum.js",
+    "migrate:wpu-uploads": "node src/scripts/migrateWpuUploads.js"
   },
   "keywords": [],
   "author": "",
