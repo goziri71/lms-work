@@ -12,7 +12,7 @@ export const CoachingSettings = db.define(
     price_per_hour: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
-      defaultValue: 10.0,
+      defaultValue: 450.0,
       comment: "Price per coaching hour (set by WPU admin)",
     },
     currency: {
@@ -40,6 +40,5 @@ export const CoachingSettings = db.define(
     timestamps: true,
     createdAt: "created_at",
     updatedAt: "updated_at",
-  }
+  },
 );
-

@@ -3,7 +3,7 @@ import { QueryTypes } from "sequelize";
 
 /**
  * Migration script to create coaching and subscription system tables
- * 
+ *
  * This script creates:
  * 1. tutor_subscriptions - Subscription tiers for tutors
  * 2. coaching_sessions - Coaching session records
@@ -11,7 +11,7 @@ import { QueryTypes } from "sequelize";
  * 4. coaching_hours_balance - Tutor coaching hours balance
  * 5. coaching_hours_purchases - Purchase history for coaching hours
  * 6. coaching_settings - WPU admin settings (price per hour)
- * 
+ *
  * Run with: node scripts/migrate-create-coaching-subscription-tables.js
  */
 
@@ -31,7 +31,7 @@ async function createCoachingSubscriptionTables() {
         SELECT FROM information_schema.tables 
         WHERE table_name = 'tutor_subscriptions'
       ) as exists;`,
-      { type: QueryTypes.SELECT }
+      { type: QueryTypes.SELECT },
     );
 
     if (!subscriptionsTableExists.exists) {
@@ -55,7 +55,7 @@ async function createCoachingSubscriptionTables() {
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
-      
+
       // Create partial unique index for active subscriptions
       await db.query(`
         CREATE UNIQUE INDEX unique_active_subscription 
@@ -64,7 +64,9 @@ async function createCoachingSubscriptionTables() {
       `);
       console.log("✅ Created 'tutor_subscriptions' table");
     } else {
-      console.log("⚠️  'tutor_subscriptions' table already exists. Skipping...");
+      console.log(
+        "⚠️  'tutor_subscriptions' table already exists. Skipping...",
+      );
     }
 
     // Step 2: Create coaching_sessions table
@@ -74,7 +76,7 @@ async function createCoachingSubscriptionTables() {
         SELECT FROM information_schema.tables 
         WHERE table_name = 'coaching_sessions'
       ) as exists;`,
-      { type: QueryTypes.SELECT }
+      { type: QueryTypes.SELECT },
     );
 
     if (!sessionsTableExists.exists) {
@@ -109,13 +111,15 @@ async function createCoachingSubscriptionTables() {
     }
 
     // Step 3: Create coaching_session_participants table
-    console.log("\n🔍 Step 3: Creating 'coaching_session_participants' table...");
+    console.log(
+      "\n🔍 Step 3: Creating 'coaching_session_participants' table...",
+    );
     const [participantsTableExists] = await db.query(
       `SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_name = 'coaching_session_participants'
       ) as exists;`,
-      { type: QueryTypes.SELECT }
+      { type: QueryTypes.SELECT },
     );
 
     if (!participantsTableExists.exists) {
@@ -135,7 +139,9 @@ async function createCoachingSubscriptionTables() {
       `);
       console.log("✅ Created 'coaching_session_participants' table");
     } else {
-      console.log("⚠️  'coaching_session_participants' table already exists. Skipping...");
+      console.log(
+        "⚠️  'coaching_session_participants' table already exists. Skipping...",
+      );
     }
 
     // Step 4: Create coaching_hours_balance table
@@ -145,7 +151,7 @@ async function createCoachingSubscriptionTables() {
         SELECT FROM information_schema.tables 
         WHERE table_name = 'coaching_hours_balance'
       ) as exists;`,
-      { type: QueryTypes.SELECT }
+      { type: QueryTypes.SELECT },
     );
 
     if (!balanceTableExists.exists) {
@@ -165,7 +171,9 @@ async function createCoachingSubscriptionTables() {
       `);
       console.log("✅ Created 'coaching_hours_balance' table");
     } else {
-      console.log("⚠️  'coaching_hours_balance' table already exists. Skipping...");
+      console.log(
+        "⚠️  'coaching_hours_balance' table already exists. Skipping...",
+      );
     }
 
     // Step 5: Create coaching_hours_purchases table
@@ -175,7 +183,7 @@ async function createCoachingSubscriptionTables() {
         SELECT FROM information_schema.tables 
         WHERE table_name = 'coaching_hours_purchases'
       ) as exists;`,
-      { type: QueryTypes.SELECT }
+      { type: QueryTypes.SELECT },
     );
 
     if (!purchasesTableExists.exists) {
@@ -198,7 +206,9 @@ async function createCoachingSubscriptionTables() {
       `);
       console.log("✅ Created 'coaching_hours_purchases' table");
     } else {
-      console.log("⚠️  'coaching_hours_purchases' table already exists. Skipping...");
+      console.log(
+        "⚠️  'coaching_hours_purchases' table already exists. Skipping...",
+      );
     }
 
     // Step 6: Create coaching_settings table
@@ -208,14 +218,14 @@ async function createCoachingSubscriptionTables() {
         SELECT FROM information_schema.tables 
         WHERE table_name = 'coaching_settings'
       ) as exists;`,
-      { type: QueryTypes.SELECT }
+      { type: QueryTypes.SELECT },
     );
 
     if (!settingsTableExists.exists) {
       await db.query(`
         CREATE TABLE coaching_settings (
           id SERIAL PRIMARY KEY,
-          price_per_hour DECIMAL(10, 2) NOT NULL DEFAULT 10.0,
+          price_per_hour DECIMAL(10, 2) NOT NULL DEFAULT 450.0,
           currency VARCHAR(10) DEFAULT 'NGN',
           default_duration_minutes INTEGER DEFAULT 60,
           warning_threshold_minutes INTEGER DEFAULT 10,
@@ -224,11 +234,11 @@ async function createCoachingSubscriptionTables() {
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
-      
+
       // Insert default settings
       await db.query(`
         INSERT INTO coaching_settings (price_per_hour, currency, default_duration_minutes, warning_threshold_minutes, auto_end_enabled)
-        VALUES (10.0, 'NGN', 60, 10, true);
+        VALUES (450.0, 'NGN', 60, 10, true);
       `);
       console.log("✅ Created 'coaching_settings' table with default values");
     } else {
@@ -238,14 +248,30 @@ async function createCoachingSubscriptionTables() {
     // Step 7: Create indexes for performance
     console.log("\n🔍 Step 7: Creating indexes...");
     try {
-      await db.query(`CREATE INDEX IF NOT EXISTS idx_tutor_subscriptions_tutor ON tutor_subscriptions(tutor_id, tutor_type);`);
-      await db.query(`CREATE INDEX IF NOT EXISTS idx_coaching_sessions_tutor ON coaching_sessions(tutor_id, tutor_type);`);
-      await db.query(`CREATE INDEX IF NOT EXISTS idx_coaching_sessions_status ON coaching_sessions(status);`);
-      await db.query(`CREATE INDEX IF NOT EXISTS idx_coaching_sessions_start_time ON coaching_sessions(start_time);`);
-      await db.query(`CREATE INDEX IF NOT EXISTS idx_coaching_participants_session ON coaching_session_participants(session_id);`);
-      await db.query(`CREATE INDEX IF NOT EXISTS idx_coaching_participants_student ON coaching_session_participants(student_id);`);
-      await db.query(`CREATE INDEX IF NOT EXISTS idx_coaching_balance_tutor ON coaching_hours_balance(tutor_id, tutor_type);`);
-      await db.query(`CREATE INDEX IF NOT EXISTS idx_coaching_purchases_tutor ON coaching_hours_purchases(tutor_id, tutor_type);`);
+      await db.query(
+        `CREATE INDEX IF NOT EXISTS idx_tutor_subscriptions_tutor ON tutor_subscriptions(tutor_id, tutor_type);`,
+      );
+      await db.query(
+        `CREATE INDEX IF NOT EXISTS idx_coaching_sessions_tutor ON coaching_sessions(tutor_id, tutor_type);`,
+      );
+      await db.query(
+        `CREATE INDEX IF NOT EXISTS idx_coaching_sessions_status ON coaching_sessions(status);`,
+      );
+      await db.query(
+        `CREATE INDEX IF NOT EXISTS idx_coaching_sessions_start_time ON coaching_sessions(start_time);`,
+      );
+      await db.query(
+        `CREATE INDEX IF NOT EXISTS idx_coaching_participants_session ON coaching_session_participants(session_id);`,
+      );
+      await db.query(
+        `CREATE INDEX IF NOT EXISTS idx_coaching_participants_student ON coaching_session_participants(student_id);`,
+      );
+      await db.query(
+        `CREATE INDEX IF NOT EXISTS idx_coaching_balance_tutor ON coaching_hours_balance(tutor_id, tutor_type);`,
+      );
+      await db.query(
+        `CREATE INDEX IF NOT EXISTS idx_coaching_purchases_tutor ON coaching_hours_purchases(tutor_id, tutor_type);`,
+      );
       console.log("✅ Created indexes");
     } catch (error) {
       console.log("⚠️  Some indexes may already exist. Continuing...");
@@ -253,7 +279,9 @@ async function createCoachingSubscriptionTables() {
 
     console.log("\n✅ Migration completed successfully!");
     console.log("\n📋 Next steps:");
-    console.log("   1. Set up default subscriptions for existing tutors (optional)");
+    console.log(
+      "   1. Set up default subscriptions for existing tutors (optional)",
+    );
     console.log("   2. Configure coaching price per hour via admin endpoint");
     console.log("   3. Test subscription and coaching endpoints");
 
@@ -265,4 +293,3 @@ async function createCoachingSubscriptionTables() {
 }
 
 createCoachingSubscriptionTables();
-

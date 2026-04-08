@@ -13,7 +13,7 @@ export const getSettings = TryCatchFunction(async (req, res) => {
   if (!settings) {
     // Create default settings if none exist
     settings = await CoachingSettings.create({
-      price_per_hour: 10.0,
+      price_per_hour: 450.0,
       currency: "NGN",
       default_duration_minutes: 60,
       warning_threshold_minutes: 10,
@@ -43,18 +43,24 @@ export const getSettings = TryCatchFunction(async (req, res) => {
  * Auth: Admin only
  */
 export const updateSettings = TryCatchFunction(async (req, res) => {
-  const { price_per_hour, currency, default_duration_minutes, warning_threshold_minutes, auto_end_enabled } =
-    req.body;
+  const {
+    price_per_hour,
+    currency,
+    default_duration_minutes,
+    warning_threshold_minutes,
+    auto_end_enabled,
+  } = req.body;
 
   let settings = await CoachingSettings.findOne();
 
   if (!settings) {
     settings = await CoachingSettings.create({
-      price_per_hour: price_per_hour || 10.0,
+      price_per_hour: price_per_hour ?? 450.0,
       currency: currency || "NGN",
       default_duration_minutes: default_duration_minutes || 60,
       warning_threshold_minutes: warning_threshold_minutes || 10,
-      auto_end_enabled: auto_end_enabled !== undefined ? auto_end_enabled : true,
+      auto_end_enabled:
+        auto_end_enabled !== undefined ? auto_end_enabled : true,
     });
   } else {
     const updateData = {};
@@ -69,13 +75,19 @@ export const updateSettings = TryCatchFunction(async (req, res) => {
     }
     if (default_duration_minutes !== undefined) {
       if (default_duration_minutes < 1) {
-        throw new ErrorClass("default_duration_minutes must be at least 1", 400);
+        throw new ErrorClass(
+          "default_duration_minutes must be at least 1",
+          400,
+        );
       }
       updateData.default_duration_minutes = default_duration_minutes;
     }
     if (warning_threshold_minutes !== undefined) {
       if (warning_threshold_minutes < 0) {
-        throw new ErrorClass("warning_threshold_minutes must be a non-negative number", 400);
+        throw new ErrorClass(
+          "warning_threshold_minutes must be a non-negative number",
+          400,
+        );
       }
       updateData.warning_threshold_minutes = warning_threshold_minutes;
     }
@@ -100,4 +112,3 @@ export const updateSettings = TryCatchFunction(async (req, res) => {
     },
   });
 });
-
