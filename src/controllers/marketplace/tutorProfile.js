@@ -19,7 +19,7 @@ export const getProfile = TryCatchFunction(async (req, res) => {
     email: tutor.email,
     status: tutor.status,
     verification_status: tutor.verification_status,
-    wallet_balance: parseFloat(tutor.wallet_balance || 0),
+    wallet_balance: parseFloat(tutor.wallet_balance_primary || 0),
     total_earnings: parseFloat(tutor.total_earnings || 0),
     total_payouts: parseFloat(tutor.total_payouts || 0),
     commission_rate: parseFloat(tutor.commission_rate || 15),
@@ -210,7 +210,7 @@ export const updateProfile = TryCatchFunction(async (req, res) => {
     id: tutor.id,
     email: tutor.email,
     status: tutor.status,
-    wallet_balance: parseFloat(tutor.wallet_balance || 0),
+    wallet_balance: parseFloat(tutor.wallet_balance_primary || 0),
     total_earnings: parseFloat(tutor.total_earnings || 0),
     rating: tutor.rating ? parseFloat(tutor.rating) : null,
   };

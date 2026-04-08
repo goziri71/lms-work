@@ -5,6 +5,7 @@ import { Organization } from "../models/marketplace/organization.js";
 import { Courses } from "../models/course/courses.js";
 import { Students } from "../models/auth/student.js";
 import { db } from "../database/database.js";
+import { applyLegacyWalletMirror } from "../utils/tutorWallet.js";
 
 /**
  * Calculate commission and earnings
@@ -209,15 +210,24 @@ export async function processMarketplacePurchase(purchaseData) {
     collected_at: new Date(),
   });
 
-  // Update owner's earnings and wallet
   const newTotalEarnings = parseFloat(owner.total_earnings || 0) + coursePrice;
-  const newWalletBalance =
-    parseFloat(owner.wallet_balance || 0) + tutorEarnings;
+  const cur = (course.currency || "NGN").toString().toUpperCase();
+  const updates = { total_earnings: newTotalEarnings };
 
-  await owner.update({
-    total_earnings: newTotalEarnings,
-    wallet_balance: newWalletBalance,
-  });
+  if (cur === "USD") {
+    updates.wallet_balance_usd =
+      parseFloat(owner.wallet_balance_usd || 0) + tutorEarnings;
+  } else if (cur === "GBP") {
+    updates.wallet_balance_gbp =
+      parseFloat(owner.wallet_balance_gbp || 0) + tutorEarnings;
+  } else {
+    const nextPrimary =
+      parseFloat(owner.wallet_balance_primary || 0) + tutorEarnings;
+    updates.wallet_balance_primary = nextPrimary;
+    applyLegacyWalletMirror(updates, nextPrimary);
+  }
+
+  await owner.update(updates);
 
   return {
     transaction,

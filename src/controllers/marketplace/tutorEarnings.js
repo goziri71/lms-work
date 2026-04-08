@@ -46,13 +46,14 @@ export const getEarningsSummary = TryCatchFunction(async (req, res) => {
     message: "Earnings summary retrieved successfully",
     data: {
       wallet: {
-        balance: parseFloat(tutor.wallet_balance || 0),
-        currency: "NGN", // Default, can be enhanced to support multiple currencies
+        balance: parseFloat(tutor.wallet_balance_primary || 0),
+        currency: tutor.local_currency || tutor.currency || "NGN",
       },
       earnings: {
         total_earnings: parseFloat(tutor.total_earnings || 0),
         total_payouts: parseFloat(tutor.total_payouts || 0),
-        pending_payout: parseFloat(tutor.wallet_balance || 0),
+        /** Local wallet balance (same bucket as `wallet.balance`) */
+        pending_payout: parseFloat(tutor.wallet_balance_primary || 0),
       },
       revenue: {
         all_time: {

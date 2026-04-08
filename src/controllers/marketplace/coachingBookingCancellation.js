@@ -13,6 +13,7 @@ import { getWalletBalance } from "../../services/walletBalanceService.js";
 import { refundHours } from "./coachingHours.js";
 import { streamVideoService } from "../../service/streamVideoService.js";
 import { db } from "../../database/database.js";
+import { applyLegacyWalletMirror } from "../../utils/tutorWallet.js";
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
@@ -141,13 +142,14 @@ async function processCancellation(booking, cancelledBy) {
             parseFloat(tutor.total_earnings || 0) - tutorEarnings
           );
 
-          await tutor.update(
-            {
-              total_earnings: newTotalEarnings,
-              [tutorWalletField]: tutorWalletAfter,
-            },
-            { transaction: dbTransaction }
-          );
+          const rev = {
+            total_earnings: newTotalEarnings,
+            [tutorWalletField]: tutorWalletAfter,
+          };
+          if (tutorWalletField === "wallet_balance_primary") {
+            applyLegacyWalletMirror(rev, tutorWalletAfter);
+          }
+          await tutor.update(rev, { transaction: dbTransaction });
 
           await TutorWalletTransaction.create(
             {

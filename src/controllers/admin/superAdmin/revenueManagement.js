@@ -205,7 +205,7 @@ export const getTutorRevenueDetails = TryCatchFunction(async (req, res) => {
             ? `${owner.fname} ${owner.lname}`
             : owner.name,
         email: owner.email,
-        wallet_balance: owner.wallet_balance,
+        wallet_balance: parseFloat(owner.wallet_balance_primary || 0),
         total_earnings: owner.total_earnings,
         commission_rate: owner.commission_rate,
       },

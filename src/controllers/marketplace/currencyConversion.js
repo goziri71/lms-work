@@ -10,6 +10,7 @@ import { Organization } from "../../models/marketplace/organization.js";
 import { CurrencyConversion } from "../../models/marketplace/currencyConversion.js";
 import { convertAmount, getExchangeRate } from "../../services/currencyExchangeRateService.js";
 import { db } from "../../database/database.js";
+import { applyLegacyWalletMirror } from "../../utils/tutorWallet.js";
 
 /**
  * Convert currency between tutor wallets
@@ -111,6 +112,13 @@ export const convertCurrency = TryCatchFunction(async (req, res) => {
       updateFields.wallet_balance_gbp = (gbpBalance || 0) + finalConvertedAmount;
     } else {
       updateFields.wallet_balance_primary = (primaryBalance || 0) + finalConvertedAmount;
+    }
+
+    if (updateFields.wallet_balance_primary !== undefined) {
+      applyLegacyWalletMirror(
+        updateFields,
+        updateFields.wallet_balance_primary
+      );
     }
 
     // Update tutor wallet balances

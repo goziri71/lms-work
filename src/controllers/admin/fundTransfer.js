@@ -185,6 +185,7 @@ export const completeFundTransfer = TryCatchFunction(async (req, res) => {
         wallet_balance_primary: 0,
         wallet_balance_usd: 0,
         wallet_balance_gbp: 0,
+        wallet_balance: 0,
       },
       { transaction }
     );

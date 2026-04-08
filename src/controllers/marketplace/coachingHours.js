@@ -9,6 +9,7 @@ import { Organization } from "../../models/marketplace/organization.js";
 import { TutorWalletTransaction } from "../../models/marketplace/tutorWalletTransaction.js";
 import { db } from "../../database/database.js";
 import { Sequelize } from "sequelize";
+import { applyLegacyWalletMirror } from "../../utils/tutorWallet.js";
 
 /**
  * Helper to get tutor ID and type from request
@@ -146,7 +147,11 @@ export const purchaseHours = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Tutor not found", 404);
   }
 
-  const walletBalance = parseFloat(tutor.wallet_balance || 0);
+  const payCur = (settings.currency || "NGN").toString().toUpperCase();
+  let walletField = "wallet_balance_primary";
+  if (payCur === "USD") walletField = "wallet_balance_usd";
+  else if (payCur === "GBP") walletField = "wallet_balance_gbp";
+  const walletBalance = parseFloat(tutor[walletField] || 0);
 
   if (walletBalance < totalAmount) {
     throw new ErrorClass(
@@ -155,13 +160,15 @@ export const purchaseHours = TryCatchFunction(async (req, res) => {
     );
   }
 
-  // Use transaction to ensure atomicity
   const transaction = await db.transaction();
 
   try {
-    // Deduct from wallet
     const newBalance = walletBalance - totalAmount;
-    await tutor.update({ wallet_balance: newBalance }, { transaction });
+    const chUpd = { [walletField]: newBalance };
+    if (walletField === "wallet_balance_primary") {
+      applyLegacyWalletMirror(chUpd, newBalance);
+    }
+    await tutor.update(chUpd, { transaction });
 
     // Get or create balance record
     let balance = await CoachingHoursBalance.findOne({

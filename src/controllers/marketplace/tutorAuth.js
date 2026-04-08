@@ -389,7 +389,7 @@ export const soleTutorLogin = TryCatchFunction(async (req, res) => {
         lname: tutor.lname,
         email: tutor.email,
         status: tutor.status,
-        wallet_balance: tutor.wallet_balance,
+        wallet_balance: tutor.wallet_balance_primary,
         rating: tutor.rating,
         currency: tutor.currency || "NGN",
         local_currency: tutor.local_currency || tutor.currency || "NGN",
@@ -547,7 +547,7 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
         name: organization.name,
         email: organization.email,
         status: organization.status,
-        wallet_balance: organization.wallet_balance,
+        wallet_balance: organization.wallet_balance_primary,
         rating: organization.rating,
         country: organization.country,
         currency:
@@ -856,7 +856,7 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
           lname: tutor.lname,
           email: tutor.email,
           status: tutor.status,
-          wallet_balance: tutor.wallet_balance,
+          wallet_balance: tutor.wallet_balance_primary,
           rating: tutor.rating,
           currency: tutor.currency || "NGN",
           local_currency: tutor.local_currency || tutor.currency || "NGN",
@@ -993,7 +993,7 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
           name: organization.name,
           email: organization.email,
           status: organization.status,
-          wallet_balance: organization.wallet_balance,
+          wallet_balance: organization.wallet_balance_primary,
           rating: organization.rating,
           currency:
             organization.currency ||

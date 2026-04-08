@@ -4,6 +4,7 @@ import { Organization } from "../models/marketplace/organization.js";
 import { db } from "../database/database.js";
 import { Op } from "sequelize";
 import { emailService } from "./emailService.js";
+import { applyLegacyWalletMirror } from "../utils/tutorWallet.js";
 
 /**
  * Process auto-renewal for subscriptions expiring in the next 3 days
@@ -88,16 +89,16 @@ async function renewSubscription(subscription) {
     throw new Error(`Tutor not found: ${subscription.tutor_id} (${subscription.tutor_type})`);
   }
 
-  const walletBalance = parseFloat(tutor.wallet_balance || 0);
+  const walletBalance = parseFloat(tutor.wallet_balance_primary || 0);
 
-  // Use transaction to ensure atomicity
   const transaction = await db.transaction();
 
   try {
     if (walletBalance >= subscriptionPrice) {
-      // Sufficient balance - process renewal
       const newBalance = walletBalance - subscriptionPrice;
-      await tutor.update({ wallet_balance: newBalance }, { transaction });
+      const renUpd = { wallet_balance_primary: newBalance };
+      applyLegacyWalletMirror(renUpd, newBalance);
+      await tutor.update(renUpd, { transaction });
 
       // Extend subscription by 30 days
       const newEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);

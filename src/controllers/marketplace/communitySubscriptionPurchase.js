@@ -218,19 +218,29 @@ export const purchaseCommunitySubscription = TryCatchFunction(async (req, res) =
     let tutor;
     if (tutorType === "sole_tutor") {
       tutor = await SoleTutor.findByPk(tutorId, { transaction });
-      if (tutor) {
-        await tutor.increment("wallet_balance", {
-          by: tutorEarnings,
-          transaction,
-        });
-      }
     } else {
       tutor = await Organization.findByPk(tutorId, { transaction });
-      if (tutor) {
-        await tutor.increment("wallet_balance", {
-          by: tutorEarnings,
-          transaction,
-        });
+    }
+    if (tutor) {
+      const c = (studentCurrency || "NGN").toString().toUpperCase();
+      if (c === "USD") {
+        await tutor.increment(
+          { wallet_balance_usd: tutorEarnings },
+          { transaction }
+        );
+      } else if (c === "GBP") {
+        await tutor.increment(
+          { wallet_balance_gbp: tutorEarnings },
+          { transaction }
+        );
+      } else {
+        await tutor.increment(
+          {
+            wallet_balance_primary: tutorEarnings,
+            wallet_balance: tutorEarnings,
+          },
+          { transaction }
+        );
       }
     }
 

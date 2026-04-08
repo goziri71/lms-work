@@ -12,6 +12,7 @@ import {
   getTransactionReference,
 } from "../../services/flutterwaveService.js";
 import { db } from "../../database/database.js";
+import { applyLegacyWalletMirror } from "../../utils/tutorWallet.js";
 
 /**
  * Get tutor wallet balance (multi-currency)
@@ -120,9 +121,15 @@ export const fundWallet = TryCatchFunction(async (req, res) => {
   });
 
   if (existingTransaction) {
-    // Return existing transaction info
     await tutor.reload();
-    const currentBalance = parseFloat(tutor.wallet_balance || 0);
+    const c = transactionCurrency.toUpperCase();
+    const field =
+      c === "USD"
+        ? "wallet_balance_usd"
+        : c === "GBP"
+          ? "wallet_balance_gbp"
+          : "wallet_balance_primary";
+    const currentBalance = parseFloat(tutor[field] || 0);
 
     return res.status(200).json({
       success: true,
@@ -162,6 +169,7 @@ export const fundWallet = TryCatchFunction(async (req, res) => {
       balanceBefore = parseFloat(tutor.wallet_balance_primary || 0);
       balanceAfter = balanceBefore + transactionAmount;
       updateFields = { wallet_balance_primary: balanceAfter };
+      applyLegacyWalletMirror(updateFields, balanceAfter);
     }
 
     // Update tutor wallet balance
@@ -316,7 +324,8 @@ export const getWalletTransactions = TryCatchFunction(async (req, res) => {
         currency: currency,
         total_credits: parseFloat(totalCredits || 0),
         total_debits: parseFloat(totalDebits || 0),
-        current_balance: parseFloat(tutor.wallet_balance || 0),
+        /** Local (primary) wallet — matches GET /wallet `wallets.primary` */
+        current_balance: parseFloat(tutor.wallet_balance_primary || 0),
       },
     },
   });

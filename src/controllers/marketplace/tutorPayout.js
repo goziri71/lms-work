@@ -11,6 +11,7 @@ import { getCurrencyFromCountry } from "../../services/currencyService.js";
 import { Op, Sequelize } from "sequelize";
 import { db } from "../../database/database.js";
 import crypto from "crypto";
+import { applyLegacyWalletMirror } from "../../utils/tutorWallet.js";
 
 /**
  * Helper to get tutor ID and type from request
@@ -120,8 +121,13 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
       throw new ErrorClass("Tutor not found", 404);
     }
 
-    // Re-check wallet balance after locking (prevents race condition)
-    const walletBalance = parseFloat(tutor.wallet_balance || 0);
+    const wc = (tutor.currency || "NGN").toString().toUpperCase();
+    let walletField;
+    if (wc === "USD") walletField = "wallet_balance_usd";
+    else if (wc === "GBP") walletField = "wallet_balance_gbp";
+    else walletField = "wallet_balance_primary";
+
+    const walletBalance = parseFloat(tutor[walletField] || 0);
     if (walletBalance < payoutAmount) {
       await safeRollback();
       throw new ErrorClass(
@@ -253,14 +259,13 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
       { transaction }
     );
 
-    // Deduct from wallet (reserve the amount) - using locked balance
     const newBalance = walletBalance - payoutAmount;
-    await tutor.update(
-      { wallet_balance: newBalance },
-      { transaction }
-    );
+    const payoutUpd = { [walletField]: newBalance };
+    if (walletField === "wallet_balance_primary") {
+      applyLegacyWalletMirror(payoutUpd, newBalance);
+    }
+    await tutor.update(payoutUpd, { transaction });
 
-    // Create wallet transaction record for the deduction
     await TutorWalletTransaction.create(
       {
         tutor_id: tutorId,
@@ -674,14 +679,15 @@ async function refundPayout(payout, transaction) {
     return;
   }
 
-  // Get wallet currency from payout metadata or tutor record
   const walletCurrency = payout.metadata?.wallet_currency || tutor.currency || "NGN";
+  const wcur = walletCurrency.toString().toUpperCase();
+  let refundField = "wallet_balance_primary";
+  if (wcur === "USD") refundField = "wallet_balance_usd";
+  else if (wcur === "GBP") refundField = "wallet_balance_gbp";
 
-  // Refund wallet balance
-  const currentBalance = parseFloat(tutor.wallet_balance || 0);
+  const currentBalance = parseFloat(tutor[refundField] || 0);
   const newBalance = currentBalance + refundAmount;
 
-  // Log refund details for debugging
   console.log(`🔄 Refunding payout ${payout.id}:`, {
     payout_id: payout.id,
     payout_amount: parseFloat(payout.amount),
@@ -690,9 +696,14 @@ async function refundPayout(payout, transaction) {
     current_balance: currentBalance,
     new_balance: newBalance,
     wallet_currency: walletCurrency,
+    refund_field: refundField,
   });
 
-  await tutor.update({ wallet_balance: newBalance }, { transaction });
+  const refUpd = { [refundField]: newBalance };
+  if (refundField === "wallet_balance_primary") {
+    applyLegacyWalletMirror(refUpd, newBalance);
+  }
+  await tutor.update(refUpd, { transaction });
 
   // Update wallet transaction status
   await TutorWalletTransaction.update(

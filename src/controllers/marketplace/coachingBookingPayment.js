@@ -18,6 +18,7 @@ import { streamVideoService } from "../../service/streamVideoService.js";
 import { checkAndDeductHours } from "./coachingHours.js";
 import { Config } from "../../config/config.js";
 import { db } from "../../database/database.js";
+import { applyLegacyWalletMirror } from "../../utils/tutorWallet.js";
 
 /**
  * Process payment and create session after booking is accepted.
@@ -278,13 +279,14 @@ export const processBookingPayment = TryCatchFunction(async (req, res) => {
     const tutorWalletAfter = tutorWalletBefore + tutorEarnings;
     const newTotalEarnings = parseFloat(tutor.total_earnings || 0) + tutorEarnings;
 
-    await tutor.update(
-      {
-        total_earnings: newTotalEarnings,
-        [tutorWalletField]: tutorWalletAfter,
-      },
-      { transaction: dbTransaction }
-    );
+    const tutorUpd = {
+      total_earnings: newTotalEarnings,
+      [tutorWalletField]: tutorWalletAfter,
+    };
+    if (tutorWalletField === "wallet_balance_primary") {
+      applyLegacyWalletMirror(tutorUpd, tutorWalletAfter);
+    }
+    await tutor.update(tutorUpd, { transaction: dbTransaction });
 
     await TutorWalletTransaction.create(
       {

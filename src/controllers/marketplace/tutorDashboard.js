@@ -165,7 +165,8 @@ export const getDashboard = TryCatchFunction(async (req, res) => {
     message: "Dashboard data retrieved successfully",
     data: {
       overview: {
-        wallet_balance: parseFloat(tutor.wallet_balance || 0),
+        /** Local-currency wallet; aligns with GET /wallet `wallets.primary` */
+        wallet_balance: parseFloat(tutor.wallet_balance_primary || 0),
         total_earnings: parseFloat(tutor.total_earnings || 0),
         total_payouts: parseFloat(tutor.total_payouts || 0),
         rating: tutor.rating ? parseFloat(tutor.rating) : null,

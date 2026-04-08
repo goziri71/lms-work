@@ -11,6 +11,7 @@ import { Organization } from "../../models/marketplace/organization.js";
 import { TutorWalletTransaction } from "../../models/marketplace/tutorWalletTransaction.js";
 import { db } from "../../database/database.js";
 import { Op } from "sequelize";
+import { applyLegacyWalletMirror } from "../../utils/tutorWallet.js";
 
 /**
  * Helper to get tutor ID and type from request
@@ -292,9 +293,12 @@ export const subscribe = TryCatchFunction(async (req, res) => {
     const transaction = await db.transaction();
 
     try {
-      // Deduct from wallet
       const newBalance = walletBalance - subscriptionPrice;
-      await tutor.update({ [walletField]: newBalance }, { transaction });
+      const subUpd = { [walletField]: newBalance };
+      if (walletField === "wallet_balance_primary") {
+        applyLegacyWalletMirror(subUpd, newBalance);
+      }
+      await tutor.update(subUpd, { transaction });
 
       // Create subscription record
       const subscriptionData = {
