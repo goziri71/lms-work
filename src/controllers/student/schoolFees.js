@@ -1,11 +1,10 @@
-import { Op } from "sequelize";
+import { Op, Transaction } from "sequelize";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { Students } from "../../models/auth/student.js";
 import { SchoolFees } from "../../models/payment/schoolFees.js";
 import { SchoolFeesConfiguration } from "../../models/payment/schoolFeesConfiguration.js";
 import { Funding } from "../../models/payment/funding.js";
-import { PaymentTransaction } from "../../models/payment/paymentTransaction.js";
 import { Semester } from "../../models/auth/semester.js";
 import { getSchoolFeesForStudent } from "../admin/superAdmin/schoolFeesManagement.js";
 import {
@@ -14,8 +13,13 @@ import {
   getTransactionAmount,
   getTransactionCurrency,
   getTransactionReference,
+  getTransactionStatus,
 } from "../../services/flutterwaveService.js";
-import { getWalletBalance } from "../../services/walletBalanceService.js";
+import {
+  getWalletBalance,
+  fundStudentWalletFromFlutterwave,
+  calculateLedgerBalance,
+} from "../../services/walletBalanceService.js";
 import { calculateSchoolFeesForStudent } from "../../services/schoolFeesCalculationService.js";
 import { db } from "../../database/database.js";
 
@@ -55,7 +59,7 @@ export const getMySchoolFees = TryCatchFunction(async (req, res) => {
     currentSemester = await Semester.findOne({
       where: Semester.sequelize.where(
         Semester.sequelize.fn("UPPER", Semester.sequelize.col("status")),
-        "ACTIVE"
+        "ACTIVE",
       ),
       order: [["id", "DESC"]],
     });
@@ -81,7 +85,7 @@ export const getMySchoolFees = TryCatchFunction(async (req, res) => {
     student,
     academicYear,
     semester,
-    student.currency
+    student.currency,
   );
 
   // Check if student has already paid for this semester
@@ -175,7 +179,10 @@ export const getMySchoolFeesHistory = TryCatchFunction(async (req, res) => {
     where,
     limit: parseInt(limit),
     offset,
-    order: [["date", "DESC"], ["id", "DESC"]], // Most recent first
+    order: [
+      ["date", "DESC"],
+      ["id", "DESC"],
+    ], // Most recent first
   });
 
   res.status(200).json({
@@ -225,7 +232,7 @@ export const verifySchoolFeesPayment = TryCatchFunction(async (req, res) => {
   if (!transaction_reference && !flutterwave_transaction_id) {
     throw new ErrorClass(
       "transaction_reference or flutterwave_transaction_id is required",
-      400
+      400,
     );
   }
 
@@ -253,7 +260,7 @@ export const verifySchoolFeesPayment = TryCatchFunction(async (req, res) => {
     currentSemester = await Semester.findOne({
       where: Semester.sequelize.where(
         Semester.sequelize.fn("UPPER", Semester.sequelize.col("status")),
-        "ACTIVE"
+        "ACTIVE",
       ),
       order: [["id", "DESC"]],
     });
@@ -261,124 +268,126 @@ export const verifySchoolFeesPayment = TryCatchFunction(async (req, res) => {
 
   const academicYear = currentSemester?.academic_year?.toString() || null;
 
-  // Verify transaction with Flutterwave API
   const verificationId = flutterwave_transaction_id || transaction_reference;
   let verificationResult;
 
   try {
-    verificationResult = await verifyTransaction(verificationId);
+    verificationResult = await verifyTransaction(verificationId, {
+      maxRetries: 8,
+      retryDelayMs: 2500,
+    });
   } catch (error) {
-    throw new ErrorClass(
-      `Payment verification failed: ${error.message}`,
-      400
-    );
+    if (error instanceof ErrorClass && error.statusCode === 404) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          outcome: "pending_verification",
+          message:
+            "Flutterwave has not registered this payment yet. Retry shortly with the same reference.",
+          retry_after_seconds: 5,
+        },
+      });
+    }
+    throw new ErrorClass(`Payment verification failed: ${error.message}`, 400);
   }
 
-  if (!verificationResult.success || !isTransactionSuccessful(verificationResult.transaction)) {
-    throw new ErrorClass("Payment was not successful", 400);
+  if (!verificationResult.success) {
+    return res.status(400).json({
+      success: false,
+      data: {
+        outcome: "failed",
+        message: verificationResult.message || "Verification failed",
+      },
+    });
   }
 
   const flutterwaveTransaction = verificationResult.transaction;
+  const fwStatus = getTransactionStatus(flutterwaveTransaction);
+
+  if (fwStatus === "pending") {
+    return res.status(200).json({
+      success: true,
+      data: {
+        outcome: "pending",
+        message:
+          "Payment is still processing. Retry with the same reference.",
+        retry_after_seconds: 5,
+      },
+    });
+  }
+
+  if (fwStatus === "failed" || fwStatus === "cancelled") {
+    return res.status(400).json({
+      success: false,
+      data: {
+        outcome: "failed",
+        message: "Flutterwave reports this payment as failed or cancelled.",
+        flutterwave_status: fwStatus,
+      },
+    });
+  }
+
+  if (!isTransactionSuccessful(flutterwaveTransaction)) {
+    return res.status(200).json({
+      success: true,
+      data: {
+        outcome: "pending",
+        message: "Payment not successful yet. Retry shortly.",
+        retry_after_seconds: 5,
+      },
+    });
+  }
 
   // Get transaction amount and currency
   const transactionAmount = getTransactionAmount(flutterwaveTransaction);
   const transactionCurrency = getTransactionCurrency(flutterwaveTransaction);
 
-  // Check if transaction reference already processed (idempotency)
   const txRef = getTransactionReference(flutterwaveTransaction);
-  const existingTransaction = await PaymentTransaction.findOne({
-    where: {
-      [Op.or]: [
-        { transaction_reference: txRef },
-        { flutterwave_transaction_id: flutterwaveTransaction.id?.toString() },
-      ],
-      status: "successful",
-    },
+
+  const result = await fundStudentWalletFromFlutterwave({
+    studentId,
+    txRef,
+    flutterwaveTransactionId: flutterwaveTransaction.id?.toString(),
+    amount: transactionAmount,
+    currency: transactionCurrency,
+    flutterwaveResponse: flutterwaveTransaction,
+    academicYear,
+    semester: currentSemester?.semester || null,
+    today,
   });
 
-  if (existingTransaction) {
-    // Return existing transaction info
-    const totalCredits = await Funding.sum("amount", {
-      where: { student_id: studentId, type: "Credit" },
-    });
-    const totalDebits = await Funding.sum("amount", {
-      where: { student_id: studentId, type: "Debit" },
-    });
-    const currentBalance = (totalCredits || 0) - (totalDebits || 0);
-
+  if (result.duplicate) {
     return res.status(200).json({
       success: true,
       message: "Wallet funding already processed",
       data: {
+        outcome: "completed",
         transaction: {
           transaction_reference: txRef,
           status: "successful",
           amount: transactionAmount,
         },
         wallet: {
-          balance: currentBalance,
+          balance: result.balance,
           currency: transactionCurrency,
         },
       },
     });
   }
 
-  // Create payment transaction record
-  const paymentTransaction = await PaymentTransaction.create({
-    student_id: studentId,
-    transaction_reference: txRef,
-    flutterwave_transaction_id: flutterwaveTransaction.id?.toString(),
-    amount: transactionAmount,
-    currency: transactionCurrency,
-    status: "successful",
-    payment_type: "wallet_funding",
-    academic_year: academicYear,
-    processed_at: new Date(),
-    flutterwave_response: flutterwaveTransaction,
-  });
-
-  // Get current wallet balance
-  const totalCredits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Credit" },
-  });
-  const totalDebits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Debit" },
-  });
-  const currentBalance = (totalCredits || 0) - (totalDebits || 0);
-
-  // Credit wallet
-  const newBalance = currentBalance + transactionAmount;
-
-  const funding = await Funding.create({
-    student_id: studentId,
-    amount: transactionAmount,
-    type: "Credit",
-    service_name: "Wallet Funding",
-    ref: txRef,
-    date: today,
-    semester: currentSemester?.semester || null,
-    academic_year: academicYear,
-    currency: transactionCurrency,
-    balance: newBalance.toString(),
-  });
-
-  // Update student wallet_balance
-  await student.update({
-    wallet_balance: newBalance,
-  });
-
   res.status(200).json({
     success: true,
     message: "Wallet funded successfully",
     data: {
+      outcome: "completed",
       transaction: {
         transaction_reference: txRef,
         amount: transactionAmount,
         currency: transactionCurrency,
       },
       wallet: {
-        previous_balance: currentBalance,
-        new_balance: newBalance,
+        previous_balance: result.previousBalance,
+        new_balance: result.newBalance,
         credited: transactionAmount,
         currency: transactionCurrency,
       },
@@ -423,7 +432,7 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
     currentSemester = await Semester.findOne({
       where: Semester.sequelize.where(
         Semester.sequelize.fn("UPPER", Semester.sequelize.col("status")),
-        "ACTIVE"
+        "ACTIVE",
       ),
       order: [["id", "DESC"]],
     });
@@ -449,7 +458,7 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
   if (existingPayment) {
     throw new ErrorClass(
       `School fees for ${academicYear} ${semester} have already been paid`,
-      400
+      400,
     );
   }
 
@@ -458,111 +467,150 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
     student,
     academicYear,
     semester,
-    student.currency
+    student.currency,
   );
 
   // If no Payment Setup items exist and no Configuration, throw error
   if (feesCalculation.amount === 0 && feesCalculation.items.length === 0) {
     throw new ErrorClass(
       "School fees not configured for this semester. Please contact admin.",
-      404
+      404,
     );
   }
 
   const amount = feesCalculation.amount;
   // Ensure currency is always set and valid (required field, no null allowed)
   // School fees payment is 100% wallet-based, no Flutterwave integration
-  const currency = (feesCalculation.currency || student.currency || "NGN").toString().toUpperCase().substring(0, 5);
+  const currency = (feesCalculation.currency || student.currency || "NGN")
+    .toString()
+    .toUpperCase()
+    .substring(0, 5);
 
-  // Get current wallet balance (with automatic migration of old balances)
-  const { balance: currentBalance } = await getWalletBalance(studentId, true);
+  await getWalletBalance(studentId, true);
 
-  // Check if wallet has sufficient balance
-  if (currentBalance < amount) {
-    throw new ErrorClass(
-      `Insufficient wallet balance. Required: ${amount} ${currency}, Available: ${currentBalance} ${currency}`,
-      400
-    );
-  }
-
-  // Generate transaction reference
   const txRef = `WALLET-SCHOOL-FEES-${Date.now()}`;
 
-  // Use database transaction to ensure atomicity
-  // If any step fails, everything will be rolled back
-  const transaction = await db.transaction();
-
   try {
-    // Debit wallet
-    const newBalance = currentBalance - amount;
+    const { schoolFee, currentBalance, newBalance } = await db.transaction(
+      async (transaction) => {
+        const lockedStudent = await Students.findByPk(studentId, {
+          transaction,
+          lock: Transaction.LOCK.UPDATE,
+        });
+        if (!lockedStudent) {
+          throw new ErrorClass("Student not found", 404);
+        }
 
-    // Create Funding record (Debit)
-    const funding = await Funding.create(
-      {
-        student_id: studentId,
-        amount: amount,
-        type: "Debit",
-        service_name: "School Fees Payment",
-        ref: txRef,
-        date: today,
-        semester: currentSemester.semester || null,
-        academic_year: academicYear,
-        currency: currency,
-        balance: newBalance.toString(),
+        const dupPay = await SchoolFees.findOne({
+          where: {
+            student_id: studentId,
+            academic_year: academicYear,
+            semester: semester,
+            status: "Paid",
+          },
+          transaction,
+        });
+        if (dupPay) {
+          throw new ErrorClass(
+            `School fees for ${academicYear} ${semester} have already been paid`,
+            400,
+          );
+        }
+
+        const ledgerBalance = await calculateLedgerBalance(
+          studentId,
+          lockedStudent.currency,
+          transaction,
+        );
+
+        if (ledgerBalance < amount) {
+          throw new ErrorClass(
+            `Insufficient wallet balance. Required: ${amount} ${currency}, Available: ${ledgerBalance} ${currency}`,
+            400,
+          );
+        }
+
+        const newBal = ledgerBalance - amount;
+
+        await Funding.create(
+          {
+            student_id: studentId,
+            amount: amount,
+            type: "Debit",
+            service_name: "School Fees Payment",
+            ref: txRef,
+            date: today,
+            semester: currentSemester.semester || null,
+            academic_year: academicYear,
+            currency: currency,
+            balance: newBal.toString(),
+          },
+          { transaction },
+        );
+
+        await lockedStudent.update(
+          {
+            wallet_balance: newBal,
+          },
+          { transaction },
+        );
+
+        const schoolFeeData = {
+          student_id: studentId,
+          amount: Math.round(amount),
+          status: "Paid",
+          academic_year: academicYear
+            ? academicYear.toString().substring(0, 20)
+            : null,
+          semester: semester ? semester.toString().substring(0, 20) : null,
+          date: today ? today.substring(0, 20) : null,
+          teller_no: txRef,
+          matric_number: lockedStudent.matric_number
+            ? lockedStudent.matric_number.toString().substring(0, 40)
+            : null,
+          type: "School Fees",
+          student_level: lockedStudent.level
+            ? lockedStudent.level.toString().substring(0, 11)
+            : null,
+          currency: currency,
+        };
+
+        console.log(
+          "Creating SchoolFees record with data:",
+          JSON.stringify(schoolFeeData, null, 2),
+        );
+
+        let created;
+        try {
+          created = await SchoolFees.create(schoolFeeData, { transaction });
+        } catch (createError) {
+          console.error("❌ SchoolFees.create failed with detailed error:", {
+            name: createError.name,
+            message: createError.message,
+            errors: createError.errors
+              ? JSON.stringify(createError.errors, null, 2)
+              : null,
+            original: createError.original
+              ? {
+                  message: createError.original.message,
+                  code: createError.original.code,
+                  detail: createError.original.detail,
+                  constraint: createError.original.constraint,
+                  table: createError.original.table,
+                }
+              : null,
+            schoolFeeData: JSON.stringify(schoolFeeData, null, 2),
+          });
+          throw createError;
+        }
+
+        return {
+          schoolFee: created,
+          currentBalance: ledgerBalance,
+          newBalance: newBal,
+        };
       },
-      { transaction }
     );
-
-    // Update student wallet_balance
-    await student.update(
-      {
-        wallet_balance: newBalance,
-      },
-      { transaction }
-    );
-
-    // Create SchoolFees record (per semester)
-    // Ensure field lengths match model constraints and currency is always set
-    const schoolFeeData = {
-      student_id: studentId,
-      amount: Math.round(amount), // Ensure integer
-      status: "Paid",
-      academic_year: academicYear ? academicYear.toString().substring(0, 20) : null,
-      semester: semester ? semester.toString().substring(0, 20) : null,
-      date: today ? today.substring(0, 20) : null,
-      teller_no: txRef, // Already VARCHAR(255) after migration
-      matric_number: student.matric_number ? student.matric_number.toString().substring(0, 40) : null,
-      type: "School Fees", // VARCHAR(50) - "School Fees" is 12 chars, safe
-      student_level: student.level ? student.level.toString().substring(0, 11) : null, // VARCHAR(11)
-      currency: currency, // Already validated above, VARCHAR(5), always set
-    };
-
-    // Log the data being created for debugging
-    console.log("Creating SchoolFees record with data:", JSON.stringify(schoolFeeData, null, 2));
-
-    let schoolFee;
-    try {
-      schoolFee = await SchoolFees.create(schoolFeeData, { transaction });
-    } catch (createError) {
-      // Log detailed error before re-throwing
-      console.error("❌ SchoolFees.create failed with detailed error:", {
-        name: createError.name,
-        message: createError.message,
-        errors: createError.errors ? JSON.stringify(createError.errors, null, 2) : null,
-        original: createError.original ? {
-          message: createError.original.message,
-          code: createError.original.code,
-          detail: createError.original.detail,
-          constraint: createError.original.constraint,
-          table: createError.original.table,
-        } : null,
-        schoolFeeData: JSON.stringify(schoolFeeData, null, 2),
-      });
-      throw createError; // Re-throw to be caught by outer catch block
-    }
-
-    // If we get here, all operations succeeded - commit the transaction
-    await transaction.commit();
 
     res.status(200).json({
       success: true,
@@ -586,52 +634,55 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
       },
     });
   } catch (error) {
-    // If any error occurs, rollback the entire transaction
-    await transaction.rollback();
-    
-    // Enhanced error logging for validation errors
-    console.error("❌ Error processing school fees payment, transaction rolled back:", {
-      message: error.message,
-      name: error.name,
-      errors: error.errors ? JSON.stringify(error.errors, null, 2) : null,
-      original: error.original ? {
-        message: error.original.message,
-        code: error.original.code,
-        detail: error.original.detail,
-        constraint: error.original.constraint,
-      } : null,
-      studentId,
-      amount,
-      currency,
-      academicYear,
-      semester,
-      txRef,
-    });
-    
-    // If it's a Sequelize validation error, provide more details
+    console.error(
+      "❌ Error processing school fees payment, transaction rolled back:",
+      {
+        message: error.message,
+        name: error.name,
+        errors: error.errors ? JSON.stringify(error.errors, null, 2) : null,
+        original: error.original
+          ? {
+              message: error.original.message,
+              code: error.original.code,
+              detail: error.original.detail,
+              constraint: error.original.constraint,
+            }
+          : null,
+        studentId,
+        amount,
+        currency,
+        academicYear,
+        semester,
+        txRef,
+      },
+    );
+
     if (error.name === "SequelizeValidationError") {
       if (error.errors && error.errors.length > 0) {
-        const validationErrors = error.errors.map(e => `${e.path || e.column || 'unknown'}: ${e.message}`).join(", ");
+        const validationErrors = error.errors
+          .map((e) => `${e.path || e.column || "unknown"}: ${e.message}`)
+          .join(", ");
         throw new ErrorClass(`Validation error: ${validationErrors}`, 400);
       }
     }
-    
-    // Database constraint errors (e.g., unique constraint, foreign key, check constraint)
+
     if (error.name === "SequelizeDatabaseError" || error.original) {
       const dbError = error.original || error;
       const errorMessage = dbError.message || error.message;
       const errorDetail = dbError.detail || "";
       const errorConstraint = dbError.constraint || "";
-      
-      // Handle primary key sequence issues
-      if (errorConstraint === "school_fees_pkey" && errorMessage.includes("duplicate key")) {
+
+      if (
+        errorConstraint === "school_fees_pkey" &&
+        errorMessage.includes("duplicate key")
+      ) {
         throw new ErrorClass(
-          "Database sequence error. Please contact admin to fix the sequence. Error: " + errorDetail,
-          500
+          "Database sequence error. Please contact admin to fix the sequence. Error: " +
+            errorDetail,
+          500,
         );
       }
-      
-      // Provide detailed error message
+
       let detailedMessage = `Database error: ${errorMessage}`;
       if (errorDetail) {
         detailedMessage += ` | Detail: ${errorDetail}`;
@@ -639,11 +690,10 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
       if (errorConstraint) {
         detailedMessage += ` | Constraint: ${errorConstraint}`;
       }
-      
+
       throw new ErrorClass(detailedMessage, 400);
     }
-    
-    // Re-throw the error so it's handled by TryCatchFunction
+
     throw error;
   }
 });

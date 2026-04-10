@@ -1,19 +1,52 @@
 import { Funding } from "../models/payment/funding.js";
 import { Students } from "../models/auth/student.js";
 import { Semester } from "../models/auth/semester.js";
-import { Op } from "sequelize";
+import { PaymentTransaction } from "../models/payment/paymentTransaction.js";
+import { db } from "../database/database.js";
+import { ErrorClass } from "../utils/errorClass/index.js";
+import { Op, Transaction } from "sequelize";
+
+/**
+ * Funding rows for a student's wallet are summed in the student's wallet currency.
+ * Legacy rows may have null/empty currency and are treated as matching the wallet.
+ */
+export function fundingCurrencyWhere(studentCurrency) {
+  const c = (studentCurrency || "NGN").toString().toUpperCase();
+  return {
+    [Op.or]: [{ currency: c }, { currency: null }, { currency: "" }],
+  };
+}
+
+/**
+ * Ledger balance from Funding only (no migration), optionally within a transaction.
+ */
+export async function calculateLedgerBalance(
+  studentId,
+  studentCurrency,
+  transaction = null
+) {
+  const cur = fundingCurrencyWhere(studentCurrency);
+  const totalCredits = await Funding.sum("amount", {
+    where: { student_id: studentId, type: "Credit", ...cur },
+    transaction,
+  });
+  const totalDebits = await Funding.sum("amount", {
+    where: { student_id: studentId, type: "Debit", ...cur },
+    transaction,
+  });
+  return (totalCredits || 0) - (totalDebits || 0);
+}
 
 /**
  * Get wallet balance for a student
  * This function handles migration of old wallet balances from students.wallet_balance
  * to the Funding table if there's a discrepancy
- * 
+ *
  * @param {number} studentId - Student ID
  * @param {boolean} autoMigrate - If true, automatically migrate old balance if discrepancy found
  * @returns {Promise<{balance: number, migrated: boolean, migrationAmount?: number}>}
  */
 export async function getWalletBalance(studentId, autoMigrate = true) {
-  // Get student
   const student = await Students.findByPk(studentId, {
     attributes: ["id", "wallet_balance", "currency"],
   });
@@ -22,24 +55,15 @@ export async function getWalletBalance(studentId, autoMigrate = true) {
     throw new Error("Student not found");
   }
 
-  // Calculate balance from Funding table
-  const totalCredits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Credit" },
-  });
-  const totalDebits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Debit" },
-  });
-  const calculatedBalance = (totalCredits || 0) - (totalDebits || 0);
+  const calculatedBalance = await calculateLedgerBalance(
+    studentId,
+    student.currency
+  );
 
-  // Get old balance from student table
   const oldBalance = parseFloat(student.wallet_balance) || 0;
-
-  // Check if there's a discrepancy
   const discrepancy = oldBalance - calculatedBalance;
 
-  // If there's a positive discrepancy (old balance > calculated), migrate it
   if (discrepancy > 0.01 && autoMigrate) {
-    // Get current semester for migration record
     const currentDate = new Date();
     const today = currentDate.toISOString().split("T")[0];
 
@@ -63,7 +87,6 @@ export async function getWalletBalance(studentId, autoMigrate = true) {
       });
     }
 
-    // Create migration Funding record for the old balance
     await Funding.create({
       student_id: studentId,
       amount: discrepancy,
@@ -77,7 +100,6 @@ export async function getWalletBalance(studentId, autoMigrate = true) {
       balance: oldBalance.toString(),
     });
 
-    // Update student wallet_balance to match (should already be correct, but ensure consistency)
     await student.update({
       wallet_balance: oldBalance,
     });
@@ -93,8 +115,6 @@ export async function getWalletBalance(studentId, autoMigrate = true) {
     };
   }
 
-  // If no migration needed, return calculated balance
-  // But also update student.wallet_balance if it's different (to keep in sync)
   if (Math.abs(oldBalance - calculatedBalance) > 0.01) {
     await student.update({
       wallet_balance: calculatedBalance,
@@ -109,18 +129,137 @@ export async function getWalletBalance(studentId, autoMigrate = true) {
 
 /**
  * Calculate wallet balance from Funding table only (no migration)
- * Use this when you want the raw calculated balance
- * 
- * @param {number} studentId - Student ID
- * @returns {Promise<number>}
+ *
+ * @param {number} studentId
+ * @param {string} [studentCurrency]
+ * @param {import("sequelize").Transaction} [transaction]
  */
-export async function calculateWalletBalanceFromFunding(studentId) {
-  const totalCredits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Credit" },
-  });
-  const totalDebits = await Funding.sum("amount", {
-    where: { student_id: studentId, type: "Debit" },
-  });
-  return (totalCredits || 0) - (totalDebits || 0);
+export async function calculateWalletBalanceFromFunding(
+  studentId,
+  studentCurrency = "NGN",
+  transaction
+) {
+  return calculateLedgerBalance(studentId, studentCurrency, transaction);
 }
 
+/**
+ * Atomically credit wallet after Flutterwave verification (API callback).
+ */
+export async function fundStudentWalletFromFlutterwave({
+  studentId,
+  txRef,
+  flutterwaveTransactionId,
+  amount,
+  currency,
+  flutterwaveResponse,
+  academicYear,
+  semester,
+  today,
+}) {
+  await getWalletBalance(studentId, true);
+
+  try {
+    return await db.transaction(async (transaction) => {
+      const student = await Students.findByPk(studentId, {
+        transaction,
+        lock: Transaction.LOCK.UPDATE,
+        attributes: ["id", "wallet_balance", "currency"],
+      });
+
+      if (!student) {
+        throw new ErrorClass("Student not found", 404);
+      }
+
+      const existing = await PaymentTransaction.findOne({
+        where: {
+          student_id: studentId,
+          status: "successful",
+          [Op.or]: [
+            { transaction_reference: txRef },
+            ...(flutterwaveTransactionId
+              ? [{ flutterwave_transaction_id: flutterwaveTransactionId.toString() }]
+              : []),
+          ],
+        },
+        transaction,
+      });
+
+      const ledgerBalance = await calculateLedgerBalance(
+        studentId,
+        student.currency,
+        transaction
+      );
+
+      if (existing) {
+        return {
+          duplicate: true,
+          balance: ledgerBalance,
+          txRef,
+          amount,
+          currency,
+        };
+      }
+
+      const newBalance = ledgerBalance + amount;
+
+      await PaymentTransaction.create(
+        {
+          student_id: studentId,
+          transaction_reference: txRef,
+          flutterwave_transaction_id: flutterwaveTransactionId?.toString() || null,
+          amount,
+          currency,
+          status: "successful",
+          payment_type: "wallet_funding",
+          academic_year: academicYear,
+          processed_at: new Date(),
+          flutterwave_response: flutterwaveResponse,
+        },
+        { transaction }
+      );
+
+      await Funding.create(
+        {
+          student_id: studentId,
+          amount,
+          type: "Credit",
+          service_name: "Wallet Funding",
+          ref: txRef,
+          date: today,
+          semester: semester || null,
+          academic_year: academicYear,
+          currency,
+          balance: newBalance.toString(),
+        },
+        { transaction }
+      );
+
+      await student.update(
+        { wallet_balance: newBalance },
+        { transaction }
+      );
+
+      return {
+        duplicate: false,
+        previousBalance: ledgerBalance,
+        newBalance,
+        balance: newBalance,
+        txRef,
+        amount,
+        currency,
+      };
+    });
+  } catch (err) {
+    if (err?.name === "SequelizeUniqueConstraintError") {
+      const { balance } = await getWalletBalance(studentId, true);
+      return {
+        duplicate: true,
+        balance,
+        txRef,
+        amount,
+        currency,
+      };
+    }
+    throw err;
+  }
+}

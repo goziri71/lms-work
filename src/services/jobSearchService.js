@@ -2,6 +2,7 @@ import axios from "axios";
 import crypto from "crypto";
 import { JobCache } from "../models/marketplace/jobCache.js";
 import { Op } from "sequelize";
+import { getQuotaGuardAxiosProxyConfig } from "../utils/quotaGuardProxy.js";
 
 const BASE_URL = "https://search.api.careerjet.net/v4/query";
 const API_KEY = process.env.CAREERJET_API_KEY || process.env.CAREERJET_KEY || "";
@@ -129,12 +130,14 @@ export async function searchJobs(searchParams = {}) {
   // 3. Call external API
   try {
     const basicAuthHeader = `Basic ${Buffer.from(`${API_KEY}:`).toString("base64")}`;
+    const proxyConfig = getQuotaGuardAxiosProxyConfig();
     const response = await axios.get(BASE_URL, {
       headers: {
         Authorization: basicAuthHeader,
       },
       params: queryParams,
       timeout: 15000,
+      ...(proxyConfig ? { proxy: proxyConfig } : {}),
     });
 
     const data = response.data || {};

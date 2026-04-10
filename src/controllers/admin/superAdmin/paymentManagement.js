@@ -7,6 +7,7 @@ import { db } from "../../../database/database.js";
 import { ErrorClass } from "../../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../../utils/tryCatch/index.js";
 import { logAdminActivity } from "../../../middlewares/adminAuthorize.js";
+import { getWalletBalance } from "../../../services/walletBalanceService.js";
 import { Op } from "sequelize";
 
 /**
@@ -104,7 +105,7 @@ export const getFundingStats = TryCatchFunction(async (req, res) => {
       [
         db.Sequelize.fn(
           "SUM",
-          db.Sequelize.cast(db.Sequelize.col("amount"), "DECIMAL")
+          db.Sequelize.cast(db.Sequelize.col("amount"), "DECIMAL"),
         ),
         "total",
       ],
@@ -121,7 +122,7 @@ export const getFundingStats = TryCatchFunction(async (req, res) => {
       [
         db.Sequelize.fn(
           "SUM",
-          db.Sequelize.cast(db.Sequelize.col("amount"), "DECIMAL")
+          db.Sequelize.cast(db.Sequelize.col("amount"), "DECIMAL"),
         ),
         "total",
       ],
@@ -316,14 +317,14 @@ export const getAllCourseOrders = TryCatchFunction(async (req, res) => {
  */
 export const getCourseOrderStats = TryCatchFunction(async (req, res) => {
   const totalOrders = await CourseOrder.count();
-  
+
   // Sum amount by casting to INTEGER (amount is stored as VARCHAR)
   const totalAmountResult = await CourseOrder.findAll({
     attributes: [
       [
         db.Sequelize.fn(
           "SUM",
-          db.Sequelize.cast(db.Sequelize.col("amount"), "INTEGER")
+          db.Sequelize.cast(db.Sequelize.col("amount"), "INTEGER"),
         ),
         "total",
       ],
@@ -340,7 +341,7 @@ export const getCourseOrderStats = TryCatchFunction(async (req, res) => {
       [
         db.Sequelize.fn(
           "SUM",
-          db.Sequelize.cast(db.Sequelize.col("amount"), "INTEGER")
+          db.Sequelize.cast(db.Sequelize.col("amount"), "INTEGER"),
         ),
         "total",
       ],
@@ -357,7 +358,7 @@ export const getCourseOrderStats = TryCatchFunction(async (req, res) => {
       [
         db.Sequelize.fn(
           "SUM",
-          db.Sequelize.cast(db.Sequelize.col("amount"), "INTEGER")
+          db.Sequelize.cast(db.Sequelize.col("amount"), "INTEGER"),
         ),
         "total",
       ],
@@ -389,7 +390,7 @@ export const getPaymentOverview = TryCatchFunction(async (req, res) => {
         [
           db.Sequelize.fn(
             "SUM",
-            db.Sequelize.cast(db.Sequelize.col("amount"), "DECIMAL")
+            db.Sequelize.cast(db.Sequelize.col("amount"), "DECIMAL"),
           ),
           "total",
         ],
@@ -414,7 +415,7 @@ export const getPaymentOverview = TryCatchFunction(async (req, res) => {
         [
           db.Sequelize.fn(
             "SUM",
-            db.Sequelize.cast(db.Sequelize.col("amount"), "DECIMAL")
+            db.Sequelize.cast(db.Sequelize.col("amount"), "DECIMAL"),
           ),
           "total",
         ],
@@ -441,7 +442,16 @@ export const getPaymentOverview = TryCatchFunction(async (req, res) => {
  */
 export const manageStudentWallet = TryCatchFunction(async (req, res) => {
   const { id } = req.params;
-  const { type, amount, service_name, ref, notes, semester, academic_year, currency } = req.body || {};
+  const {
+    type,
+    amount,
+    service_name,
+    ref,
+    notes,
+    semester,
+    academic_year,
+    currency,
+  } = req.body || {};
 
   // Validate required fields
   if (!type || !amount || !service_name) {
@@ -465,20 +475,13 @@ export const manageStudentWallet = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Student not found", 404);
   }
 
-  // Get current wallet balance
-  const totalCredits = await Funding.sum("amount", {
-    where: { student_id: id, type: "Credit" },
-  });
-  const totalDebits = await Funding.sum("amount", {
-    where: { student_id: id, type: "Debit" },
-  });
-  const currentBalance = (totalCredits || 0) - (totalDebits || 0);
+  const { balance: currentBalance } = await getWalletBalance(Number(id), true);
 
   // Validate: Prevent negative balance on debit
   if (type === "Debit" && amountNum > currentBalance) {
     throw new ErrorClass(
       `Insufficient balance. Current balance: ${currentBalance}, Attempted debit: ${amountNum}`,
-      400
+      400,
     );
   }
 
@@ -501,7 +504,7 @@ export const manageStudentWallet = TryCatchFunction(async (req, res) => {
       currentSemester = await Semester.findOne({
         where: Semester.sequelize.where(
           Semester.sequelize.fn("UPPER", Semester.sequelize.col("status")),
-          "ACTIVE"
+          "ACTIVE",
         ),
         order: [["id", "DESC"]],
       });
@@ -509,9 +512,8 @@ export const manageStudentWallet = TryCatchFunction(async (req, res) => {
   }
 
   // Calculate new balance
-  const newBalance = type === "Credit" 
-    ? currentBalance + amountNum 
-    : currentBalance - amountNum;
+  const newBalance =
+    type === "Credit" ? currentBalance + amountNum : currentBalance - amountNum;
 
   // Create funding transaction
   const funding = await Funding.create({
@@ -549,7 +551,7 @@ export const manageStudentWallet = TryCatchFunction(async (req, res) => {
           previous_balance: currentBalance,
           new_balance: newBalance,
           notes: notes || null,
-        }
+        },
       );
     }
   } catch (logError) {
@@ -583,4 +585,3 @@ export const manageStudentWallet = TryCatchFunction(async (req, res) => {
     },
   });
 });
-

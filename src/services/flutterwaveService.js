@@ -1,5 +1,6 @@
 import axios from "axios";
 import { ErrorClass } from "../utils/errorClass/index.js";
+import { getQuotaGuardAxiosProxyConfig } from "../utils/quotaGuardProxy.js";
 
 /**
  * Flutterwave Payment Service
@@ -10,40 +11,6 @@ const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY?.trim();
 const FLUTTERWAVE_PUBLIC_KEY = process.env.FLUTTERWAVE_PUBLIC_KEY?.trim();
 const FLUTTERWAVE_BASE_URL =
   process.env.FLUTTERWAVE_BASE_URL || "https://api.flutterwave.com/v3";
-const QUOTAGUARD_PROXY_URL =
-  process.env.QUOTAGUARDSTATIC_URL || process.env.QUOTAGUARD_URL || null;
-
-function getQuotaGuardAxiosProxyConfig() {
-  if (!QUOTAGUARD_PROXY_URL) return null;
-
-  try {
-    const parsed = new URL(QUOTAGUARD_PROXY_URL);
-    const host = parsed.hostname;
-    const port = Number(parsed.port);
-    const protocol = parsed.protocol?.replace(":", "");
-    const username = decodeURIComponent(parsed.username || "");
-    const password = decodeURIComponent(parsed.password || "");
-
-    if (!host || !Number.isInteger(port) || port <= 0) {
-      return null;
-    }
-
-    return {
-      protocol: protocol || "http",
-      host,
-      port,
-      auth:
-        username || password
-          ? {
-              username,
-              password,
-            }
-          : undefined,
-    };
-  } catch {
-    return null;
-  }
-}
 
 // Validate Flutterwave key format
 const validateFlutterwaveKey = (key, keyType = "secret") => {
@@ -70,21 +37,44 @@ if (!FLUTTERWAVE_SECRET_KEY) {
   console.warn("⚠️  FLUTTERWAVE_SECRET_KEY not set in environment variables");
 } else if (!validateFlutterwaveKey(FLUTTERWAVE_SECRET_KEY, "secret")) {
   console.warn(
-    "⚠️  FLUTTERWAVE_SECRET_KEY format appears invalid. Should start with 'FLWSECK_TEST-' (test) or 'FLWSECK-' (live)"
+    "⚠️  FLUTTERWAVE_SECRET_KEY format appears invalid. Should start with 'FLWSECK_TEST-' (test) or 'FLWSECK-' (live)",
   );
+}
+
+/**
+ * Normalize Flutterwave `meta` from API or webhook payloads (object or array of name/value pairs).
+ */
+export function parseFlutterwaveMeta(transactionData) {
+  if (!transactionData || typeof transactionData !== "object") return {};
+  const raw = transactionData.meta;
+  if (raw == null) return {};
+  if (Array.isArray(raw)) {
+    const out = {};
+    for (const m of raw) {
+      const k = m.meta_name ?? m.metaname ?? m.name;
+      const v = m.meta_value ?? m.metavalue ?? m.value;
+      if (k != null && k !== "") out[k] = v;
+    }
+    return out;
+  }
+  if (typeof raw === "object") {
+    return { ...raw };
+  }
+  return {};
 }
 
 /**
  * Verify transaction with Flutterwave API
  * Can verify by transaction ID (numeric) or transaction reference (txRef)
  * @param {string} transactionIdOrRef - Flutterwave transaction ID (numeric) or transaction reference (txRef)
+ * @param {{ maxRetries?: number, retryDelayMs?: number }} [options] - Stronger retries for wallet confirm flows
  * @returns {Promise<Object>} Transaction details from Flutterwave
  */
-export const verifyTransaction = async (transactionIdOrRef) => {
+export const verifyTransaction = async (transactionIdOrRef, options = {}) => {
   if (!FLUTTERWAVE_SECRET_KEY) {
     throw new ErrorClass(
       "Flutterwave secret key not configured. Please set FLUTTERWAVE_SECRET_KEY in your .env file",
-      500
+      500,
     );
   }
 
@@ -92,7 +82,7 @@ export const verifyTransaction = async (transactionIdOrRef) => {
     throw new ErrorClass(
       "Invalid Flutterwave secret key format. Secret key should start with 'FLWSECK_TEST-' (test mode) or 'FLWSECK-' (live mode). " +
         "Please check your FLUTTERWAVE_SECRET_KEY in .env file",
-      500
+      500,
     );
   }
 
@@ -103,8 +93,8 @@ export const verifyTransaction = async (transactionIdOrRef) => {
   const verifyUrl = `${FLUTTERWAVE_BASE_URL}/transactions/${transactionIdOrRef}/verify`;
 
   // Retry logic: Flutterwave transactions may take a few seconds to be available
-  const maxRetries = 3;
-  const retryDelay = 2000; // 2 seconds between retries
+  const maxRetries = options.maxRetries ?? 3;
+  const retryDelay = options.retryDelayMs ?? 2000;
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -120,7 +110,7 @@ export const verifyTransaction = async (transactionIdOrRef) => {
       if (response.data.status === "success" && response.data.data) {
         if (attempt > 1) {
           console.log(
-            `✅ Transaction verified on attempt ${attempt} for: ${transactionIdOrRef}`
+            `✅ Transaction verified on attempt ${attempt} for: ${transactionIdOrRef}`,
           );
         }
         return {
@@ -145,7 +135,7 @@ export const verifyTransaction = async (transactionIdOrRef) => {
         const errorMessage = error.response?.data?.message || "";
         if (errorMessage.includes("No transaction was found")) {
           console.log(
-            `⏳ Transaction not found yet (attempt ${attempt}/${maxRetries}), retrying in ${retryDelay}ms...`
+            `⏳ Transaction not found yet (attempt ${attempt}/${maxRetries}), retrying in ${retryDelay}ms...`,
           );
           await new Promise((resolve) => setTimeout(resolve, retryDelay));
           continue; // Retry
@@ -188,7 +178,7 @@ export const verifyTransaction = async (transactionIdOrRef) => {
           `This might mean: 1) The transaction hasn't been completed yet (wait a few seconds and try again), ` +
           `2) The reference is incorrect, or 3) The transaction is from a different Flutterwave account. ` +
           `Please verify the transaction reference and ensure the payment was completed successfully.`,
-        404
+        404,
       );
     }
 
@@ -227,7 +217,7 @@ export const verifyTransaction = async (transactionIdOrRef) => {
 
   throw new ErrorClass(
     `Flutterwave verification failed after ${maxRetries} attempts: ${lastError.message}`,
-    500
+    500,
   );
 };
 
@@ -250,6 +240,58 @@ export const verifyWebhookSignature = (signature, payload) => {
 
   return hash === signature;
 };
+
+/** Must match the "Secret Hash" set in Flutterwave Dashboard → Webhooks (not the API secret key). */
+const FLUTTERWAVE_SECRET_HASH =
+  process.env.FLUTTERWAVE_SECRET_HASH?.trim() ||
+  process.env.FLW_SECRET_HASH?.trim();
+
+/**
+ * Enforce webhook authenticity. In production (or when FLUTTERWAVE_REQUIRE_WEBHOOK_SIGNATURE=true),
+ * a configured secret hash or verifiable HMAC is required.
+ * @returns {{ ok: true } | { ok: false, status: number, message: string }}
+ */
+export function assertFlutterwaveWebhookAllowed(req) {
+  const signature =
+    req.headers["verif-hash"] || req.headers["x-flutterwave-signature"];
+  const requireSig =
+    process.env.NODE_ENV === "production" ||
+    process.env.FLUTTERWAVE_REQUIRE_WEBHOOK_SIGNATURE === "true";
+
+  if (FLUTTERWAVE_SECRET_HASH) {
+    if (!signature || signature !== FLUTTERWAVE_SECRET_HASH) {
+      return { ok: false, status: 401, message: "Invalid webhook signature" };
+    }
+    return { ok: true };
+  }
+
+  if (FLUTTERWAVE_SECRET_KEY) {
+    if (requireSig && !signature) {
+      return { ok: false, status: 401, message: "Missing verif-hash header" };
+    }
+    if (signature) {
+      const rawBody = req.rawBody || JSON.stringify(req.body);
+      if (!verifyWebhookSignature(signature, rawBody)) {
+        return { ok: false, status: 401, message: "Invalid webhook signature" };
+      }
+    }
+    return { ok: true };
+  }
+
+  if (requireSig) {
+    return {
+      ok: false,
+      status: 503,
+      message:
+        "Webhook verification not configured (set FLUTTERWAVE_SECRET_HASH to match the dashboard secret hash)",
+    };
+  }
+
+  console.warn(
+    "⚠️ Flutterwave webhook accepted without verification (dev). Set FLUTTERWAVE_SECRET_HASH."
+  );
+  return { ok: true };
+}
 
 /**
  * Get transaction status from Flutterwave response
@@ -315,7 +357,12 @@ export const getTransactionCurrency = (transaction) => {
  * @returns {string} Transaction reference
  */
 export const getTransactionReference = (transaction) => {
-  return transaction.tx_ref || transaction.txRef || transaction.id?.toString();
+  return (
+    transaction.tx_ref ||
+    transaction.txRef ||
+    transaction.reference ||
+    transaction.id?.toString()
+  );
 };
 
 /**
@@ -325,10 +372,7 @@ export const getTransactionReference = (transaction) => {
  */
 export const getBanks = async (country = "NG") => {
   if (!FLUTTERWAVE_SECRET_KEY) {
-    throw new ErrorClass(
-      "Flutterwave secret key not configured",
-      500
-    );
+    throw new ErrorClass("Flutterwave secret key not configured", 500);
   }
 
   try {
@@ -340,7 +384,7 @@ export const getBanks = async (country = "NG") => {
           "Content-Type": "application/json",
         },
         timeout: 10000,
-      }
+      },
     );
 
     if (response.data.status === "success" && response.data.data) {
@@ -358,7 +402,7 @@ export const getBanks = async (country = "NG") => {
     console.error("Flutterwave getBanks error:", error.message);
     throw new ErrorClass(
       `Failed to fetch banks: ${error.message}`,
-      error.response?.status || 500
+      error.response?.status || 500,
     );
   }
 };
@@ -370,12 +414,13 @@ export const getBanks = async (country = "NG") => {
  * @param {string} country - Country code (e.g., 'NG')
  * @returns {Promise<Object>} Account verification result
  */
-export const verifyBankAccount = async (accountNumber, bankCode, country = "NG") => {
+export const verifyBankAccount = async (
+  accountNumber,
+  bankCode,
+  country = "NG",
+) => {
   if (!FLUTTERWAVE_SECRET_KEY) {
-    throw new ErrorClass(
-      "Flutterwave secret key not configured",
-      500
-    );
+    throw new ErrorClass("Flutterwave secret key not configured", 500);
   }
 
   try {
@@ -391,7 +436,7 @@ export const verifyBankAccount = async (accountNumber, bankCode, country = "NG")
           "Content-Type": "application/json",
         },
         timeout: 10000,
-      }
+      },
     );
 
     if (response.data.status === "success" && response.data.data) {
@@ -411,7 +456,7 @@ export const verifyBankAccount = async (accountNumber, bankCode, country = "NG")
     };
   } catch (error) {
     console.error("Flutterwave verifyBankAccount error:", error.message);
-    
+
     if (error.response?.status === 400) {
       return {
         success: false,
@@ -421,7 +466,7 @@ export const verifyBankAccount = async (accountNumber, bankCode, country = "NG")
 
     throw new ErrorClass(
       `Failed to verify bank account: ${error.message}`,
-      error.response?.status || 500
+      error.response?.status || 500,
     );
   }
 };
@@ -441,10 +486,7 @@ export const verifyBankAccount = async (accountNumber, bankCode, country = "NG")
  */
 export const initiateTransfer = async (transferData) => {
   if (!FLUTTERWAVE_SECRET_KEY) {
-    throw new ErrorClass(
-      "Flutterwave secret key not configured",
-      500
-    );
+    throw new ErrorClass("Flutterwave secret key not configured", 500);
   }
 
   const {
@@ -462,7 +504,7 @@ export const initiateTransfer = async (transferData) => {
   if (!accountBank || !accountNumber || !amount || !currency || !reference) {
     throw new ErrorClass(
       "Missing required transfer fields: accountBank, accountNumber, amount, currency, reference",
-      400
+      400,
     );
   }
 
@@ -479,7 +521,10 @@ export const initiateTransfer = async (transferData) => {
 
   try {
     // If source currency is different, Flutterwave will handle FX conversion
-    if (sourceCurrency && sourceCurrency.toUpperCase() !== currency.toUpperCase()) {
+    if (
+      sourceCurrency &&
+      sourceCurrency.toUpperCase() !== currency.toUpperCase()
+    ) {
       // Note: Flutterwave handles FX conversion automatically if you have multi-currency wallet
       // The amount should be in destination currency
     }
@@ -496,7 +541,7 @@ export const initiateTransfer = async (transferData) => {
         },
         timeout: 30000, // 30 second timeout for transfers
         ...(proxyConfig ? { proxy: proxyConfig } : {}),
-      }
+      },
     );
 
     if (response.data.status === "success" && response.data.data) {
@@ -528,22 +573,35 @@ export const initiateTransfer = async (transferData) => {
       url: error.config?.url,
       payload: payload,
     });
-    
+
     if (error.response?.status === 400) {
-      const errorMessage = error.response?.data?.message || 
-                          error.response?.data?.data?.complete_message ||
-                          "Invalid transfer details";
-      
+      const errorMessage =
+        error.response?.data?.message ||
+        error.response?.data?.data?.complete_message ||
+        "Invalid transfer details";
+
       // Check for specific Flutterwave errors
       let userFriendlyMessage = errorMessage;
-      if (errorMessage.includes("IP Whitelisting") || errorMessage.includes("whitelist")) {
-        userFriendlyMessage = "Flutterwave IP whitelisting is required. Please contact support to whitelist the server IP address in your Flutterwave dashboard.";
-      } else if (errorMessage.includes("insufficient") || errorMessage.includes("balance")) {
-        userFriendlyMessage = "Insufficient balance in Flutterwave account. Please fund your Flutterwave account.";
-      } else if (errorMessage.includes("account") && errorMessage.includes("invalid")) {
-        userFriendlyMessage = "Invalid bank account details. Please verify your account number and bank code.";
+      if (
+        errorMessage.includes("IP Whitelisting") ||
+        errorMessage.includes("whitelist")
+      ) {
+        userFriendlyMessage =
+          "Flutterwave IP whitelisting is required. Please contact support to whitelist the server IP address in your Flutterwave dashboard.";
+      } else if (
+        errorMessage.includes("insufficient") ||
+        errorMessage.includes("balance")
+      ) {
+        userFriendlyMessage =
+          "Insufficient balance in Flutterwave account. Please fund your Flutterwave account.";
+      } else if (
+        errorMessage.includes("account") &&
+        errorMessage.includes("invalid")
+      ) {
+        userFriendlyMessage =
+          "Invalid bank account details. Please verify your account number and bank code.";
       }
-      
+
       return {
         success: false,
         message: userFriendlyMessage,
@@ -554,7 +612,7 @@ export const initiateTransfer = async (transferData) => {
 
     throw new ErrorClass(
       `Failed to initiate transfer: ${error.message}`,
-      error.response?.status || 500
+      error.response?.status || 500,
     );
   }
 };
@@ -566,10 +624,7 @@ export const initiateTransfer = async (transferData) => {
  */
 export const getTransferStatus = async (transferId) => {
   if (!FLUTTERWAVE_SECRET_KEY) {
-    throw new ErrorClass(
-      "Flutterwave secret key not configured",
-      500
-    );
+    throw new ErrorClass("Flutterwave secret key not configured", 500);
   }
 
   try {
@@ -581,7 +636,7 @@ export const getTransferStatus = async (transferId) => {
           "Content-Type": "application/json",
         },
         timeout: 10000,
-      }
+      },
     );
 
     if (response.data.status === "success" && response.data.data) {
@@ -606,7 +661,7 @@ export const getTransferStatus = async (transferId) => {
     };
   } catch (error) {
     console.error("Flutterwave getTransferStatus error:", error.message);
-    
+
     if (error.response?.status === 404) {
       return {
         success: false,
@@ -616,7 +671,7 @@ export const getTransferStatus = async (transferId) => {
 
     throw new ErrorClass(
       `Failed to get transfer status: ${error.message}`,
-      error.response?.status || 500
+      error.response?.status || 500,
     );
   }
 };
