@@ -164,7 +164,17 @@ async function ensureAccessToken(mailbox) {
 
   const oauth2 = getOAuth2Client();
   oauth2.setCredentials({ refresh_token });
-  const { credentials } = await oauth2.refreshAccessToken();
+  let credentials;
+  try {
+    const out = await oauth2.refreshAccessToken();
+    credentials = out.credentials;
+  } catch (e) {
+    console.error("Gmail refreshAccessToken:", e?.response?.data || e?.message);
+    throw new ErrorClass(
+      "Gmail session expired or revoked; reconnect your mailbox.",
+      401
+    );
+  }
   await storeEncryptedTokens(mailbox, {
     access_token: credentials.access_token,
     refresh_token: credentials.refresh_token || refresh_token,
@@ -214,7 +224,10 @@ function extractBodies(part, out) {
 export function parseGmailMessageResource(msg) {
   const id = msg.id;
   const threadId = msg.threadId;
-  const internalDate = msg.internalDate ? BigInt(msg.internalDate) : null;
+  const internalDateMs =
+    msg.internalDate != null && msg.internalDate !== ""
+      ? Number(msg.internalDate)
+      : null;
   const headers = headerMap(msg.payload?.headers);
   const from = headers["from"] || "";
   const to = headers["to"] || "";
@@ -241,7 +254,8 @@ export function parseGmailMessageResource(msg) {
     rfc_message_id: mid || null,
     in_reply_to: inReplyTo || null,
     references_header: references || null,
-    internal_date_ms: internalDate,
+    internal_date_ms:
+      internalDateMs != null && Number.isFinite(internalDateMs) ? internalDateMs : null,
     labelIds: msg.labelIds || [],
   };
 }
@@ -302,16 +316,46 @@ export async function sendGmailFromMailbox(mailbox, opts) {
   const body = { raw };
   if (gmailThreadId) body.threadId = gmailThreadId;
 
-  const sent = await gmail.users.messages.send({
-    userId: "me",
-    requestBody: body,
-  });
+  let sent;
+  try {
+    sent = await gmail.users.messages.send({
+      userId: "me",
+      requestBody: body,
+    });
+  } catch (error) {
+    const gErr = error?.response?.data?.error;
+    const msg =
+      gErr?.message ||
+      error?.message ||
+      "Gmail could not send this message.";
+    console.error("Gmail users.messages.send:", error?.response?.data || error);
+    const code = gErr?.code;
+    const status = error?.response?.status;
+    if (status === 401 || code === 401) {
+      throw new ErrorClass("Gmail rejected credentials; reconnect your mailbox.", 401);
+    }
+    throw new ErrorClass(`Gmail: ${msg}`, status && status >= 400 && status < 600 ? status : 502);
+  }
 
-  const full = await gmail.users.messages.get({
-    userId: "me",
-    id: sent.data.id,
-    format: "full",
-  });
+  const messageId = sent?.data?.id;
+  if (!messageId) {
+    console.error("Gmail send missing message id:", sent?.data);
+    throw new ErrorClass("Gmail did not return a message id.", 502);
+  }
+
+  let full;
+  try {
+    full = await gmail.users.messages.get({
+      userId: "me",
+      id: messageId,
+      format: "full",
+    });
+  } catch (error) {
+    const gErr = error?.response?.data?.error;
+    const msg = gErr?.message || error?.message || "Gmail could not load the sent message.";
+    console.error("Gmail users.messages.get (after send):", error?.response?.data || error);
+    throw new ErrorClass(`Gmail: ${msg}`, error?.response?.status || 502);
+  }
 
   return parseGmailMessageResource(full.data);
 }

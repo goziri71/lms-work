@@ -190,7 +190,12 @@ export const sendMailboxEmail = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("mailbox_id, to, subject, and body are required", 400);
   }
 
-  const mailbox = await loadMailbox(tutorId, tutorType, mailbox_id);
+  const mailboxIdNum = parseInt(mailbox_id, 10);
+  if (Number.isNaN(mailboxIdNum) || mailboxIdNum <= 0) {
+    throw new ErrorClass("mailbox_id must be a positive integer", 400);
+  }
+
+  const mailbox = await loadMailbox(tutorId, tutorType, mailboxIdNum);
 
   let learnerStudentId = null;
   if (student_id != null) {
