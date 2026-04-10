@@ -1,0 +1,59 @@
+# Tutor mailbox OAuth (Gmail / Outlook)
+
+## Error: `redirect_uri_mismatch` (Google)
+
+Google only allows redirects that are **exactly** listed on the OAuth client. The app sends this redirect URI (unless you override it):
+
+```
+{PUBLIC_API_URL or APP_URL}/api/marketplace/tutor/mailbox/google/callback
+```
+
+**Example (production):**  
+`https://api.yourdomain.com/api/marketplace/tutor/mailbox/google/callback`
+
+### Fix
+
+1. **Google Cloud Console** → **APIs & Services** → **Credentials** → your **OAuth 2.0 Client ID** (Web application).
+2. Under **Authorized redirect URIs**, click **Add URI** and paste the **exact** URL your server uses:
+   - No trailing slash on the full path.
+   - Use **`https://`** in production (not `http://` unless you only use localhost).
+3. **Render / hosting:** Set **`PUBLIC_API_URL`** (or **`APP_URL`**) to the same origin **without** a trailing slash, e.g. `https://api.yourdomain.com`.  
+   The code now prefers `PUBLIC_API_URL` so it matches other services (webhooks, etc.).
+4. Optional: set **`GOOGLE_MAILBOX_REDIRECT_URI`** to the **full** callback URL if you want a fixed value independent of base URL.
+
+After changing the redirect URI in Google, save and wait a minute, then try **Connect Gmail** again.
+
+---
+
+## Microsoft Outlook (`redirect_uri` issues)
+
+Same idea for Azure:
+
+- Default callback:  
+  `{PUBLIC_API_URL or APP_URL}/api/marketplace/tutor/mailbox/microsoft/callback`
+- Register that URL under the app registration’s **Redirect URIs** (or set **`MICROSOFT_MAILBOX_REDIRECT_URI`** to the full URL).
+
+---
+
+## Env reference
+
+| Variable | Purpose |
+|----------|---------|
+| `PUBLIC_API_URL` | Public API base (no trailing slash). Used to build Gmail/Outlook redirect URIs. |
+| `APP_URL` | Fallback if `PUBLIC_API_URL` is unset. |
+| `GOOGLE_MAILBOX_REDIRECT_URI` | Optional full Gmail callback URL (overrides the default). |
+| `GOOGLE_MAILBOX_CLIENT_ID` / `GOOGLE_MAILBOX_CLIENT_SECRET` | OAuth client (or shared `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`). |
+| `MICROSOFT_MAILBOX_REDIRECT_URI` | Optional full Outlook callback URL. |
+| `MICROSOFT_MAILBOX_CLIENT_ID` / `MICROSOFT_MAILBOX_CLIENT_SECRET` | Azure app registration. |
+
+---
+
+## Local development
+
+Use:
+
+```
+http://localhost:3000/api/marketplace/tutor/mailbox/google/callback
+```
+
+Add that exact URI to the same OAuth client (or a separate “Web” client for dev).

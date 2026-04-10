@@ -9,6 +9,7 @@ import { TutorMailbox } from "../models/marketplace/tutorMailbox.js";
 import { MailThread } from "../models/marketplace/mailThread.js";
 import { MailMessage } from "../models/marketplace/mailMessage.js";
 import { storeEncryptedTokens, getDecryptedTokens } from "./tutorMailboxTokenHelper.js";
+import { resolvePublicApiBase } from "../utils/publicApiUrl.js";
 
 const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
@@ -28,8 +29,8 @@ export function getGoogleMailboxOAuthConfig() {
     process.env.GOOGLE_OAUTH_CLIENT_SECRET ||
     null;
   const redirectUri =
-    process.env.GOOGLE_MAILBOX_REDIRECT_URI ||
-    `${process.env.APP_URL || "http://localhost:3000"}/api/marketplace/tutor/mailbox/google/callback`;
+    process.env.GOOGLE_MAILBOX_REDIRECT_URI?.trim() ||
+    `${resolvePublicApiBase()}/api/marketplace/tutor/mailbox/google/callback`;
   return { clientId, clientSecret, redirectUri };
 }
 

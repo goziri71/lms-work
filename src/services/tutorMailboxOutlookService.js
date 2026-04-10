@@ -8,6 +8,7 @@ import { ErrorClass } from "../utils/errorClass/index.js";
 import { MailThread } from "../models/marketplace/mailThread.js";
 import { MailMessage } from "../models/marketplace/mailMessage.js";
 import { storeEncryptedTokens, getDecryptedTokens } from "./tutorMailboxTokenHelper.js";
+import { resolvePublicApiBase } from "../utils/publicApiUrl.js";
 
 const MS_AUTH = "https://login.microsoftonline.com/common/oauth2/v2.0";
 const MS_GRAPH = "https://graph.microsoft.com/v1.0";
@@ -27,8 +28,8 @@ function getOutlookConfig() {
   const clientSecret =
     process.env.MICROSOFT_MAILBOX_CLIENT_SECRET || process.env.MICROSOFT_CLIENT_SECRET || null;
   const redirectUri =
-    process.env.MICROSOFT_MAILBOX_REDIRECT_URI ||
-    `${process.env.APP_URL || "http://localhost:3000"}/api/marketplace/tutor/mailbox/microsoft/callback`;
+    process.env.MICROSOFT_MAILBOX_REDIRECT_URI?.trim() ||
+    `${resolvePublicApiBase()}/api/marketplace/tutor/mailbox/microsoft/callback`;
   return { clientId, clientSecret, redirectUri };
 }
 
