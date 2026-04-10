@@ -13,6 +13,99 @@ import { db } from "../../database/database.js";
 import crypto from "crypto";
 import { applyLegacyWalletMirror } from "../../utils/tutorWallet.js";
 
+/** Safe numeric parse for Sequelize DECIMAL / string values (avoids JS string concat bugs). */
+function num(v) {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * If Flutterwave already sent money but the DB transaction failed, persist success without refunding.
+ */
+async function recoverPayoutAfterBankSuccess(payoutId, transferResult) {
+  const t = await db.transaction({
+    isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
+  });
+  try {
+    const lockedPayout = await TutorPayout.findByPk(payoutId, {
+      lock: Sequelize.Transaction.LOCK.UPDATE,
+      transaction: t,
+    });
+    if (!lockedPayout) {
+      await t.rollback();
+      return;
+    }
+    if (lockedPayout.status === "successful") {
+      await t.commit();
+      return;
+    }
+
+    const fee = num(transferResult.transfer.fee);
+    const netAmt = num(lockedPayout.converted_amount) - fee;
+
+    await lockedPayout.update(
+      {
+        flutterwave_transfer_id: transferResult.transfer.id,
+        transfer_fee: fee,
+        net_amount: netAmt,
+        status: "successful",
+        processed_at: new Date(),
+        completed_at: new Date(),
+        metadata: {
+          ...(lockedPayout.metadata || {}),
+          transfer: transferResult.transfer,
+          recovered_after_db_error: true,
+        },
+      },
+      { transaction: t }
+    );
+
+    await TutorWalletTransaction.update(
+      {
+        status: "successful",
+        metadata: {
+          ...(lockedPayout.metadata || {}),
+          flutterwave_transfer_id: transferResult.transfer.id,
+          transfer: transferResult.transfer,
+          recovered_after_db_error: true,
+        },
+      },
+      {
+        where: {
+          transaction_reference: lockedPayout.flutterwave_reference,
+          tutor_id: lockedPayout.tutor_id,
+          tutor_type: lockedPayout.tutor_type,
+        },
+        transaction: t,
+      }
+    );
+
+    let tutor;
+    if (lockedPayout.tutor_type === "sole_tutor") {
+      tutor = await SoleTutor.findByPk(lockedPayout.tutor_id, {
+        lock: Sequelize.Transaction.LOCK.UPDATE,
+        transaction: t,
+      });
+    } else {
+      tutor = await Organization.findByPk(lockedPayout.tutor_id, {
+        lock: Sequelize.Transaction.LOCK.UPDATE,
+        transaction: t,
+      });
+    }
+
+    if (tutor) {
+      const newTotalPayouts = num(tutor.total_payouts) + num(lockedPayout.amount);
+      await tutor.update({ total_payouts: newTotalPayouts }, { transaction: t });
+    }
+
+    await t.commit();
+    console.log(`✅ Recovered payout ${payoutId} DB state after successful bank transfer`);
+  } catch (e) {
+    await t.rollback();
+    throw e;
+  }
+}
+
 /**
  * Helper to get tutor ID and type from request
  */
@@ -334,6 +427,9 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
  * @param {number} payoutId - Payout ID
  */
 async function processPayoutTransfer(payoutId) {
+  /** Set when Flutterwave accepts the transfer; outer catch must not refund if DB fails after that. */
+  let lastSuccessfulTransferResult = null;
+
   // Use transaction to ensure atomicity
   const transaction = await db.transaction({
     isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
@@ -470,6 +566,10 @@ async function processPayoutTransfer(payoutId) {
       beneficiaryName: payout.bankAccount.account_name,
     });
 
+    if (transferResult.success) {
+      lastSuccessfulTransferResult = transferResult;
+    }
+
     // Start new transaction for updates
     const updateTransaction = await db.transaction({
       isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
@@ -488,12 +588,13 @@ async function processPayoutTransfer(payoutId) {
       }
 
       if (transferResult.success) {
+        const fee = num(transferResult.transfer.fee);
         // Update payout with transfer details
         await lockedPayout.update(
           {
             flutterwave_transfer_id: transferResult.transfer.id,
-            transfer_fee: transferResult.transfer.fee || 0,
-            net_amount: payout.converted_amount - (transferResult.transfer.fee || 0),
+            transfer_fee: fee,
+            net_amount: num(payout.converted_amount) - fee,
             status: "successful",
             processed_at: new Date(),
             completed_at: new Date(),
@@ -539,7 +640,7 @@ async function processPayoutTransfer(payoutId) {
         }
 
         if (tutor) {
-          const newTotalPayouts = parseFloat(tutor.total_payouts || 0) + lockedPayout.amount;
+          const newTotalPayouts = num(tutor.total_payouts) + num(lockedPayout.amount);
           await tutor.update({ total_payouts: newTotalPayouts }, { transaction: updateTransaction });
         }
 
@@ -573,7 +674,23 @@ async function processPayoutTransfer(payoutId) {
   } catch (error) {
     console.error(`Error processing payout ${payoutId}:`, error);
 
-    // Refund in separate transaction
+    if (lastSuccessfulTransferResult) {
+      console.error(
+        `Payout ${payoutId}: Flutterwave transfer already succeeded; skipping wallet refund and attempting DB recovery.`,
+        error?.message || error
+      );
+      try {
+        await recoverPayoutAfterBankSuccess(payoutId, lastSuccessfulTransferResult);
+      } catch (recErr) {
+        console.error(
+          `CRITICAL: Payout ${payoutId} bank transfer succeeded but DB recovery failed — manual reconciliation required.`,
+          recErr
+        );
+      }
+      return;
+    }
+
+    // Refund in separate transaction (only when the bank did not complete the transfer)
     const refundTransaction = await db.transaction({
       isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
     });
