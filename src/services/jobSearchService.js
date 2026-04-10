@@ -8,6 +8,27 @@ const BASE_URL = "https://search.api.careerjet.net/v4/query";
 const API_KEY = process.env.CAREERJET_API_KEY || process.env.CAREERJET_KEY || "";
 const DEFAULT_LOCALE = process.env.CAREERJET_LOCALE || "en_NG";
 
+/**
+ * Careerjet requires a Referer matching the publisher page that triggers the search.
+ * @see https://www.careerjet.com/partners/api/javascript
+ */
+function getCareerjetReferer() {
+  const explicit = process.env.CAREERJET_REFERER?.trim();
+  if (explicit) return explicit;
+  const base =
+    process.env.PUBLIC_API_URL?.replace(/\/$/, "") ||
+    process.env.APP_URL?.replace(/\/$/, "");
+  if (base) {
+    return `${base}/marketplace/jobs`;
+  }
+  return "https://localhost/marketplace/jobs";
+}
+
+function shouldUseQuotaGuardProxy() {
+  if (process.env.CAREERJET_USE_QUOTAGUARD === "false") return false;
+  return true;
+}
+
 const MEMORY_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const DB_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -130,17 +151,27 @@ export async function searchJobs(searchParams = {}) {
   // 3. Call external API
   try {
     const basicAuthHeader = `Basic ${Buffer.from(`${API_KEY}:`).toString("base64")}`;
-    const proxyConfig = getQuotaGuardAxiosProxyConfig();
+    const proxyConfig = shouldUseQuotaGuardProxy()
+      ? getQuotaGuardAxiosProxyConfig()
+      : null;
+
     const response = await axios.get(BASE_URL, {
       headers: {
         Authorization: basicAuthHeader,
+        "Content-Type": "application/json",
+        Referer: getCareerjetReferer(),
       },
       params: queryParams,
       timeout: 15000,
       ...(proxyConfig ? { proxy: proxyConfig } : {}),
+      validateStatus: (s) => s >= 200 && s < 300,
     });
 
     const data = response.data || {};
+    if (data.type === "ERROR" || data.error) {
+      console.error("Careerjet API returned error payload:", data);
+      throw new Error(data.error || data.hint || "Careerjet API error");
+    }
     const responseData = {
       jobs: data.jobs || [],
       total: data.hits ?? data.total ?? 0,
@@ -175,7 +206,14 @@ export async function searchJobs(searchParams = {}) {
 
     return { ...responseData, cache_source: "api" };
   } catch (apiErr) {
-    console.error("Careerjet API call failed:", apiErr.message);
+    const status = apiErr.response?.status;
+    const body = apiErr.response?.data;
+    console.error("Careerjet API call failed:", {
+      message: apiErr.message,
+      code: apiErr.code,
+      status,
+      data: typeof body === "string" ? body : body,
+    });
 
     // Fallback: serve stale DB cache if available
     try {
