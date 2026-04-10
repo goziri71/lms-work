@@ -11,6 +11,16 @@ Google only allows redirects that are **exactly** listed on the OAuth client. Th
 **Example (production):**  
 `https://api.yourdomain.com/api/marketplace/tutor/mailbox/google/callback`
 
+### Wrong `PUBLIC_API_URL` (doubled path)
+
+If you see a redirect like `https://host/tutor/mailbox/.../api/marketplace/.../callback`, **`PUBLIC_API_URL` included a path** (e.g. a frontend route). The server now **strips to the origin only** (scheme + host + port), but you should still set:
+
+- **`PUBLIC_API_URL=https://lms-work.onrender.com`** (no path, no trailing slash)
+
+Register that exact callback in Google:
+
+`https://lms-work.onrender.com/api/marketplace/tutor/mailbox/google/callback`
+
 ### Fix
 
 1. **Google Cloud Console** → **APIs & Services** → **Credentials** → your **OAuth 2.0 Client ID** (Web application).
