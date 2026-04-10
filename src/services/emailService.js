@@ -459,6 +459,35 @@ class EmailService {
   }
 
   /**
+   * Email OTP for tutor bank transfer PIN setup / change / reset.
+   */
+  async sendTutorTransferPinOtp({ to, name, code, purposeLabel }) {
+    const safe = (s) =>
+      String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    const safeCode = safe(code);
+    const safePurpose = safe(purposeLabel || "Verify your identity");
+    const htmlBody = `<!DOCTYPE html>
+<html><body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#1a1a1a">
+<p>Hi ${safe(name || "there")},</p>
+<p><strong>${safePurpose}</strong></p>
+<p style="font-size:28px;letter-spacing:0.2em;font-weight:700;margin:24px 0">${safeCode}</p>
+<p style="color:#6b7280;font-size:14px">This code expires in 15 minutes. If you did not request this, ignore this email and ensure your Knomada account is secure.</p>
+<hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
+<p style="font-size:12px;color:#9ca3af">Knomada — tutor payout security</p>
+</body></html>`;
+    return this.sendEmail({
+      to,
+      name: name || to,
+      subject: `Your Knomada verification code: ${code}`,
+      htmlBody,
+    });
+  }
+
+  /**
    * Validate email address format
    * @param {string} email - Email address to validate
    * @returns {boolean} - True if valid

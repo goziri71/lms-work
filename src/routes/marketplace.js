@@ -351,6 +351,11 @@ import {
   getPayout,
 } from "../controllers/marketplace/tutorPayout.js";
 import {
+  getTransferPinStatus,
+  sendTransferPinOtp,
+  confirmTransferPin,
+} from "../controllers/marketplace/tutorTransferPin.js";
+import {
   createMembership,
   getMyMemberships,
   getMembership,
@@ -1077,6 +1082,9 @@ router.delete("/tutor/bank-accounts/:id", tutorAuthorize, deleteBankAccount);
 // ============================================
 // TUTOR PAYOUT MANAGEMENT
 // ============================================
+router.get("/tutor/transfer-pin/status", tutorAuthorize, getTransferPinStatus);
+router.post("/tutor/transfer-pin/send-otp", tutorAuthorize, sendTransferPinOtp);
+router.post("/tutor/transfer-pin/confirm", tutorAuthorize, confirmTransferPin);
 router.post("/tutor/payouts/request", tutorAuthorize, requestPayout);
 router.get("/tutor/payouts", tutorAuthorize, listPayouts);
 

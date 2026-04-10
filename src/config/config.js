@@ -73,6 +73,11 @@ export const Config = {
     enabled: process.env.EMAIL_ENABLED === "true" || true,
   },
 
+  // Tutor payout transfer PIN: when true, payouts are blocked until PIN is set + email verification
+  transferPin: {
+    enforce: process.env.TRANSFER_PIN_ENFORCE === "true",
+  },
+
   // Frontend URL for email links
   frontendUrl: process.env.FRONTEND_URL || "https://app.knomada.co",
 

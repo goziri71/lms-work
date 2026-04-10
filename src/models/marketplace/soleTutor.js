@@ -177,6 +177,45 @@ export const SoleTutor = db.define(
       unique: true,
       comment: "URL-friendly slug for public tutor page (e.g. jane-doe)",
     },
+    transfer_pin_hash: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: "bcrypt hash for bank payout transfer PIN",
+    },
+    transfer_pin_set_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    transfer_pin_failed_attempts: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+    },
+    transfer_pin_locked_until: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    transfer_pin_otp_hash: {
+      type: DataTypes.STRING(128),
+      allowNull: true,
+    },
+    transfer_pin_otp_expires_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    transfer_pin_otp_purpose: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+    },
+    transfer_pin_otp_last_sent_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    transfer_pin_otp_failed_attempts: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+    },
     created_at: {
       type: DataTypes.DATE,
       allowNull: false,

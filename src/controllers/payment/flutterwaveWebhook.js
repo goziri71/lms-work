@@ -47,6 +47,15 @@ export const flutterwaveWebhook = TryCatchFunction(async (req, res) => {
       return res.status(400).json({ message: "No transaction reference" });
     }
 
+    // Outbound transfers (e.g. tutor payouts with refs like PAYOUT-...) are not PaymentTransaction rows.
+    // Student wallet top-ups use charge.completed; only those should resolve payment_transaction records.
+    if (event.event === "transfer.completed") {
+      console.log(
+        `Flutterwave transfer.completed acknowledged (disbursement / payout, not student charge): ${txRef}`
+      );
+      return res.status(200).json({ message: "Webhook received" });
+    }
+
     const paymentTransaction = await PaymentTransaction.findOne({
       where: {
         [Op.or]: [

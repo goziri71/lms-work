@@ -12,6 +12,7 @@ import { Op, Sequelize } from "sequelize";
 import { db } from "../../database/database.js";
 import crypto from "crypto";
 import { applyLegacyWalletMirror } from "../../utils/tutorWallet.js";
+import { assertTransferPinForPayout } from "./tutorTransferPin.js";
 
 /** Safe numeric parse for Sequelize DECIMAL / string values (avoids JS string concat bugs). */
 function num(v) {
@@ -132,7 +133,7 @@ function getTutorInfo(req) {
  */
 export const requestPayout = TryCatchFunction(async (req, res) => {
   const { tutorId, tutorType } = getTutorInfo(req);
-  const { amount, bank_account_id, currency: requestedCurrency } = req.body;
+  const { amount, bank_account_id, currency: requestedCurrency, transfer_pin } = req.body;
 
   // Validate amount
   const payoutAmount = parseFloat(amount);
@@ -213,6 +214,8 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
       await safeRollback();
       throw new ErrorClass("Tutor not found", 404);
     }
+
+    await assertTransferPinForPayout(tutor, tutorId, tutorType, transfer_pin);
 
     const wc = (tutor.currency || "NGN").toString().toUpperCase();
     let walletField;
