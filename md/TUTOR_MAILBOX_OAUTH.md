@@ -1,5 +1,23 @@
 # Tutor mailbox OAuth (Gmail / Outlook)
 
+## After login: browser shows JSON instead of your app
+
+The OAuth **callback** hits your **API** (`/api/marketplace/tutor/mailbox/google/callback`). The server **redirects** to the **frontend** with query parameters (it does not return JSON in the browser).
+
+Set **`FRONTEND_URL`** in `.env` / Render to your real app origin (e.g. `https://app.knomada.co`). Optionally set **`MAILBOX_OAUTH_RETURN_PATH`** (default **`/settings/mailbox`**) to the route that should open after connect.
+
+**Success redirect example**
+
+`{FRONTEND_URL}{MAILBOX_OAUTH_RETURN_PATH}?mailbox_connected=gmail&email=user@gmail.com`
+
+**Failure redirect example**
+
+`...?mailbox_error=1&reason=...`
+
+The frontend should read these query params and show a toast or mailbox settings UI (and strip params from the URL).
+
+---
+
 ## Error: `redirect_uri_mismatch` (Google)
 
 Google only allows redirects that are **exactly** listed on the OAuth client. The app sends this redirect URI (unless you override it):

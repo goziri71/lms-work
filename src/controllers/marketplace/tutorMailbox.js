@@ -25,6 +25,22 @@ import {
   syncOutlookMailbox,
 } from "../../services/tutorMailboxOutlookService.js";
 import { getStudentIfEnrolledWithTutor } from "../../services/tutorLearnerEnrollmentService.js";
+import { Config } from "../../config/config.js";
+
+/**
+ * After Google/Microsoft OAuth, send users back to the SPA (not raw JSON on the API host).
+ * Query params: success → mailbox_connected, email; failure → mailbox_error, reason
+ */
+function redirectAfterMailboxOAuth(res, searchParams) {
+  const base = (Config.frontendUrl || "https://app.knomada.co").replace(/\/$/, "");
+  const path = process.env.MAILBOX_OAUTH_RETURN_PATH || "/settings/mailbox";
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  const url = new URL(`${base}${normalized}`);
+  for (const [k, v] of Object.entries(searchParams)) {
+    if (v != null && v !== "") url.searchParams.set(k, String(v));
+  }
+  return res.redirect(302, url.toString());
+}
 
 export const getMailboxConnectGmail = TryCatchFunction(async (req, res) => {
   const { tutorId, tutorType } = getTutorInfo(req);
@@ -44,95 +60,121 @@ export const getMailboxConnectOutlook = TryCatchFunction(async (req, res) => {
   });
 });
 
-export const handleGmailMailboxCallback = TryCatchFunction(async (req, res) => {
-  const { code, state } = req.query;
-  if (!code) throw new ErrorClass("Missing code", 400);
-  const { tutorId, tutorType, codeVerifier } = verifyMailboxGmailState(state);
-  const { tokens, email } = await exchangeGmailMailboxCode(code, codeVerifier);
-
-  const [mailbox] = await TutorMailbox.findOrCreate({
-    where: { tutor_id: tutorId, tutor_type: tutorType, provider: "gmail" },
-    defaults: {
-      tutor_id: tutorId,
-      tutor_type: tutorType,
-      provider: "gmail",
-      email_address: email || "unknown@unknown",
-      access_token: "",
-      is_active: true,
-      connected_at: new Date(),
-    },
-  });
-
-  await storeEncryptedTokens(mailbox, {
-    access_token: tokens.access_token,
-    refresh_token: tokens.refresh_token,
-    expires_in:
-      tokens.expiry_date != null
-        ? Math.floor((tokens.expiry_date - Date.now()) / 1000)
-        : tokens.expires_in || 3600,
-    scope: tokens.scope,
-  });
-  await mailbox.update({
-    email_address: email || mailbox.email_address,
-    is_active: true,
-  });
-  await mailbox.reload();
-
+export const handleGmailMailboxCallback = async (req, res) => {
   try {
-    await syncGmailMailbox(mailbox);
-  } catch (e) {
-    console.warn("Initial Gmail sync:", e.message);
-  }
+    const { code, state } = req.query;
+    if (!code) {
+      throw new ErrorClass("Missing authorization code", 400);
+    }
+    const { tutorId, tutorType, codeVerifier } = verifyMailboxGmailState(state);
+    const { tokens, email } = await exchangeGmailMailboxCode(code, codeVerifier);
 
-  res.json({
-    success: true,
-    message: "Gmail connected",
-    data: { email: mailbox.email_address, provider: "gmail" },
-  });
-});
+    const [mailbox] = await TutorMailbox.findOrCreate({
+      where: { tutor_id: tutorId, tutor_type: tutorType, provider: "gmail" },
+      defaults: {
+        tutor_id: tutorId,
+        tutor_type: tutorType,
+        provider: "gmail",
+        email_address: email || "unknown@unknown",
+        access_token: "",
+        is_active: true,
+        connected_at: new Date(),
+      },
+    });
 
-export const handleOutlookMailboxCallback = TryCatchFunction(async (req, res) => {
-  const { code, state } = req.query;
-  if (!code) throw new ErrorClass("Missing code", 400);
-  const { tutorId, tutorType } = verifyOutlookState(state);
-  const tokens = await exchangeOutlookCode(code);
-
-  const [mailbox] = await TutorMailbox.findOrCreate({
-    where: { tutor_id: tutorId, tutor_type: tutorType, provider: "outlook" },
-    defaults: {
-      tutor_id: tutorId,
-      tutor_type: tutorType,
-      provider: "outlook",
-      email_address: "pending@local",
-      access_token: "",
+    await storeEncryptedTokens(mailbox, {
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expires_in:
+        tokens.expiry_date != null
+          ? Math.floor((tokens.expiry_date - Date.now()) / 1000)
+          : tokens.expires_in || 3600,
+      scope: tokens.scope,
+    });
+    await mailbox.update({
+      email_address: email || mailbox.email_address,
       is_active: true,
-      connected_at: new Date(),
-    },
-  });
+    });
+    await mailbox.reload();
 
-  await storeEncryptedTokens(mailbox, {
-    access_token: tokens.access_token,
-    refresh_token: tokens.refresh_token,
-    expires_in: tokens.expires_in,
-    scope: tokens.scope,
-  });
-  await mailbox.reload();
+    try {
+      await syncGmailMailbox(mailbox);
+    } catch (e) {
+      console.warn("Initial Gmail sync:", e.message);
+    }
 
-  const email = await getOutlookProfileEmail(mailbox);
-  await mailbox.update({ email_address: email || mailbox.email_address });
-
-  try {
-    await syncOutlookMailbox(mailbox);
+    return redirectAfterMailboxOAuth(res, {
+      mailbox_connected: "gmail",
+      email: mailbox.email_address,
+    });
   } catch (e) {
-    console.warn("Initial Outlook sync:", e.message);
+    const reason =
+      e instanceof ErrorClass
+        ? e.message
+        : "Could not connect Gmail. Try again.";
+    console.error("Gmail OAuth callback:", e?.message || e);
+    return redirectAfterMailboxOAuth(res, {
+      mailbox_error: "1",
+      reason: String(reason).slice(0, 500),
+    });
   }
+};
 
-  res.json({
-    success: true,
-    message: "Outlook connected",
-    data: { email: mailbox.email_address, provider: "outlook" },
-  });
-});
+export const handleOutlookMailboxCallback = async (req, res) => {
+  try {
+    const { code, state } = req.query;
+    if (!code) {
+      throw new ErrorClass("Missing authorization code", 400);
+    }
+    const { tutorId, tutorType } = verifyOutlookState(state);
+    const tokens = await exchangeOutlookCode(code);
+
+    const [mailbox] = await TutorMailbox.findOrCreate({
+      where: { tutor_id: tutorId, tutor_type: tutorType, provider: "outlook" },
+      defaults: {
+        tutor_id: tutorId,
+        tutor_type: tutorType,
+        provider: "outlook",
+        email_address: "pending@local",
+        access_token: "",
+        is_active: true,
+        connected_at: new Date(),
+      },
+    });
+
+    await storeEncryptedTokens(mailbox, {
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expires_in: tokens.expires_in,
+      scope: tokens.scope,
+    });
+    await mailbox.reload();
+
+    const email = await getOutlookProfileEmail(mailbox);
+    await mailbox.update({ email_address: email || mailbox.email_address });
+
+    try {
+      await syncOutlookMailbox(mailbox);
+    } catch (e) {
+      console.warn("Initial Outlook sync:", e.message);
+    }
+
+    return redirectAfterMailboxOAuth(res, {
+      mailbox_connected: "outlook",
+      email: mailbox.email_address,
+    });
+  } catch (e) {
+    const reason =
+      e instanceof ErrorClass
+        ? e.message
+        : "Could not connect Outlook. Try again.";
+    console.error("Outlook OAuth callback:", e?.message || e);
+    return redirectAfterMailboxOAuth(res, {
+      mailbox_error: "1",
+      reason: String(reason).slice(0, 500),
+    });
+  }
+};
 
 export const listMailboxes = TryCatchFunction(async (req, res) => {
   const { tutorId, tutorType } = getTutorInfo(req);
