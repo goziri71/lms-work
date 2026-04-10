@@ -25,7 +25,8 @@
     "check:quotes": "node scripts/check-remaining-quotes.js",
     "migrate:marketplace-enum": "node scripts/migrate-marketplace-transaction-enum.js",
     "migrate:wpu-uploads": "node src/scripts/migrateWpuUploads.js",
-    "migrate:tutor-transfer-pin": "node scripts/migrate-add-tutor-transfer-pin.js"
+    "migrate:tutor-transfer-pin": "node scripts/migrate-add-tutor-transfer-pin.js",
+    "migrate:platform-payout-fee": "node scripts/migrate-platform-payout-fee-db.js"
   },
   "keywords": [],
   "author": "",

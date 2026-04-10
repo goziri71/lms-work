@@ -13,11 +13,24 @@ import { db } from "../../database/database.js";
 import crypto from "crypto";
 import { applyLegacyWalletMirror } from "../../utils/tutorWallet.js";
 import { assertTransferPinForPayout } from "./tutorTransferPin.js";
+import { fetchNgnPlatformPayoutFee } from "../../services/platformPayoutConfigService.js";
 
 /** Safe numeric parse for Sequelize DECIMAL / string values (avoids JS string concat bugs). */
 function num(v) {
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** Amount sent to Flutterwave (after NGN platform fee, before Flutterwave's own fee). */
+function getFlutterwaveTransferAmount(payout) {
+  const gross = num(payout.converted_amount);
+  const platformFee = num(
+    payout.platform_payout_fee ?? payout.metadata?.platform_payout_fee_ngn
+  );
+  if (String(payout.currency || "").toUpperCase() === "NGN" && platformFee > 0) {
+    return Math.max(0, gross - platformFee);
+  }
+  return gross;
 }
 
 /**
@@ -42,7 +55,10 @@ async function recoverPayoutAfterBankSuccess(payoutId, transferResult) {
     }
 
     const fee = num(transferResult.transfer.fee);
-    const netAmt = num(lockedPayout.converted_amount) - fee;
+    const platformFee = num(
+      lockedPayout.platform_payout_fee ?? lockedPayout.metadata?.platform_payout_fee_ngn
+    );
+    const netAmt = num(lockedPayout.converted_amount) - platformFee - fee;
 
     await lockedPayout.update(
       {
@@ -329,6 +345,22 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
       }
     }
 
+    const FLUTTERWAVE_MIN_LOCAL = 100;
+    let platformPayoutFeeNgn = 0;
+    if (String(payoutCurrency).toUpperCase() === "NGN") {
+      platformPayoutFeeNgn = await fetchNgnPlatformPayoutFee();
+      if (platformPayoutFeeNgn > 0) {
+        const netAfterPlatform = num(convertedAmount) - platformPayoutFeeNgn;
+        if (netAfterPlatform < FLUTTERWAVE_MIN_LOCAL) {
+          await safeRollback();
+          throw new ErrorClass(
+            `For NGN payouts, amount after the ${platformPayoutFeeNgn} NGN platform fee must be at least ${FLUTTERWAVE_MIN_LOCAL} NGN. Request at least ${platformPayoutFeeNgn + FLUTTERWAVE_MIN_LOCAL} NGN total.`,
+            400
+          );
+        }
+      }
+    }
+
     // Generate unique reference
     const reference = `PAYOUT-${tutorId}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
 
@@ -342,6 +374,8 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
         currency: payoutCurrency,
         converted_amount: convertedAmount,
         fx_rate: fxRate,
+        platform_payout_fee:
+          platformPayoutFeeNgn > 0 ? platformPayoutFeeNgn : null,
         transfer_fee: 0, // Will be updated after transfer
         net_amount: convertedAmount, // Will be updated after transfer
         flutterwave_reference: reference,
@@ -350,6 +384,12 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
           conversion: conversionInfo,
           wallet_currency: walletCurrency,
           payout_currency: payoutCurrency,
+          ...(platformPayoutFeeNgn > 0
+            ? {
+                net_amount_after_platform_fee_ngn:
+                  num(convertedAmount) - platformPayoutFeeNgn,
+              }
+            : {}),
         },
       },
       { transaction }
@@ -397,6 +437,12 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
         amount: parseFloat(payoutAmount),
         currency: payoutCurrency,
         converted_amount: parseFloat(convertedAmount),
+        platform_payout_fee:
+          platformPayoutFeeNgn > 0 ? platformPayoutFeeNgn : undefined,
+        net_amount_after_platform_fee:
+          platformPayoutFeeNgn > 0
+            ? num(convertedAmount) - platformPayoutFeeNgn
+            : undefined,
         fx_rate: fxRate,
         status: payout.status,
         reference: payout.flutterwave_reference,
@@ -517,8 +563,11 @@ async function processPayoutTransfer(payoutId) {
 
     // Validate minimum amount (Flutterwave typically requires minimum amounts)
     const minAmount = 100; // Minimum 100 in local currency
-    if (payout.converted_amount < minAmount) {
-      console.error(`Amount too small: ${payout.converted_amount} is less than minimum ${minAmount}`);
+    const transferAmount = getFlutterwaveTransferAmount(payout);
+    if (transferAmount < minAmount) {
+      console.error(
+        `Amount too small: transfer amount ${transferAmount} (${payout.currency}) is less than minimum ${minAmount}`
+      );
       
       // Create transaction for refund
       const refundTransaction = await db.transaction({
@@ -550,11 +599,15 @@ async function processPayoutTransfer(payoutId) {
       return;
     }
 
+    const transferAmountFw = getFlutterwaveTransferAmount(payout);
+
     // Initiate Flutterwave transfer (outside transaction to avoid long locks)
     console.log("Initiating Flutterwave transfer:", {
       accountBank: payout.bankAccount.bank_code,
       accountNumber: payout.bankAccount.account_number.replace(/(.{4})(.*)/, "$1****"),
-      amount: payout.converted_amount,
+      amount: transferAmountFw,
+      gross_converted: payout.converted_amount,
+      platform_payout_fee: payout.platform_payout_fee,
       currency: payout.currency,
       reference: payout.flutterwave_reference,
     });
@@ -562,7 +615,7 @@ async function processPayoutTransfer(payoutId) {
     const transferResult = await initiateTransfer({
       accountBank: payout.bankAccount.bank_code,
       accountNumber: payout.bankAccount.account_number,
-      amount: payout.converted_amount,
+      amount: transferAmountFw,
       currency: payout.currency,
       narration: `Payout to ${payout.bankAccount.account_name}`,
       reference: payout.flutterwave_reference,
@@ -592,12 +645,16 @@ async function processPayoutTransfer(payoutId) {
 
       if (transferResult.success) {
         const fee = num(transferResult.transfer.fee);
+        const platformFee = num(
+          lockedPayout.platform_payout_fee ??
+            lockedPayout.metadata?.platform_payout_fee_ngn
+        );
         // Update payout with transfer details
         await lockedPayout.update(
           {
             flutterwave_transfer_id: transferResult.transfer.id,
             transfer_fee: fee,
-            net_amount: num(payout.converted_amount) - fee,
+            net_amount: num(lockedPayout.converted_amount) - platformFee - fee,
             status: "successful",
             processed_at: new Date(),
             completed_at: new Date(),

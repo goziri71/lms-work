@@ -129,3 +129,24 @@ Include the same fields as before (`amount`, `bank_account_id`, `currency`, etc.
 - `src/services/tutorTransferPinService.js` — PIN/OTP validation helpers  
 - `src/controllers/marketplace/tutorPayout.js` — payout request validates PIN  
 - `scripts/migrate-add-tutor-transfer-pin.js` — migration  
+
+---
+
+## NGN platform payout fee (Flutterwave)
+
+**Source of truth:** database table **`platform_payout_config`** (singleton row **`id = 1`**), column **`ngn_payout_platform_fee`**.
+
+```sql
+-- Example: set fee to 100 NGN
+UPDATE platform_payout_config SET ngn_payout_platform_fee = 100, updated_at = NOW() WHERE id = 1;
+```
+
+Run migration once: **`npm run migrate:platform-payout-fee`** (creates the table, seeds `100`, adds **`tutor_payouts.platform_payout_fee`** to store the fee snapshot per payout).
+
+| Fallback | Purpose |
+|----------|---------|
+| `NGN_PAYOUT_PLATFORM_FEE` env | Used only if the config row cannot be read (defaults to **100** when env unset). |
+
+Flutterwave still requires a **minimum ~100 NGN** net after our fee, so with a **100 NGN** platform fee the tutor must request at least **200 NGN** total in NGN when applicable.
+
+The create-payout response includes **`platform_payout_fee`** and **`net_amount_after_platform_fee`** when the fee applies.

@@ -44,6 +44,12 @@ export const TutorPayout = db.define(
       allowNull: true,
       comment: "Exchange rate used for conversion",
     },
+    platform_payout_fee: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      comment:
+        "NGN platform fee for this payout (snapshot from platform_payout_config when created)",
+    },
     transfer_fee: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,

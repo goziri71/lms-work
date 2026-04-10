@@ -20,6 +20,7 @@ export { CoachingSettings } from "./coachingSettings.js";
 // Payout and Bank Account exports
 export { TutorBankAccount } from "./tutorBankAccount.js";
 export { TutorPayout } from "./tutorPayout.js";
+export { PlatformPayoutConfig } from "./platformPayoutConfig.js";
 // One-on-One Coaching exports
 export { CoachingSchedulingMessage } from "./coachingSchedulingMessage.js";
 // Hybrid Coaching Booking exports
