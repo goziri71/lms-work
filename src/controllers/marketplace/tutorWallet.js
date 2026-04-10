@@ -312,6 +312,12 @@ export const getWalletTransactions = TryCatchFunction(async (req, res) => {
         related_type: tx.related_type,
         status: tx.status,
         notes: tx.notes,
+        metadata: tx.metadata || null,
+        /** True when this row is a failed-payout or similar refund credit */
+        is_refund_credit:
+          tx.transaction_type === "credit" &&
+          (tx.metadata?.kind === "payout_failed_refund" ||
+            String(tx.service_name || "").toLowerCase().includes("refund")),
         created_at: tx.created_at,
       })),
       pagination: {

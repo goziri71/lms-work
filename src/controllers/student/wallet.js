@@ -326,18 +326,26 @@ export const getFundingHistory = TryCatchFunction(async (req, res) => {
     success: true,
     message: "Funding history retrieved successfully",
     data: {
-      transactions: fundings.map((funding) => ({
-        id: funding.id,
-        type: funding.type, // Credit or Debit
-        amount: parseFloat(funding.amount) || 0,
-        currency: funding.currency || student.currency || "NGN",
-        service_name: funding.service_name,
-        ref: funding.ref,
-        date: funding.date,
-        semester: funding.semester,
-        academic_year: funding.academic_year,
-        balance: funding.balance ? parseFloat(funding.balance) : null,
-      })),
+      transactions: fundings.map((funding) => {
+        const name = (funding.service_name || "").toLowerCase();
+        const isRefundCredit =
+          funding.type === "Credit" &&
+          (name.includes("refund") || name.includes("reversal"));
+        return {
+          id: funding.id,
+          type: funding.type, // Credit or Debit
+          amount: parseFloat(funding.amount) || 0,
+          currency: funding.currency || student.currency || "NGN",
+          service_name: funding.service_name,
+          ref: funding.ref,
+          date: funding.date,
+          semester: funding.semester,
+          academic_year: funding.academic_year,
+          balance: funding.balance ? parseFloat(funding.balance) : null,
+          /** Helps the app label failed-payment / cancellation refunds */
+          is_refund_credit: isRefundCredit,
+        };
+      }),
       pagination: {
         total: count,
         page: parseInt(page),

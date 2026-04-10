@@ -727,7 +727,10 @@ async function refundPayout(payout, transaction) {
     }
   );
 
-  // Create refund transaction record
+  const refundReason =
+    payout.failure_reason || "Bank transfer failed — balance restored to wallet";
+
+  // Create refund transaction record (shows in GET /tutor/wallet/transactions)
   await TutorWalletTransaction.create(
     {
       tutor_id: payout.tutor_id,
@@ -740,11 +743,13 @@ async function refundPayout(payout, transaction) {
       balance_before: currentBalance,
       balance_after: newBalance,
       status: "successful",
+      notes: refundReason,
       metadata: {
         payout_id: payout.id,
         payout_reference: payout.flutterwave_reference,
         refund_reason: payout.failure_reason,
         original_debit_tx_id: originalDebitTx?.id || null,
+        kind: "payout_failed_refund",
       },
     },
     { transaction }
