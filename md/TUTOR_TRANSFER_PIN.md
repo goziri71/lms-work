@@ -150,3 +150,5 @@ Run migration once: **`npm run migrate:platform-payout-fee`** (creates the table
 Flutterwave still requires a **minimum ~100 NGN** net after our fee, so with a **100 NGN** platform fee the tutor must request at least **200 NGN** total in NGN when applicable.
 
 The create-payout response includes **`platform_payout_fee`** and **`net_amount_after_platform_fee`** when the fee applies.
+
+**Preview (frontend):** **`GET /api/marketplace/tutor/payouts/fee-config`** (tutor JWT) returns **`ngn_payout_platform_fee`** and **`currency`** (`NGN`) from **`platform_payout_config`** only.

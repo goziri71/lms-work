@@ -349,6 +349,7 @@ import {
   requestPayout,
   listPayouts,
   getPayout,
+  getPayoutFeeConfig,
 } from "../controllers/marketplace/tutorPayout.js";
 import {
   getTransferPinStatus,
@@ -1086,6 +1087,7 @@ router.get("/tutor/transfer-pin/status", tutorAuthorize, getTransferPinStatus);
 router.post("/tutor/transfer-pin/send-otp", tutorAuthorize, sendTransferPinOtp);
 router.post("/tutor/transfer-pin/confirm", tutorAuthorize, confirmTransferPin);
 router.post("/tutor/payouts/request", tutorAuthorize, requestPayout);
+router.get("/tutor/payouts/fee-config", tutorAuthorize, getPayoutFeeConfig);
 router.get("/tutor/payouts", tutorAuthorize, listPayouts);
 
 // ============================================

@@ -144,6 +144,24 @@ function getTutorInfo(req) {
 }
 
 /**
+ * GET /api/marketplace/tutor/payouts/fee-config
+ * NGN platform payout fee from DB only (for UI preview). Tutor JWT required.
+ */
+export const getPayoutFeeConfig = TryCatchFunction(async (req, res) => {
+  getTutorInfo(req);
+
+  const ngn_payout_platform_fee = await fetchNgnPlatformPayoutFee();
+
+  res.status(200).json({
+    success: true,
+    data: {
+      ngn_payout_platform_fee,
+      currency: "NGN",
+    },
+  });
+});
+
+/**
  * Request payout
  * POST /api/marketplace/tutor/payouts/request
  */
