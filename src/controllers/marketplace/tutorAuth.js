@@ -16,6 +16,8 @@ import {
 } from "../../services/currencyService.js";
 import { getIPGeolocation } from "../../services/ipGeolocationService.js";
 import { EmailLog } from "../../models/email/emailLog.js";
+import { Config } from "../../config/config.js";
+import { joinFrontendUrl } from "../../utils/frontendUrl.js";
 
 /**
  * Sole Tutor Registration
@@ -1118,9 +1120,10 @@ export const requestPasswordResetSoleTutor = TryCatchFunction(
       password_reset_token: hashedToken,
     });
 
-    const resetUrl = `${
-      process.env.FRONTEND_URL || "https://app.knomada.co"
-    }/reset-password?token=${resetToken}&type=sole_tutor`;
+    const resetUrl = `${joinFrontendUrl(
+      Config.frontendUrl,
+      `reset-password?token=${resetToken}&type=sole_tutor`
+    )}`;
 
     await sendTutorPasswordResetEmailAndLog(
       tutor,
@@ -1168,9 +1171,10 @@ export const requestPasswordResetOrganization = TryCatchFunction(
       password_reset_token: hashedToken,
     });
 
-    const resetUrl = `${
-      process.env.FRONTEND_URL || "https://app.knomada.co"
-    }/reset-password?token=${resetToken}&type=organization`;
+    const resetUrl = `${joinFrontendUrl(
+      Config.frontendUrl,
+      `reset-password?token=${resetToken}&type=organization`
+    )}`;
 
     await sendTutorPasswordResetEmailAndLog(
       organization,
@@ -1218,11 +1222,12 @@ export const requestPasswordResetTutor = TryCatchFunction(async (req, res) => {
     .update(resetToken)
     .digest("hex");
 
-  const frontendUrl = process.env.FRONTEND_URL || "https://app.knomada.co";
-
   if (soleTutor) {
     await soleTutor.update({ password_reset_token: hashedToken });
-    const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}&type=sole_tutor`;
+    const resetUrl = joinFrontendUrl(
+      Config.frontendUrl,
+      `reset-password?token=${resetToken}&type=sole_tutor`
+    );
     await sendTutorPasswordResetEmailAndLog(
       soleTutor,
       resetToken,
@@ -1231,7 +1236,10 @@ export const requestPasswordResetTutor = TryCatchFunction(async (req, res) => {
     );
   } else {
     await organization.update({ password_reset_token: hashedToken });
-    const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}&type=organization`;
+    const resetUrl = joinFrontendUrl(
+      Config.frontendUrl,
+      `reset-password?token=${resetToken}&type=organization`
+    );
     await sendTutorPasswordResetEmailAndLog(
       organization,
       resetToken,

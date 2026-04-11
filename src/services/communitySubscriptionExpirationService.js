@@ -195,7 +195,7 @@ async function sendExpirationEmail(subscription, daysRemaining) {
         <p><strong>Expiration Date:</strong> ${new Date(subscription.next_billing_date).toLocaleDateString()}</p>
         <p><strong>Monthly Price:</strong> ${community.price} ${community.currency}</p>
         ${subscription.auto_renew ? "<p><strong>Auto-renewal:</strong> Enabled - Your subscription will be automatically renewed if you have sufficient wallet balance.</p>" : "<p><strong>Auto-renewal:</strong> Disabled - Please renew manually to continue access.</p>"}
-        <p><a href="${Config.frontendUrl}/communities/${community.id}">Manage Subscription</a></p>
+        <p><a href="${Config.frontendUrl}communities/${community.id}">Manage Subscription</a></p>
       `,
     });
   } catch (error) {
@@ -325,7 +325,7 @@ async function attemptAutoRenewal(subscription) {
         <p>Your subscription to <strong>${community.name}</strong> has been automatically renewed.</p>
         <p><strong>Amount Charged:</strong> ${priceInStudentCurrency.toFixed(2)} ${studentCurrency}</p>
         <p><strong>Next Billing Date:</strong> ${nextBillingDate.toLocaleDateString()}</p>
-        <p><a href="${Config.frontendUrl}/communities/${community.id}">Visit Community</a></p>
+        <p><a href="${Config.frontendUrl}communities/${community.id}">Visit Community</a></p>
       `,
     });
 
@@ -396,7 +396,7 @@ async function expireSubscription(subscription) {
             <h2>Subscription Expired</h2>
             <p>Your subscription to <strong>${community.name}</strong> has expired.</p>
             <p>Your access to the community has been blocked. Please renew your subscription to regain access.</p>
-            <p><a href="${Config.frontendUrl}/communities/${community.id}">Renew Subscription</a></p>
+            <p><a href="${Config.frontendUrl}communities/${community.id}">Renew Subscription</a></p>
           `,
         });
 

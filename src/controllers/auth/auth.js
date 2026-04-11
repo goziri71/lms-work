@@ -10,6 +10,8 @@ import { Op, fn, col } from "sequelize";
 import crypto from "crypto";
 import { getIPGeolocation } from "../../services/ipGeolocationService.js";
 import { getCurrencyFromCountry } from "../../services/currencyService.js";
+import { Config } from "../../config/config.js";
+import { joinFrontendUrl } from "../../utils/frontendUrl.js";
 
 // Student Login using Sequelize ORM
 export const studentLogin = TryCatchFunction(async (req, res) => {
@@ -961,9 +963,10 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
   });
 
   // Create reset URL (adjust based on your frontend)
-  const resetUrl = `${
-    process.env.FRONTEND_URL || "https://app.knomada.co"
-  }/reset-password?token=${resetToken}&type=${userType}`;
+  const resetUrl = joinFrontendUrl(
+    Config.frontendUrl,
+    `reset-password?token=${resetToken}&type=${userType}`
+  );
 
   // Send password reset email
   try {

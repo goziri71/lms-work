@@ -251,7 +251,7 @@ export function setupCoachingMessagingSocket(io) {
             startsAt: schedulingMessage.proposed_start_time.toISOString(),
           });
           
-          const viewLink = `${Config.frontendUrl}/coaching/session/${streamCall.id}`;
+          const viewLink = `${Config.frontendUrl}coaching/session/${streamCall.id}`;
           await session.update({
             stream_call_id: streamCall.id,
             view_link: viewLink,
@@ -447,7 +447,7 @@ async function sendMessageNotification(sessionId, senderType, messageData) {
           <p>You have a new message regarding your coaching session: <strong>${session.title}</strong></p>
           ${messageData.message ? `<p>Message: ${messageData.message}</p>` : ""}
           ${messageData.proposed_start_time ? `<p>Proposed Time: ${new Date(messageData.proposed_start_time).toLocaleString()}</p>` : ""}
-          <p><a href="${Config.frontendUrl}/coaching/session/${sessionId}/messages">View Message</a></p>
+          <p><a href="${Config.frontendUrl}coaching/session/${sessionId}/messages">View Message</a></p>
         `,
       });
     }
@@ -590,7 +590,7 @@ async function sendTimeRejectedNotification(sessionId, messageId, reason) {
           <p>Your time proposal for <strong>${session.title}</strong> has been rejected.</p>
           ${reason ? `<p>Reason: ${reason}</p>` : ""}
           <p>Please propose a different time or discuss with the other party.</p>
-          <p><a href="${Config.frontendUrl}/coaching/session/${sessionId}/messages">View Messages</a></p>
+          <p><a href="${Config.frontendUrl}coaching/session/${sessionId}/messages">View Messages</a></p>
         `,
       });
     }

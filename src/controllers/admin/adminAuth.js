@@ -6,6 +6,8 @@ import { authService } from "../../service/authservice.js";
 import { emailService } from "../../services/emailService.js";
 import { EmailLog } from "../../models/email/emailLog.js";
 import crypto from "crypto";
+import { joinFrontendUrl } from "../../utils/frontendUrl.js";
+import { Config } from "../../config/config.js";
 
 /**
  * Admin Login
@@ -319,10 +321,11 @@ export const requestAdminPasswordReset = TryCatchFunction(async (req, res) => {
     password_reset_token: hashedToken,
   });
 
-  // Create reset URL for admin (different from student/staff)
-  const resetUrl = `https://${
-    process.env.ADMIN_FRONTEND_URL || "https://manage.knomada.co"
-  }/reset-password?token=${resetToken}&type=admin`;
+  // Create reset URL for admin (manage.* site)
+  const resetUrl = joinFrontendUrl(
+    Config.adminFrontendUrl,
+    `reset-password?token=${resetToken}&type=admin`
+  );
 
   // Send password reset email
   try {

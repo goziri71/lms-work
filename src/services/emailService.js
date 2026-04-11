@@ -1,5 +1,6 @@
 import { SendMailClient } from "zeptomail";
 import { Config } from "../config/config.js";
+import { joinFrontendUrl } from "../utils/frontendUrl.js";
 import { renderTemplate } from "../utils/templateRenderer.js";
 
 class EmailService {
@@ -239,9 +240,7 @@ class EmailService {
         userName: user.name || user.email,
         userEmail: user.email,
         userType: userType,
-        loginUrl: `${
-          Config.frontendUrl || "https://app.knomada.co"
-        }/login`,
+        loginUrl: joinFrontendUrl(Config.frontendUrl, "login"),
         currentYear: new Date().getFullYear(),
       });
 
@@ -298,9 +297,7 @@ class EmailService {
         courseCode: course.code,
         instructor: course.instructor || "TBA",
         startDate: course.start_date || "To be announced",
-        courseUrl: `${
-          Config.frontendUrl || "https://app.knomada.co"
-        }/courses/${course.id}`,
+        courseUrl: joinFrontendUrl(Config.frontendUrl, `courses/${course.id}`),
         currentYear: new Date().getFullYear(),
       });
 
@@ -330,9 +327,7 @@ class EmailService {
         examTime: exam.start_time,
         duration: exam.duration_minutes,
         courseName: exam.course?.title || "Your Course",
-        examUrl: `${
-          Config.frontendUrl || "https://app.knomada.co"
-        }/exams/${exam.id}`,
+        examUrl: joinFrontendUrl(Config.frontendUrl, `exams/${exam.id}`),
         currentYear: new Date().getFullYear(),
       });
 
@@ -363,9 +358,7 @@ class EmailService {
         score: gradeInfo.score,
         totalScore: gradeInfo.totalScore,
         grade: gradeInfo.grade,
-        viewUrl: `${
-          Config.frontendUrl || "https://app.knomada.co"
-        }/grades`,
+        viewUrl: joinFrontendUrl(Config.frontendUrl, "grades"),
         currentYear: new Date().getFullYear(),
       });
 
@@ -395,9 +388,7 @@ class EmailService {
         temporaryPassword,
         roleDisplay: admin.role === "super_admin" ? "Super Admin" : "WSP Admin",
         isSuperAdmin: admin.role === "super_admin",
-        loginUrl: `${
-          Config.frontendUrl || "https://app.knomada.co"
-        }/admin/login`,
+        loginUrl: joinFrontendUrl(Config.adminFrontendUrl, "login"),
         currentYear: new Date().getFullYear(),
       });
 
@@ -421,10 +412,10 @@ class EmailService {
   async sendPasswordChangedEmail(user, changeInfo = {}) {
     try {
       const userType = changeInfo.userType || "student"; // student, staff, admin
-      let loginUrl = `${Config.frontendUrl || "https://app.knomada.co"}/login`;
-      
+      let loginUrl = joinFrontendUrl(Config.frontendUrl, "login");
+
       if (userType === "admin") {
-        loginUrl = `${Config.frontendUrl || "https://app.knomada.co"}/admin/login`;
+        loginUrl = joinFrontendUrl(Config.adminFrontendUrl, "login");
       }
 
       const htmlBody = await renderTemplate("password-changed", {

@@ -5,6 +5,8 @@ import { db } from "../database/database.js";
 import { Op } from "sequelize";
 import { emailService } from "./emailService.js";
 import { applyLegacyWalletMirror } from "../utils/tutorWallet.js";
+import { Config } from "../config/config.js";
+import { joinFrontendUrl } from "../utils/frontendUrl.js";
 
 /**
  * Process auto-renewal for subscriptions expiring in the next 3 days
@@ -171,7 +173,7 @@ async function renewSubscription(subscription) {
               </div>
               <p>Your subscription has been marked as expired. Please fund your wallet and renew your subscription to continue using premium features.</p>
               <div style="text-align: center; margin: 30px 0;">
-                <a href="${process.env.FRONTEND_URL || 'https://app.knomada.co'}/tutor/subscription" style="background-color: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                <a href="${joinFrontendUrl(Config.frontendUrl, "tutor/subscription")}" style="background-color: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
                   Renew Subscription
                 </a>
               </div>

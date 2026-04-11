@@ -272,7 +272,7 @@ export const purchaseCommunitySubscription = TryCatchFunction(async (req, res) =
         <p><strong>Price:</strong> ${priceInStudentCurrency.toFixed(2)} ${studentCurrency}</p>
         <p><strong>Next Billing Date:</strong> ${nextBillingDate.toLocaleDateString()}</p>
         <p><strong>Auto-renew:</strong> Enabled</p>
-        <p><a href="${Config.frontendUrl}/communities/${id}">Visit Community</a></p>
+        <p><a href="${Config.frontendUrl}communities/${id}">Visit Community</a></p>
       `,
     });
 

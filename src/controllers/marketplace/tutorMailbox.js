@@ -32,10 +32,9 @@ import { Config } from "../../config/config.js";
  * Query params: success → mailbox_connected, email; failure → mailbox_error, reason
  */
 function redirectAfterMailboxOAuth(res, searchParams) {
-  const base = (Config.frontendUrl || "https://app.knomada.co").replace(/\/$/, "");
-  const path = process.env.MAILBOX_OAUTH_RETURN_PATH || "/settings/mailbox";
-  const normalized = path.startsWith("/") ? path : `/${path}`;
-  const url = new URL(`${base}${normalized}`);
+  const pathRaw = process.env.MAILBOX_OAUTH_RETURN_PATH || "settings/mailbox";
+  const pathClean = String(pathRaw).replace(/^\/+/, "");
+  const url = new URL(pathClean, Config.frontendUrl);
   for (const [k, v] of Object.entries(searchParams)) {
     if (v != null && v !== "") url.searchParams.set(k, String(v));
   }

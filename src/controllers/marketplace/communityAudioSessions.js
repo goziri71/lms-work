@@ -121,7 +121,7 @@ export const createAudioSession = TryCatchFunction(async (req, res) => {
     audioOnly: true, // Audio-only call
   });
 
-  const viewLink = `${Config.frontendUrl}/communities/${communityId}/audio/${callId}`;
+  const viewLink = `${Config.frontendUrl}communities/${communityId}/audio/${callId}`;
 
   // Create session record
   const session = await CommunityAudioSession.create({

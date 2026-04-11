@@ -282,7 +282,7 @@ export const createSession = TryCatchFunction(async (req, res) => {
     }
 
     // Generate view link (public link for students)
-    const viewLink = `${Config.frontendUrl}/coaching/session/${streamCallId}`;
+    const viewLink = `${Config.frontendUrl}coaching/session/${streamCallId}`;
 
     // Handle image upload if file is provided
     let finalImageUrl = image_url || null;

@@ -4,7 +4,7 @@
 
 The OAuth **callback** hits your **API** (`/api/marketplace/tutor/mailbox/google/callback`). The server **redirects** to the **frontend** with query parameters (it does not return JSON in the browser).
 
-Set **`FRONTEND_URL`** in `.env` / Render to your real app origin (e.g. `https://app.knomada.co`). Optionally set **`MAILBOX_OAUTH_RETURN_PATH`** (default **`/settings/mailbox`**) to the route that should open after connect.
+Set **`FRONTEND_URL`** in `.env` / Render to your app origin (e.g. `https://app.thenomada.com` or `https://app.thenomada.com/` — a trailing slash is normalized). Optionally set **`MAILBOX_OAUTH_RETURN_PATH`** (default **`settings/mailbox`**, with or without a leading slash) for the route that opens after connect.
 
 **Success redirect example**
 

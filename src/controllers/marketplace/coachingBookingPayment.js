@@ -184,7 +184,7 @@ export const processBookingPayment = TryCatchFunction(async (req, res) => {
       }
     }
 
-    const viewLink = `${Config.frontendUrl}/coaching/session/${streamCallId}`;
+    const viewLink = `${Config.frontendUrl}coaching/session/${streamCallId}`;
 
     // 4. Create coaching session
     const session = await CoachingSession.create(

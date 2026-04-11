@@ -1,4 +1,10 @@
 import dotenv from "dotenv";
+import {
+  DEFAULT_ADMIN_FRONTEND_URL,
+  DEFAULT_FRONTEND_URL,
+  normalizeFrontendUrlBase,
+} from "../utils/frontendUrl.js";
+
 dotenv.config({ debug: false });
 
 export const Config = {
@@ -78,8 +84,17 @@ export const Config = {
     enforce: process.env.TRANSFER_PIN_ENFORCE === "true",
   },
 
-  // Frontend URL for email links
-  frontendUrl: process.env.FRONTEND_URL || "https://app.knomada.co",
+  /** Canonical app URL (always ends with `/`). Env: FRONTEND_URL */
+  get frontendUrl() {
+    return normalizeFrontendUrlBase(process.env.FRONTEND_URL, DEFAULT_FRONTEND_URL);
+  },
+  /** Admin site URL (always ends with `/`). Env: ADMIN_FRONTEND_URL */
+  get adminFrontendUrl() {
+    return normalizeFrontendUrlBase(
+      process.env.ADMIN_FRONTEND_URL,
+      DEFAULT_ADMIN_FRONTEND_URL
+    );
+  },
 
   /** Base URL for WPU PDFs (no trailing slash). Filename appended + encoded. */
   wpuBooksBaseUrl:
