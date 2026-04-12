@@ -7,10 +7,12 @@ import { Op } from "sequelize";
 let isSavedJobsTableAvailable = true;
 
 /**
- * Search jobs from the German Federal Employment Agency
+ * Search jobs via Careerjet API
  * GET /api/marketplace/jobs/search
  * Auth: Student required
- * Query: was, berufsfeld, arbeitszeit, angebotsart, befristung,
+ * Query: locale (or locale_code) — Careerjet locale e.g. en_US, en_GB, de_DE, en_NG;
+ *        optional; defaults to CAREERJET_LOCALE or en_NG.
+ *        was, location, berufsfeld, arbeitszeit, angebotsart, befristung,
  *        veroeffentlichtseit, zeitarbeit, arbeitgeber, page, size
  */
 export const searchJobListings = TryCatchFunction(async (req, res) => {
@@ -20,6 +22,8 @@ export const searchJobListings = TryCatchFunction(async (req, res) => {
   }
 
   const {
+    locale,
+    locale_code,
     was,
     location,
     berufsfeld,
@@ -40,6 +44,7 @@ export const searchJobListings = TryCatchFunction(async (req, res) => {
   const userAgent = req.headers["user-agent"] || "Mozilla/5.0";
 
   const result = await searchJobs({
+    locale: locale ?? locale_code,
     was,
     location,
     berufsfeld,
@@ -103,7 +108,7 @@ export const searchJobListings = TryCatchFunction(async (req, res) => {
         job.location ||
         null,
       region: job.arbeitsort?.region || null,
-      country: job.arbeitsort?.land || "Nigeria",
+      country: job.arbeitsort?.land || job.country || null,
       published_date:
         job.eintrittsdatum ||
         job.aktuelleVeroeffentlichungsdatum ||

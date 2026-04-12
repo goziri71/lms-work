@@ -3,10 +3,32 @@ import crypto from "crypto";
 import { JobCache } from "../models/marketplace/jobCache.js";
 import { Op } from "sequelize";
 import { getQuotaGuardAxiosProxyConfig } from "../utils/quotaGuardProxy.js";
+import { ErrorClass } from "../utils/errorClass/index.js";
 
 const BASE_URL = "https://search.api.careerjet.net/v4/query";
 const API_KEY = process.env.CAREERJET_API_KEY || process.env.CAREERJET_KEY || "";
 const DEFAULT_LOCALE = process.env.CAREERJET_LOCALE || "en_NG";
+
+/** Careerjet locale_code format, e.g. en_US, fr_FR, en_NG */
+const LOCALE_CODE_RE = /^[a-z]{2}_[A-Z]{2}$/;
+
+/**
+ * Resolve Careerjet locale: optional request override, else env/default.
+ * @param {string|undefined} locale - from query `locale` or `locale_code`
+ */
+function resolveLocaleCode(locale) {
+  if (locale === undefined || locale === null || String(locale).trim() === "") {
+    return DEFAULT_LOCALE;
+  }
+  const s = String(locale).trim();
+  if (!LOCALE_CODE_RE.test(s)) {
+    throw new ErrorClass(
+      "Invalid locale. Use Careerjet locale_code (e.g. en_US, en_GB, de_DE, en_NG). See Careerjet partner docs for supported locales.",
+      400
+    );
+  }
+  return s;
+}
 
 /**
  * Careerjet requires a Referer matching the publisher page that triggers the search.
@@ -61,6 +83,7 @@ function cleanExpiredMemoryCache() {
  */
 export async function searchJobs(searchParams = {}) {
   const {
+    locale,
     was,
     location,
     berufsfeld,
@@ -93,7 +116,7 @@ export async function searchJobs(searchParams = {}) {
     keywordParts.push(String(arbeitgeber).trim());
   }
 
-  queryParams.locale_code = DEFAULT_LOCALE;
+  queryParams.locale_code = resolveLocaleCode(locale);
   queryParams.keywords = keywordParts.join(" ").trim() || "jobs";
   if (location && String(location).trim()) {
     queryParams.location = String(location).trim();
