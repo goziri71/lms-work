@@ -5,7 +5,10 @@
  */
 
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
-import { WpuBookUpload, buildWpuBookPdfUrl } from "../../models/wpu/wpuBookUpload.js";
+import {
+  WpuBookUpload,
+  buildWpuBookPdfUrl,
+} from "../../models/wpu/wpuBookUpload.js";
 import { Op } from "sequelize";
 
 export const listWpuBooks = TryCatchFunction(async (req, res) => {
@@ -15,7 +18,7 @@ export const listWpuBooks = TryCatchFunction(async (req, res) => {
     course_semester,
     search,
     page = 1,
-    limit = 50,
+    limit = 20,
   } = req.query;
 
   const parts = [{ type: "book" }];
