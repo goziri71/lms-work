@@ -48,7 +48,7 @@ export const listWpuBooks = TryCatchFunction(async (req, res) => {
 
   const where = parts.length === 1 ? parts[0] : { [Op.and]: parts };
 
-  const lim = Math.min(parseInt(limit, 10) || 50, 200);
+  const lim = Math.min(parseInt(limit, 10) || 20, 200);
   const off = (Math.max(parseInt(page, 10) || 1, 1) - 1) * lim;
 
   const { count, rows } = await WpuBookUpload.findAndCountAll({
