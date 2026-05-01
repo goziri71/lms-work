@@ -420,15 +420,60 @@ router.get("/students/kyc/approved", adminAuthorize, requireSuperAdmin, getFully
 router.get("/students/kyc/documents", adminAuthorize, requireSuperAdmin, getStudentKycDocuments);
 router.get("/students/kyc/documents/:id/signed-url", adminAuthorize, requireSuperAdmin, getStudentDocumentSignedUrl);
 router.get("/students/kyc/status", adminAuthorize, requireSuperAdmin, getAllStudentsKycStatus);
-router.post("/students/kyc/documents/:id/approve", adminAuthorize, requireSuperAdmin, approveStudentDocument);
-router.post("/students/kyc/documents/:id/reject", adminAuthorize, requireSuperAdmin, rejectStudentDocument);
+router.put(
+  "/students/:id/kyc/documents/:document_type/approve",
+  adminAuthorize,
+  requireSuperAdmin,
+  approveStudentDocument,
+);
+router.put(
+  "/students/:id/kyc/documents/:document_type/reject",
+  adminAuthorize,
+  requireSuperAdmin,
+  rejectStudentDocument,
+);
+// POST aliases (same handler/params as documented PUT)
+router.post(
+  "/students/:id/kyc/documents/:document_type/approve",
+  adminAuthorize,
+  requireSuperAdmin,
+  approveStudentDocument,
+);
+router.post(
+  "/students/:id/kyc/documents/:document_type/reject",
+  adminAuthorize,
+  requireSuperAdmin,
+  rejectStudentDocument,
+);
 
 // Alternative paths (for backward compatibility)
 router.get("/student-kyc/documents", adminAuthorize, requireSuperAdmin, getStudentKycDocuments);
 router.get("/student-kyc/documents/:id/signed-url", adminAuthorize, requireSuperAdmin, getStudentDocumentSignedUrl);
 router.get("/student-kyc/status", adminAuthorize, requireSuperAdmin, getAllStudentsKycStatus);
-router.post("/student-kyc/documents/:id/approve", adminAuthorize, requireSuperAdmin, approveStudentDocument);
-router.post("/student-kyc/documents/:id/reject", adminAuthorize, requireSuperAdmin, rejectStudentDocument);
+router.put(
+  "/student-kyc/:id/documents/:document_type/approve",
+  adminAuthorize,
+  requireSuperAdmin,
+  approveStudentDocument,
+);
+router.put(
+  "/student-kyc/:id/documents/:document_type/reject",
+  adminAuthorize,
+  requireSuperAdmin,
+  rejectStudentDocument,
+);
+router.post(
+  "/student-kyc/:id/documents/:document_type/approve",
+  adminAuthorize,
+  requireSuperAdmin,
+  approveStudentDocument,
+);
+router.post(
+  "/student-kyc/:id/documents/:document_type/reject",
+  adminAuthorize,
+  requireSuperAdmin,
+  rejectStudentDocument,
+);
 router.get("/student-kyc/pending", adminAuthorize, requireSuperAdmin, getPendingDocuments);
 router.get("/student-kyc/approved", adminAuthorize, requireSuperAdmin, getFullyApprovedStudents);
 
