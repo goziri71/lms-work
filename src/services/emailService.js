@@ -28,6 +28,8 @@ class EmailService {
     
     this.fromAddress = Config.email.fromAddress;
     this.fromName = Config.email.fromName;
+    this.fromNameTutorLearner =
+      Config.email.fromNameTutorLearner || "The Nomada";
     this.enabled = Config.email.enabled && hasEmailConfig;
   }
 
@@ -38,9 +40,16 @@ class EmailService {
    * @param {string} options.name - Recipient name
    * @param {string} options.subject - Email subject
    * @param {string} options.htmlBody - HTML body content
+   * @param {boolean} [options.useTutorLearnerBranding] - If true, “from” name is The Nomada (tutor↔learner marketplace); otherwise Pinnacle
    * @returns {Promise<Object>} - Result of email send
    */
-  async sendEmail({ to, name, subject, htmlBody }) {
+  async sendEmail({
+    to,
+    name,
+    subject,
+    htmlBody,
+    useTutorLearnerBranding = false,
+  }) {
     try {
       // Check if email client is initialized
       if (!this.client) {
@@ -69,10 +78,14 @@ class EmailService {
         throw new Error("From address not configured");
       }
 
+      const fromDisplayName = useTutorLearnerBranding
+        ? this.fromNameTutorLearner
+        : this.fromName;
+
       const mailOptions = {
         from: {
           address: this.fromAddress,
-          name: this.fromName,
+          name: fromDisplayName,
         },
         to: [
           {
@@ -151,13 +164,13 @@ class EmailService {
       const safeBody = escapeHtml(messageText || "");
       const htmlBody = `<!DOCTYPE html>
 <html><body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#1a1a1a">
-<p>Message from <strong>${safeTutor}</strong> (your instructor on Knomada):</p>
+<p>Message from <strong>${safeTutor}</strong> (your instructor on The Nomada):</p>
 <div style="white-space:pre-wrap;border-left:3px solid #e5e7eb;padding:12px 16px;margin:16px 0;background:#fafafa">${safeBody}</div>
 <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
-<p style="font-size:12px;color:#6b7280">This email was sent through Knomada. Replies go to your instructor if your mail client supports it.</p>
+<p style="font-size:12px;color:#6b7280">This email was sent through The Nomada. Replies go to your instructor if your mail client supports it.</p>
 </body></html>`;
 
-      const textbody = `Message from ${tutorName || "Your instructor"}:\n\n${messageText || ""}\n\n---\nSent via Knomada`;
+      const textbody = `Message from ${tutorName || "Your instructor"}:\n\n${messageText || ""}\n\n---\nSent via The Nomada`;
 
       const toPayload = [
         {
@@ -182,7 +195,7 @@ class EmailService {
       const mailOptions = {
         from: {
           address: this.fromAddress,
-          name: this.fromName,
+          name: this.fromNameTutorLearner,
         },
         to: toPayload,
         subject: String(subject).trim(),
@@ -247,7 +260,7 @@ class EmailService {
       return await this.sendEmail({
         to: user.email,
         name: user.name,
-        subject: "Welcome to Knomada",
+        subject: "Welcome to Pinnacle",
         htmlBody,
       });
     } catch (error) {
@@ -275,7 +288,7 @@ class EmailService {
       return await this.sendEmail({
         to: user.email,
         name: user.name,
-        subject: "Password Reset Request - Knomada",
+        subject: "Password Reset Request - Pinnacle",
         htmlBody,
       });
     } catch (error) {
@@ -466,14 +479,14 @@ class EmailService {
 <p>Hi ${safe(name || "there")},</p>
 <p><strong>${safePurpose}</strong></p>
 <p style="font-size:28px;letter-spacing:0.2em;font-weight:700;margin:24px 0">${safeCode}</p>
-<p style="color:#6b7280;font-size:14px">This code expires in 15 minutes. If you did not request this, ignore this email and ensure your Knomada account is secure.</p>
+<p style="color:#6b7280;font-size:14px">This code expires in 15 minutes. If you did not request this, ignore this email and ensure your account is secure.</p>
 <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
-<p style="font-size:12px;color:#9ca3af">Knomada — tutor payout security</p>
+<p style="font-size:12px;color:#9ca3af">Pinnacle — tutor payout security</p>
 </body></html>`;
     return this.sendEmail({
       to,
       name: name || to,
-      subject: `Your Knomada verification code: ${code}`,
+      subject: `Your Pinnacle verification code: ${code}`,
       htmlBody,
     });
   }

@@ -564,6 +564,7 @@ async function sendSessionInvitations(
             : student.email,
         subject: `Coaching Session Invitation: ${session.title}`,
         htmlBody,
+        useTutorLearnerBranding: true,
       });
 
       // Update participant email_sent flag

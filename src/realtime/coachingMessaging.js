@@ -449,6 +449,7 @@ async function sendMessageNotification(sessionId, senderType, messageData) {
           ${messageData.proposed_start_time ? `<p>Proposed Time: ${new Date(messageData.proposed_start_time).toLocaleString()}</p>` : ""}
           <p><a href="${Config.frontendUrl}coaching/session/${sessionId}/messages">View Message</a></p>
         `,
+        useTutorLearnerBranding: true,
       });
     }
   } catch (error) {
@@ -513,6 +514,7 @@ async function sendTimeAgreedNotification(sessionId) {
           <p><strong>Duration:</strong> ${session.duration_minutes} minutes</p>
           ${session.view_link ? `<p><a href="${session.view_link}">Join Session</a></p>` : ""}
         `,
+        useTutorLearnerBranding: true,
       });
     }
 
@@ -533,6 +535,7 @@ async function sendTimeAgreedNotification(sessionId) {
           <p><strong>Duration:</strong> ${session.duration_minutes} minutes</p>
           ${session.view_link ? `<p><a href="${session.view_link}">Join Session</a></p>` : ""}
         `,
+        useTutorLearnerBranding: true,
       });
     }
   } catch (error) {
@@ -592,6 +595,7 @@ async function sendTimeRejectedNotification(sessionId, messageId, reason) {
           <p>Please propose a different time or discuss with the other party.</p>
           <p><a href="${Config.frontendUrl}coaching/session/${sessionId}/messages">View Messages</a></p>
         `,
+        useTutorLearnerBranding: true,
       });
     }
   } catch (error) {

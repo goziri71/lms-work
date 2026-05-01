@@ -265,6 +265,7 @@ export const purchaseCommunitySubscription = TryCatchFunction(async (req, res) =
       to: student.email,
       name: studentName,
       subject: `Welcome to ${community.name}!`,
+      useTutorLearnerBranding: true,
       htmlBody: `
         <h2>Welcome to ${community.name}!</h2>
         <p>Your subscription has been activated successfully.</p>

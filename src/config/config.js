@@ -75,7 +75,10 @@ export const Config = {
     apiUrl: process.env.ZEPTOMAIL_API_URL,
     apiToken: process.env.ZEPTOMAIL_TOKEN,
     fromAddress: process.env.EMAIL_FROM_ADDRESS,
-    fromName: process.env.EMAIL_FROM_NAME || "Knomada",
+    /** Default “from” display name (academic, admin, tutor billing, etc.) */
+    fromName: process.env.EMAIL_FROM_NAME || "Pinnacle",
+    /** Tutor ↔ learner marketplace emails (coaching, community to learner, tutor message to learner) */
+    fromNameTutorLearner: process.env.EMAIL_FROM_NAME_TUTOR_LEARNER || "The Nomada",
     enabled: process.env.EMAIL_ENABLED === "true" || true,
   },
 

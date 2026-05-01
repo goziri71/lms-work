@@ -189,6 +189,7 @@ async function sendExpirationEmail(subscription, daysRemaining) {
       to: student.email,
       name: studentName,
       subject: `Your ${community.name} subscription expires in ${daysRemaining} day${daysRemaining > 1 ? "s" : ""}`,
+      useTutorLearnerBranding: true,
       htmlBody: `
         <h2>Subscription Expiring Soon</h2>
         <p>Your subscription to <strong>${community.name}</strong> will expire in ${daysRemaining} day${daysRemaining > 1 ? "s" : ""}.</p>
@@ -320,6 +321,7 @@ async function attemptAutoRenewal(subscription) {
       to: student.email,
       name: studentName,
       subject: `Your ${community.name} subscription has been renewed`,
+      useTutorLearnerBranding: true,
       htmlBody: `
         <h2>Subscription Renewed</h2>
         <p>Your subscription to <strong>${community.name}</strong> has been automatically renewed.</p>
@@ -392,6 +394,7 @@ async function expireSubscription(subscription) {
           to: student.email,
           name: studentName,
           subject: `Your ${community.name} subscription has expired`,
+          useTutorLearnerBranding: true,
           htmlBody: `
             <h2>Subscription Expired</h2>
             <p>Your subscription to <strong>${community.name}</strong> has expired.</p>
