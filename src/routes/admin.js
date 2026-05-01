@@ -234,6 +234,7 @@ router.get("/students", adminAuthorize, requireSuperAdmin, getAllStudents);
 router.get("/students/stats", adminAuthorize, requireSuperAdmin, getStudentStats);
 router.get("/students/:id", adminAuthorize, requireSuperAdmin, getStudentById);
 router.get("/students/:id/full", adminAuthorize, requireSuperAdmin, getStudentFullDetails);
+router.get("/students/:id/kyc", adminAuthorize, requireSuperAdmin, getStudentKycDocuments);
 router.post("/students", adminAuthorize, requireSuperAdmin, createStudent);
 router.put("/students/:id", adminAuthorize, requireSuperAdmin, updateStudent);
 router.patch("/students/:id/deactivate", adminAuthorize, requireSuperAdmin, deactivateStudent);

@@ -11,8 +11,15 @@ import { supabase } from "../../../utils/supabase.js";
  * GET /api/admin/students/:id/kyc
  */
 export const getStudentKycDocuments = TryCatchFunction(async (req, res) => {
-  const { id } = req.params;
+  const id = req.params.id ?? req.query.student_id;
   const userType = req.user?.userType;
+
+  if (!id) {
+    throw new ErrorClass(
+      "Student id is required (use GET /students/:id/kyc or ?student_id=)",
+      400,
+    );
+  }
 
   // Only admin can access
   if (userType !== "admin") {
