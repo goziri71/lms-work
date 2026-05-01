@@ -42,6 +42,7 @@ import {
   DigitalDownloads,
   DigitalDownloadPurchase,
   TutorSubscription,
+  TutorAccessCode,
   CoachingSession,
   CoachingParticipant,
   CoachingSessionPurchase,
@@ -442,6 +443,15 @@ export const setupAssociations = () => {
   AdminActivityLog.belongsTo(WspAdmin, {
     foreignKey: "admin_id",
     as: "admin",
+  });
+
+  WspAdmin.hasMany(TutorAccessCode, {
+    foreignKey: "created_by_admin_id",
+    as: "tutorAccessCodes",
+  });
+  TutorAccessCode.belongsTo(WspAdmin, {
+    foreignKey: "created_by_admin_id",
+    as: "creator",
   });
 
   // ============================================

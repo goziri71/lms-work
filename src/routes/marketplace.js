@@ -224,6 +224,7 @@ import {
   getSubscriptionLimits,
   getSubscriptionTiers,
 } from "../controllers/marketplace/tutorSubscription.js";
+import { redeemTutorAccessCode } from "../controllers/marketplace/tutorAccessCodeRedeem.js";
 import {
   getHoursBalance,
   purchaseHours,
@@ -809,6 +810,7 @@ router.post(
 router.get("/tutor/subscription/tiers", tutorAuthorize, getSubscriptionTiers);
 router.get("/tutor/subscription/limits", tutorAuthorize, getSubscriptionLimits);
 router.get("/tutor/subscription", tutorAuthorize, getSubscription);
+router.post("/tutor/subscription/redeem-code", tutorAuthorize, redeemTutorAccessCode);
 router.post("/tutor/subscription", tutorAuthorize, subscribe);
 
 // ============================================

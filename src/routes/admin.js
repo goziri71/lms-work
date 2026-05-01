@@ -202,6 +202,12 @@ import {
   getTutorRevenueDetails,
 } from "../controllers/admin/superAdmin/revenueManagement.js";
 
+import {
+  createTutorAccessCode,
+  listTutorAccessCodes,
+  revokeTutorAccessCode,
+} from "../controllers/admin/tutorAccessCodes.js";
+
 const router = express.Router();
 
 // ============================================
@@ -383,6 +389,26 @@ router.put("/tutors/organizations/:id/status", adminAuthorize, requireSuperAdmin
 router.put("/tutors/organizations/:id/commission", adminAuthorize, requireSuperAdmin, updateOrganizationCommissionRate);
 
 router.get("/tutors/stats", adminAuthorize, requireSuperAdmin, getTutorStats);
+
+// Tutor 3-month full-access codes (Super Admin only)
+router.post(
+  "/tutor-access-codes",
+  adminAuthorize,
+  requireSuperAdmin,
+  createTutorAccessCode,
+);
+router.get(
+  "/tutor-access-codes",
+  adminAuthorize,
+  requireSuperAdmin,
+  listTutorAccessCodes,
+);
+router.post(
+  "/tutor-access-codes/:id/revoke",
+  adminAuthorize,
+  requireSuperAdmin,
+  revokeTutorAccessCode,
+);
 
 // ============================================
 // STUDENT KYC MANAGEMENT (Super Admin Only)

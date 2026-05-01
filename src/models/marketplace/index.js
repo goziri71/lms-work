@@ -11,6 +11,7 @@ export { DigitalDownloads } from "./digitalDownloads.js";
 export { DigitalDownloadPurchase } from "./digitalDownloadPurchase.js";
 // Coaching and Subscription exports
 export { TutorSubscription, SUBSCRIPTION_TIERS } from "./tutorSubscription.js";
+export { TutorAccessCode } from "./tutorAccessCode.js";
 export { CoachingSession } from "./coachingSession.js";
 export { CoachingParticipant } from "./coachingParticipant.js";
 export { CoachingSessionPurchase } from "./coachingSessionPurchase.js";
