@@ -14,6 +14,84 @@ import {
   getCurrentActiveSemester,
 } from "../../../services/automaticCourseAllocationService.js";
 
+async function resolveTargetSemesterOrThrow(req) {
+  const body = req.body || {};
+  const q = req.query || {};
+  let academic_year = body.academic_year ?? q.academic_year;
+  let semester = body.semester ?? q.semester;
+
+  if (!academic_year || !semester) {
+    const current = await getCurrentActiveSemester();
+    if (!current) {
+      throw new ErrorClass(
+        "No active semester found. Pass academic_year and semester in the body or query.",
+        400,
+      );
+    }
+    academic_year = academic_year || current.academic_year?.toString();
+    semester = semester || current.semester?.toString();
+  }
+
+  return { academic_year, semester };
+}
+
+async function respondAfterAllocatingStudent(
+  req,
+  res,
+  student,
+  academic_year,
+  semester,
+) {
+  const id = student.id;
+  const result = await allocateCoursesForSingleStudent(
+    Number(id),
+    academic_year,
+    semester,
+  );
+
+  try {
+    if (req.user?.id) {
+      await logAdminActivity(
+        req.user.id,
+        "student_allocate_courses",
+        "student",
+        String(id),
+        {
+          academic_year,
+          semester,
+          matric_number: student.matric_number,
+          allocated: result.allocated,
+          skipped: result.skipped,
+          errors_count: result.errors?.length || 0,
+        },
+      );
+    }
+  } catch (logErr) {
+    console.error("Error logging admin activity:", logErr);
+  }
+
+  const hasMessage = Boolean(result.message);
+  res.status(200).json({
+    success: true,
+    message:
+      result.allocated > 0
+        ? `Allocated ${result.allocated} course(s) for this student.`
+        : hasMessage
+          ? result.message
+          : "No new courses allocated (already allocated or no matching WPU courses for this program, level, and semester).",
+    data: {
+      student_id: Number(id),
+      matric_number: student.matric_number ?? undefined,
+      academic_year,
+      semester,
+      allocated: result.allocated,
+      skipped: result.skipped,
+      errors: result.errors?.length ? result.errors : undefined,
+      message: hasMessage ? result.message : undefined,
+    },
+  });
+}
+
 // Helper function to get course price for semester
 const getCoursePriceForSemester = async (courseId, academicYear, semester) => {
   const pricing = await CourseSemesterPricing.findOne({
@@ -409,73 +487,49 @@ export const allocateCoursesToAllStudentsEndpoint = TryCatchFunction(
 export const allocateCoursesForOneStudentAdmin = TryCatchFunction(
   async (req, res) => {
     const { id } = req.params;
-    const body = req.body || {};
-    const q = req.query || {};
-    let academic_year = body.academic_year ?? q.academic_year;
-    let semester = body.semester ?? q.semester;
-
-    if (!academic_year || !semester) {
-      const current = await getCurrentActiveSemester();
-      if (!current) {
-        throw new ErrorClass(
-          "No active semester found. Pass academic_year and semester in the body or query.",
-          400,
-        );
-      }
-      academic_year = academic_year || current.academic_year?.toString();
-      semester = semester || current.semester?.toString();
-    }
+    const { academic_year, semester } = await resolveTargetSemesterOrThrow(req);
 
     const student = await Students.findByPk(id);
     if (!student) {
       throw new ErrorClass("Student not found", 404);
     }
 
-    const result = await allocateCoursesForSingleStudent(
-      Number(id),
-      academic_year,
-      semester,
-    );
+    await respondAfterAllocatingStudent(req, res, student, academic_year, semester);
+  },
+);
 
-    try {
-      if (req.user?.id) {
-        await logAdminActivity(
-          req.user.id,
-          "student_allocate_courses",
-          "student",
-          id,
-          {
-            academic_year,
-            semester,
-            allocated: result.allocated,
-            skipped: result.skipped,
-            errors_count: result.errors?.length || 0,
-          },
-        );
-      }
-    } catch (logErr) {
-      console.error("Error logging admin activity:", logErr);
+/**
+ * Same as allocate-courses by id, but looks up the student by matric number (case-insensitive).
+ * POST /api/admin/students/allocate-courses-by-matric
+ * Body or query: matric_number (required); academic_year, semester (optional)
+ */
+export const allocateCoursesForOneStudentByMatricAdmin = TryCatchFunction(
+  async (req, res) => {
+    const body = req.body || {};
+    const q = req.query || {};
+    const raw = body.matric_number ?? q.matric_number;
+    if (!raw || !String(raw).trim()) {
+      throw new ErrorClass(
+        "matric_number is required in the body or query string",
+        400,
+      );
     }
+    const normalized = String(raw).trim();
 
-    const hasMessage = Boolean(result.message);
-    res.status(200).json({
-      success: true,
-      message:
-        result.allocated > 0
-          ? `Allocated ${result.allocated} course(s) for this student.`
-          : hasMessage
-            ? result.message
-            : "No new courses allocated (already allocated or no matching WPU courses for this program, level, and semester).",
-      data: {
-        student_id: Number(id),
-        academic_year,
-        semester,
-        allocated: result.allocated,
-        skipped: result.skipped,
-        errors: result.errors?.length ? result.errors : undefined,
-        message: hasMessage ? result.message : undefined,
+    const student = await Students.findOne({
+      where: {
+        matric_number: { [Op.iLike]: normalized },
       },
     });
+    if (!student) {
+      throw new ErrorClass(
+        `No student found with matric_number: ${normalized}`,
+        404,
+      );
+    }
+
+    const { academic_year, semester } = await resolveTargetSemesterOrThrow(req);
+    await respondAfterAllocatingStudent(req, res, student, academic_year, semester);
   },
 );
 

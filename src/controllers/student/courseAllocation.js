@@ -12,6 +12,7 @@ import { GeneralSetup } from "../../models/settings/generalSetup.js";
 import { checkSchoolFeesPayment } from "../../services/paymentVerificationService.js";
 import { checkAndProgressStudentLevel } from "../../services/studentLevelProgressionService.js";
 import { getWalletBalance } from "../../services/walletBalanceService.js";
+import { allocateCoursesForSingleStudent } from "../../services/automaticCourseAllocationService.js";
 
 // Helper function to get course price for semester
 const getCoursePriceForSemester = async (courseId, academicYear, semester) => {
@@ -80,20 +81,25 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
         semester: null,
         allocated_courses: [],
         total_amount: 0,
+        course_count: 0,
         registration_deadline: null,
         deadline_passed: false,
       },
     });
   }
 
-  // Get allocated courses for current semester
-  const allocatedCourses = await CourseReg.findAll({
-    where: {
-      student_id: studentId,
-      academic_year: currentSemester.academic_year?.toString(),
-      semester: currentSemester.semester?.toString(),
-      registration_status: "allocated", // Only show unregistered allocations
-    },
+  const academicYearStr = currentSemester.academic_year?.toString();
+  const semesterStr = currentSemester.semester?.toString();
+
+  const courseRegWhere = {
+    student_id: studentId,
+    academic_year: academicYearStr,
+    semester: semesterStr,
+    registration_status: "allocated",
+  };
+
+  let allocatedCourses = await CourseReg.findAll({
+    where: courseRegWhere,
     include: [
       {
         model: Courses,
@@ -111,6 +117,46 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
     ],
     order: [[{ model: Courses, as: "course" }, "course_code", "ASC"]],
   });
+
+  const schoolFeesPaid = await checkSchoolFeesPayment(
+    studentId,
+    academicYearStr,
+    semesterStr,
+  );
+
+  if (allocatedCourses.length === 0 && schoolFeesPaid) {
+    try {
+      await allocateCoursesForSingleStudent(
+        studentId,
+        academicYearStr,
+        semesterStr,
+      );
+      allocatedCourses = await CourseReg.findAll({
+        where: courseRegWhere,
+        include: [
+          {
+            model: Courses,
+            as: "course",
+            attributes: [
+              "id",
+              "title",
+              "course_code",
+              "course_unit",
+              "program_id",
+              "faculty_id",
+              "currency",
+            ],
+          },
+        ],
+        order: [[{ model: Courses, as: "course" }, "course_code", "ASC"]],
+      });
+    } catch (err) {
+      console.error(
+        "Paid school fees but lazy course allocation failed:",
+        err?.message || err,
+      );
+    }
+  }
 
   // Get exchange rate for currency conversion
   const generalSetup = await GeneralSetup.findOne({

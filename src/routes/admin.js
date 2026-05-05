@@ -120,6 +120,7 @@ import {
   allocateCourses,
   allocateCoursesToAllStudentsEndpoint,
   allocateCoursesForOneStudentAdmin,
+  allocateCoursesForOneStudentByMatricAdmin,
   getAllocatedCourses,
   removeAllocation,
   bulkRemoveAllocations,
@@ -233,6 +234,12 @@ router.get("/dashboard", adminAuthorize, requireSuperAdmin, getDashboardStats); 
 // ============================================
 router.get("/students", adminAuthorize, requireSuperAdmin, getAllStudents);
 router.get("/students/stats", adminAuthorize, requireSuperAdmin, getStudentStats);
+router.post(
+  "/students/allocate-courses-by-matric",
+  adminAuthorize,
+  requireSuperAdmin,
+  allocateCoursesForOneStudentByMatricAdmin,
+);
 router.get("/students/:id", adminAuthorize, requireSuperAdmin, getStudentById);
 router.get("/students/:id/full", adminAuthorize, requireSuperAdmin, getStudentFullDetails);
 router.get("/students/:id/kyc", adminAuthorize, requireSuperAdmin, getStudentKycDocuments);
