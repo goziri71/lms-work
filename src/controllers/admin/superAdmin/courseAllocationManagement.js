@@ -10,6 +10,7 @@ import { logAdminActivity } from "../../../middlewares/adminAuthorize.js";
 import { CourseSemesterPricing } from "../../../models/course/courseSemesterPricing.js";
 import {
   allocateCoursesToAllStudents,
+  allocateCoursesForSingleStudent,
   getCurrentActiveSemester,
 } from "../../../services/automaticCourseAllocationService.js";
 
@@ -398,6 +399,84 @@ export const allocateCoursesToAllStudentsEndpoint = TryCatchFunction(
       },
     });
   }
+);
+
+/**
+ * Run WPU auto-matching course allocation for a single student (e.g. paid school fees but has no CourseReg rows).
+ * POST /api/admin/students/:id/allocate-courses
+ * Optional body or query: academic_year, semester (defaults to current active semester)
+ */
+export const allocateCoursesForOneStudentAdmin = TryCatchFunction(
+  async (req, res) => {
+    const { id } = req.params;
+    const body = req.body || {};
+    const q = req.query || {};
+    let academic_year = body.academic_year ?? q.academic_year;
+    let semester = body.semester ?? q.semester;
+
+    if (!academic_year || !semester) {
+      const current = await getCurrentActiveSemester();
+      if (!current) {
+        throw new ErrorClass(
+          "No active semester found. Pass academic_year and semester in the body or query.",
+          400,
+        );
+      }
+      academic_year = academic_year || current.academic_year?.toString();
+      semester = semester || current.semester?.toString();
+    }
+
+    const student = await Students.findByPk(id);
+    if (!student) {
+      throw new ErrorClass("Student not found", 404);
+    }
+
+    const result = await allocateCoursesForSingleStudent(
+      Number(id),
+      academic_year,
+      semester,
+    );
+
+    try {
+      if (req.user?.id) {
+        await logAdminActivity(
+          req.user.id,
+          "student_allocate_courses",
+          "student",
+          id,
+          {
+            academic_year,
+            semester,
+            allocated: result.allocated,
+            skipped: result.skipped,
+            errors_count: result.errors?.length || 0,
+          },
+        );
+      }
+    } catch (logErr) {
+      console.error("Error logging admin activity:", logErr);
+    }
+
+    const hasMessage = Boolean(result.message);
+    res.status(200).json({
+      success: true,
+      message:
+        result.allocated > 0
+          ? `Allocated ${result.allocated} course(s) for this student.`
+          : hasMessage
+            ? result.message
+            : "No new courses allocated (already allocated or no matching WPU courses for this program, level, and semester).",
+      data: {
+        student_id: Number(id),
+        academic_year,
+        semester,
+        allocated: result.allocated,
+        skipped: result.skipped,
+        errors: result.errors?.length ? result.errors : undefined,
+        message: hasMessage ? result.message : undefined,
+      },
+    });
+  },
 );
 
 /**

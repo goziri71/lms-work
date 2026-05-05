@@ -6,6 +6,176 @@ import { Semester } from "../models/auth/semester.js";
 import { CourseSemesterPricing } from "../models/course/courseSemesterPricing.js";
 import { GeneralSetup } from "../models/settings/generalSetup.js";
 
+function assertSemesterStr(semester) {
+  const semesterStr = semester?.toString().toUpperCase();
+  if (semesterStr !== "1ST" && semesterStr !== "2ND") {
+    throw new Error(
+      `Invalid semester format. Must be "1ST" or "2ND", got: ${semester}`
+    );
+  }
+  return semesterStr;
+}
+
+/**
+ * Auto-allocation for one student row (WPU courses matching program, level, semester).
+ * @param {import("sequelize").Model} student - must include id, program_id, facaulty_id, level, currency
+ */
+async function allocateMatchingWpuCoursesForStudent(
+  student,
+  academicYearStr,
+  semesterStr,
+  exchangeRate,
+  allocationDate,
+  today
+) {
+  const results = { allocated: 0, skipped: 0, errors: [] };
+
+  if (!student.program_id || !student.level) {
+    results.skipped++;
+    return results;
+  }
+
+  const studentLevel = parseInt(student.level, 10);
+  if (isNaN(studentLevel)) {
+    results.skipped++;
+    return results;
+  }
+
+  const courseWhere = {
+    program_id: student.program_id,
+    course_level: studentLevel,
+    semester: semesterStr,
+    owner_type: { [Op.in]: ["wpu", "wsp"] },
+    is_marketplace: false,
+  };
+
+  const matchingCourses = await Courses.findAll({
+    where: courseWhere,
+    attributes: ["id", "price", "title", "course_code", "currency"],
+  });
+
+  if (matchingCourses.length === 0) {
+    return results;
+  }
+
+  for (const course of matchingCourses) {
+    try {
+      const existing = await CourseReg.findOne({
+        where: {
+          student_id: student.id,
+          course_id: course.id,
+          academic_year: academicYearStr,
+          semester: semesterStr,
+        },
+      });
+
+      if (existing) {
+        results.skipped++;
+        continue;
+      }
+
+      let coursePrice = 0;
+      let courseCurrency = "NGN";
+
+      const semesterPricing = await CourseSemesterPricing.findOne({
+        where: {
+          course_id: course.id,
+          academic_year: academicYearStr,
+          semester: semesterStr,
+        },
+      });
+
+      if (semesterPricing) {
+        coursePrice = parseFloat(semesterPricing.price) || 0;
+        courseCurrency = semesterPricing.currency || course.currency || "NGN";
+      } else {
+        coursePrice = parseFloat(course.price) || 0;
+        courseCurrency = course.currency || "NGN";
+      }
+
+      const studentCurrency = student.currency || "NGN";
+      let finalPrice = coursePrice;
+      if (courseCurrency.toUpperCase() !== studentCurrency.toUpperCase()) {
+        if (
+          courseCurrency.toUpperCase() === "USD" &&
+          studentCurrency.toUpperCase() === "NGN"
+        ) {
+          finalPrice = coursePrice * exchangeRate;
+        } else if (
+          courseCurrency.toUpperCase() === "NGN" &&
+          studentCurrency.toUpperCase() === "USD"
+        ) {
+          finalPrice = coursePrice / exchangeRate;
+        }
+        finalPrice = Math.round(finalPrice * 100) / 100;
+      }
+
+      await CourseReg.create({
+        student_id: student.id,
+        course_id: course.id,
+        academic_year: academicYearStr,
+        semester: semesterStr,
+        program_id: student.program_id,
+        facaulty_id: student.facaulty_id,
+        level: student.level,
+        registration_status: "allocated",
+        allocated_price: finalPrice,
+        allocated_at: allocationDate,
+        first_ca: 0,
+        second_ca: 0,
+        third_ca: 0,
+        exam_score: 0,
+        date: today,
+      });
+
+      results.allocated++;
+    } catch (error) {
+      results.errors.push({
+        student_id: student.id,
+        course_id: course.id,
+        course_code: course.course_code,
+        error: error.message,
+      });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Allocate matching WPU courses for one student (e.g. after school fees payment).
+ * Does not require admin_status active — same course-matching rules as bulk auto-allocation.
+ */
+export async function allocateCoursesForSingleStudent(studentId, academicYear, semester) {
+  const academicYearStr = academicYear?.toString();
+  const semesterStr = assertSemesterStr(semester);
+
+  const generalSetup = await GeneralSetup.findOne({
+    order: [["id", "DESC"]],
+  });
+  const exchangeRate = parseFloat(generalSetup?.rate || "1500");
+
+  const student = await Students.findByPk(studentId, {
+    attributes: ["id", "program_id", "facaulty_id", "level", "currency"],
+  });
+
+  if (!student) {
+    return { allocated: 0, skipped: 0, errors: [], message: "Student not found" };
+  }
+
+  const allocationDate = new Date();
+  const today = allocationDate.toISOString().split("T")[0];
+
+  return allocateMatchingWpuCoursesForStudent(
+    student,
+    academicYearStr,
+    semesterStr,
+    exchangeRate,
+    allocationDate,
+    today
+  );
+}
+
 /**
  * Automatically allocate courses to all active WPU students for a semester
  * Matches courses based on: program_id, course_level (vs student level), and semester
@@ -21,27 +191,17 @@ export async function allocateCoursesToAllStudents(academicYear, semester) {
     errors: [],
   };
 
-  // Convert academic year to string (database stores as VARCHAR)
   const academicYearStr = academicYear?.toString();
+  const semesterStr = assertSemesterStr(semester);
 
-  // Validate semester format
-  const semesterStr = semester?.toString().toUpperCase();
-  if (semesterStr !== "1ST" && semesterStr !== "2ND") {
-    throw new Error(
-      `Invalid semester format. Must be "1ST" or "2ND", got: ${semester}`
-    );
-  }
-
-  // Get exchange rate from system settings (USD to NGN)
   const generalSetup = await GeneralSetup.findOne({
     order: [["id", "DESC"]],
   });
-  const exchangeRate = parseFloat(generalSetup?.rate || "1500"); // Default 1500 if not set
+  const exchangeRate = parseFloat(generalSetup?.rate || "1500");
 
-  // Get all active WPU students
   const students = await Students.findAll({
     where: {
-      admin_status: "active", // Only active students
+      admin_status: "active",
     },
     attributes: ["id", "program_id", "facaulty_id", "level", "currency"],
   });
@@ -56,140 +216,18 @@ export async function allocateCoursesToAllStudents(academicYear, semester) {
   const allocationDate = new Date();
   const today = allocationDate.toISOString().split("T")[0];
 
-  // Process each student
   for (const student of students) {
-    // Skip if student doesn't have required fields
-    if (!student.program_id || !student.level) {
-      results.skipped++;
-      continue;
-    }
-
-    // Convert student level to integer for comparison
-    const studentLevel = parseInt(student.level, 10);
-    if (isNaN(studentLevel)) {
-      results.skipped++;
-      continue;
-    }
-
-    // Find matching courses for this student
-    const courseWhere = {
-      // Match program
-      program_id: student.program_id,
-      // Match level (course_level is INTEGER, student.level is STRING converted to INT)
-      course_level: studentLevel,
-      // Match semester
-      semester: semesterStr,
-      // Only WPU courses
-      owner_type: { [Op.in]: ["wpu", "wsp"] },
-      // Exclude marketplace courses
-      is_marketplace: false,
-    };
-
-    const matchingCourses = await Courses.findAll({
-      where: courseWhere,
-      attributes: ["id", "price", "title", "course_code", "currency"],
-    });
-
-    if (matchingCourses.length === 0) {
-      // No matching courses for this student - not an error, just skip
-      continue;
-    }
-
-    // Allocate each matching course
-    for (const course of matchingCourses) {
-      try {
-        // Check if already allocated/registered/cancelled
-        const existing = await CourseReg.findOne({
-          where: {
-            student_id: student.id,
-            course_id: course.id,
-            academic_year: academicYearStr,
-            semester: semesterStr,
-          },
-        });
-
-        if (existing) {
-          // Already exists - skip
-          results.skipped++;
-          continue;
-        }
-
-        // Get course price and currency
-        // First check CourseSemesterPricing (semester-specific pricing)
-        let coursePrice = 0;
-        let courseCurrency = "NGN";
-
-        const semesterPricing = await CourseSemesterPricing.findOne({
-          where: {
-            course_id: course.id,
-            academic_year: academicYearStr,
-            semester: semesterStr,
-          },
-        });
-
-        if (semesterPricing) {
-          coursePrice = parseFloat(semesterPricing.price) || 0;
-          courseCurrency = semesterPricing.currency || course.currency || "NGN";
-        } else {
-          // Fallback to course base price
-          coursePrice = parseFloat(course.price) || 0;
-          courseCurrency = course.currency || "NGN";
-        }
-
-        // Get student currency (default to NGN if not set)
-        const studentCurrency = student.currency || "NGN";
-
-        // Convert price if currencies differ
-        let finalPrice = coursePrice;
-        if (courseCurrency.toUpperCase() !== studentCurrency.toUpperCase()) {
-          if (
-            courseCurrency.toUpperCase() === "USD" &&
-            studentCurrency.toUpperCase() === "NGN"
-          ) {
-            // USD to NGN: multiply by exchange rate
-            finalPrice = coursePrice * exchangeRate;
-          } else if (
-            courseCurrency.toUpperCase() === "NGN" &&
-            studentCurrency.toUpperCase() === "USD"
-          ) {
-            // NGN to USD: divide by exchange rate
-            finalPrice = coursePrice / exchangeRate;
-          }
-          // For other currency pairs, keep original price (can be extended later)
-
-          // Round to 2 decimal places to avoid floating point precision issues
-          finalPrice = Math.round(finalPrice * 100) / 100;
-        }
-
-        // Create allocation
-        await CourseReg.create({
-          student_id: student.id,
-          course_id: course.id,
-          academic_year: academicYearStr,
-          semester: semesterStr,
-          program_id: student.program_id,
-          facaulty_id: student.facaulty_id,
-          level: student.level,
-          registration_status: "allocated",
-          allocated_price: finalPrice,
-          allocated_at: allocationDate,
-          first_ca: 0,
-          second_ca: 0,
-          third_ca: 0,
-          exam_score: 0,
-          date: today,
-        });
-
-        results.allocated++;
-      } catch (error) {
-        results.errors.push({
-          student_id: student.id,
-          course_id: course.id,
-          course_code: course.course_code,
-          error: error.message,
-        });
-      }
-    }
+    const part = await allocateMatchingWpuCoursesForStudent(
+      student,
+      academicYearStr,
+      semesterStr,
+      exchangeRate,
+      allocationDate,
+      today
+    );
+    results.allocated += part.allocated;
+    results.skipped += part.skipped;
+    results.errors.push(...part.errors);
   }
 
   return results;

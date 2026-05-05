@@ -119,6 +119,7 @@ import {
 import {
   allocateCourses,
   allocateCoursesToAllStudentsEndpoint,
+  allocateCoursesForOneStudentAdmin,
   getAllocatedCourses,
   removeAllocation,
   bulkRemoveAllocations,
@@ -243,6 +244,12 @@ router.post("/students/:id/reset-password", adminAuthorize, requireSuperAdmin, r
 router.put("/students/:id/admission-status", adminAuthorize, requireSuperAdmin, updateAdmissionStatus);
 router.put("/students/:id/graduation-status", adminAuthorize, requireSuperAdmin, updateGraduationStatus);
 router.post("/students/:id/wallet/transaction", adminAuthorize, requireSuperAdmin, manageStudentWallet);
+router.post(
+  "/students/:id/allocate-courses",
+  adminAuthorize,
+  requireSuperAdmin,
+  allocateCoursesForOneStudentAdmin,
+);
 
 // ============================================
 // STAFF MANAGEMENT (Super Admin Only)
@@ -278,6 +285,7 @@ router.delete("/programs/:id", adminAuthorize, requireSuperAdmin, deleteProgram)
 router.get("/courses", adminAuthorize, requireSuperAdmin, getAllCourses);
 router.get("/courses/stats", adminAuthorize, requireSuperAdmin, getCourseStats);
 router.get("/courses/program/:programId", adminAuthorize, requireSuperAdmin, getCoursesByProgram);
+router.get("/courses/allocations", adminAuthorize, requireSuperAdmin, getAllocatedCourses);
 router.get("/courses/:id", adminAuthorize, requireSuperAdmin, getCourseById);
 router.post("/courses", adminAuthorize, requireSuperAdmin, uploadCourseImageMiddleware, createCourse);
 router.put("/courses/:id", adminAuthorize, requireSuperAdmin, uploadCourseImageMiddleware, updateCourse);

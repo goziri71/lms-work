@@ -21,6 +21,7 @@ import {
   calculateLedgerBalance,
 } from "../../services/walletBalanceService.js";
 import { calculateSchoolFeesForStudent } from "../../services/schoolFeesCalculationService.js";
+import { allocateCoursesForSingleStudent } from "../../services/automaticCourseAllocationService.js";
 import { db } from "../../database/database.js";
 
 /**
@@ -612,6 +613,20 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
       },
     );
 
+    let courseAllocation = null;
+    try {
+      courseAllocation = await allocateCoursesForSingleStudent(
+        studentId,
+        academicYear,
+        semester,
+      );
+    } catch (allocErr) {
+      console.error(
+        "School fees paid but automatic course allocation failed:",
+        allocErr?.message || allocErr,
+      );
+    }
+
     res.status(200).json({
       success: true,
       message: "School fees paid successfully from wallet",
@@ -631,6 +646,17 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
           debited: amount,
           currency: currency,
         },
+        ...(courseAllocation && {
+          course_allocation: {
+            allocated: courseAllocation.allocated,
+            skipped: courseAllocation.skipped,
+            errors:
+              courseAllocation.errors?.length > 0
+                ? courseAllocation.errors
+                : undefined,
+            message: courseAllocation.message,
+          },
+        }),
       },
     });
   } catch (error) {
