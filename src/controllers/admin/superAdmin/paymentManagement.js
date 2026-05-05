@@ -441,7 +441,6 @@ export const getPaymentOverview = TryCatchFunction(async (req, res) => {
  * Super Admin Only - For manual wallet corrections when automatic balance update fails
  */
 export const manageStudentWallet = TryCatchFunction(async (req, res) => {
-  const { id } = req.params;
   const {
     type,
     amount,
@@ -451,7 +450,17 @@ export const manageStudentWallet = TryCatchFunction(async (req, res) => {
     semester,
     academic_year,
     currency,
+    student_id: studentIdFromBody,
   } = req.body || {};
+
+  const rawId = req.params?.id ?? studentIdFromBody;
+  if (rawId === undefined || rawId === null || String(rawId).trim() === "") {
+    throw new ErrorClass(
+      "Student id is required in the URL (/students/:id/wallet/transaction) or as student_id in the body",
+      400,
+    );
+  }
+  const id = rawId;
 
   // Validate required fields
   if (!type || !amount || !service_name) {

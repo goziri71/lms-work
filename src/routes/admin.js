@@ -242,6 +242,7 @@ router.patch("/students/:id/activate", adminAuthorize, requireSuperAdmin, activa
 router.post("/students/:id/reset-password", adminAuthorize, requireSuperAdmin, resetStudentPassword);
 router.put("/students/:id/admission-status", adminAuthorize, requireSuperAdmin, updateAdmissionStatus);
 router.put("/students/:id/graduation-status", adminAuthorize, requireSuperAdmin, updateGraduationStatus);
+router.post("/students/:id/wallet/transaction", adminAuthorize, requireSuperAdmin, manageStudentWallet);
 
 // ============================================
 // STAFF MANAGEMENT (Super Admin Only)
@@ -344,6 +345,7 @@ router.get("/payments/school-fees/stats", adminAuthorize, requireSuperAdmin, get
 router.get("/payments/course-orders", adminAuthorize, requireSuperAdmin, getAllCourseOrders);
 router.get("/payments/course-orders/stats", adminAuthorize, requireSuperAdmin, getCourseOrderStats);
 router.get("/payments/overview", adminAuthorize, requireSuperAdmin, getPaymentOverview);
+// Legacy path: pass student_id in JSON body (same handler as POST /students/:id/wallet/transaction)
 router.post("/payments/wallet/manage", adminAuthorize, requireSuperAdmin, manageStudentWallet);
 
 // ============================================
