@@ -322,7 +322,7 @@ export const getStudentFullDetails = TryCatchFunction(async (req, res) => {
   if (currentSemester) {
     currentSemesterSchoolFees = await SchoolFees.findOne({
       where: {
-        student_id: id,
+        student_id: studentIdNum,
         academic_year: currentSemester.academic_year?.toString() || null,
         semester: currentSemester.semester?.toString() || null,
         status: "Paid", // Only check for paid records

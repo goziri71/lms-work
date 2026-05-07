@@ -236,6 +236,15 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
     : null;
   const deadlinePassed = deadline ? new Date() > deadline : false;
 
+  const registeredCount = await CourseReg.count({
+    where: {
+      student_id: studentId,
+      academic_year: academicYearStr,
+      semester: semesterStr,
+      registration_status: "registered",
+    },
+  });
+
   res.status(200).json({
     success: true,
     message: "Allocated courses retrieved successfully",
@@ -251,6 +260,8 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
       allocated_courses: coursesWithDetails,
       total_amount: totalAmount,
       course_count: allocatedCourses.length,
+      school_fees_paid: schoolFeesPaid,
+      registered_course_count: registeredCount,
       can_register: !deadlinePassed && allocatedCourses.length > 0,
     },
   });

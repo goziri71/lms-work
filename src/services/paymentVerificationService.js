@@ -1,8 +1,61 @@
-import { Op } from "sequelize";
+import { Op, Sequelize } from "sequelize";
 import { SchoolFees } from "../models/payment/schoolFees.js";
 import { CourseReg } from "../models/course_reg.js";
 import { Courses } from "../models/course/courses.js";
 import { Semester } from "../models/auth/semester.js";
+
+/**
+ * Paid school-fees row for this student and term (trim / case-safe on DB columns).
+ * @returns {Promise<import("sequelize").Model|null>}
+ */
+export async function findPaidSchoolFeeForSemester(
+  studentId,
+  academicYear,
+  semester = null
+) {
+  const sid = Number(studentId);
+  if (!Number.isInteger(sid) || sid <= 0) {
+    return null;
+  }
+
+  const ay =
+    academicYear != null && String(academicYear).trim() !== ""
+      ? String(academicYear).trim()
+      : null;
+  if (!ay) {
+    return null;
+  }
+
+  const sem =
+    semester != null && String(semester).trim() !== ""
+      ? String(semester).trim().toUpperCase()
+      : null;
+
+  const andConds = [
+    Sequelize.where(
+      Sequelize.fn("TRIM", Sequelize.col("academic_year")),
+      ay
+    ),
+  ];
+
+  if (sem) {
+    andConds.push(
+      Sequelize.where(
+        Sequelize.fn("UPPER", Sequelize.fn("TRIM", Sequelize.col("semester"))),
+        sem
+      )
+    );
+  }
+
+  return SchoolFees.findOne({
+    where: {
+      student_id: sid,
+      status: "Paid",
+      [Op.and]: andConds,
+    },
+    order: [["id", "DESC"]],
+  });
+}
 
 /**
  * Check if student has paid school fees for the given academic year and semester
@@ -17,22 +70,11 @@ export async function checkSchoolFeesPayment(
   academicYear,
   semester = null
 ) {
-  const where = {
-    student_id: studentId,
-    academic_year: academicYear,
-    status: "Paid",
-  };
-
-  // If semester is provided, check for that specific semester
-  // If semester is null, check if any payment exists for the academic year (backward compatibility)
-  if (semester) {
-    where.semester = semester;
-  }
-
-  const payment = await SchoolFees.findOne({
-    where,
-  });
-
+  const payment = await findPaidSchoolFeeForSemester(
+    studentId,
+    academicYear,
+    semester
+  );
   return !!payment;
 }
 

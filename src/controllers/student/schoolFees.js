@@ -2,6 +2,7 @@ import { Op, Transaction } from "sequelize";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { Students } from "../../models/auth/student.js";
+import { CourseReg } from "../../models/course_reg.js";
 import { SchoolFees } from "../../models/payment/schoolFees.js";
 import { SchoolFeesConfiguration } from "../../models/payment/schoolFeesConfiguration.js";
 import { Funding } from "../../models/payment/funding.js";
@@ -22,6 +23,7 @@ import {
 } from "../../services/walletBalanceService.js";
 import { calculateSchoolFeesForStudent } from "../../services/schoolFeesCalculationService.js";
 import { allocateCoursesForSingleStudent } from "../../services/automaticCourseAllocationService.js";
+import { findPaidSchoolFeeForSemester } from "../../services/paymentVerificationService.js";
 import { db } from "../../database/database.js";
 
 /**
@@ -89,16 +91,12 @@ export const getMySchoolFees = TryCatchFunction(async (req, res) => {
     student.currency,
   );
 
-  // Check if student has already paid for this semester
-  const existingPayment = await SchoolFees.findOne({
-    where: {
-      student_id: studentId,
-      academic_year: academicYear,
-      semester: semester,
-      status: "Paid",
-    },
-    order: [["id", "DESC"]],
-  });
+  // Check if student has already paid for this semester (match DB trim/case)
+  const existingPayment = await findPaidSchoolFeeForSemester(
+    studentId,
+    academicYear,
+    semester
+  );
 
   const amount = feesCalculation.amount;
   const currency = feesCalculation.currency;
@@ -556,6 +554,12 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
           { transaction },
         );
 
+        const levelForTerm =
+          lockedStudent.level != null &&
+          String(lockedStudent.level).trim() !== ""
+            ? lockedStudent.level.toString().substring(0, 11)
+            : null;
+
         const schoolFeeData = {
           student_id: studentId,
           amount: Math.round(amount),
@@ -570,9 +574,7 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
             ? lockedStudent.matric_number.toString().substring(0, 40)
             : null,
           type: "School Fees",
-          student_level: lockedStudent.level
-            ? lockedStudent.level.toString().substring(0, 11)
-            : null,
+          student_level: levelForTerm,
           currency: currency,
         };
 
@@ -604,6 +606,19 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
           });
           throw createError;
         }
+
+        await CourseReg.update(
+          { level: levelForTerm },
+          {
+            where: {
+              student_id: studentId,
+              academic_year: academicYear,
+              semester: semester,
+              registration_status: { [Op.in]: ["allocated", "registered"] },
+            },
+            transaction,
+          },
+        );
 
         return {
           schoolFee: created,

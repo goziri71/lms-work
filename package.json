@@ -26,7 +26,9 @@
     "migrate:marketplace-enum": "node scripts/migrate-marketplace-transaction-enum.js",
     "migrate:wpu-uploads": "node src/scripts/migrateWpuUploads.js",
     "migrate:tutor-transfer-pin": "node scripts/migrate-add-tutor-transfer-pin.js",
-    "migrate:platform-payout-fee": "node scripts/migrate-platform-payout-fee-db.js"
+    "migrate:platform-payout-fee": "node scripts/migrate-platform-payout-fee-db.js",
+    "scan:level-inconsistencies": "node scripts/scan-student-level-inconsistencies.js",
+    "sync:course-reg-level": "node scripts/sync-course-reg-level-from-student.js"
   },
   "keywords": [],
   "author": "",
