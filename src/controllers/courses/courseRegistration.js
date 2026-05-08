@@ -9,6 +9,7 @@ import { Funding } from "../../models/payment/funding.js";
 import { checkSchoolFeesPayment } from "../../services/paymentVerificationService.js";
 import { checkAndProgressStudentLevel } from "../../services/studentLevelProgressionService.js";
 import { getWalletBalance } from "../../services/walletBalanceService.js";
+import { levelStringFromCourse } from "../../utils/courseCatalogLevel.js";
 
 /**
  * STUDENT REGISTER FOR COURSE(S)
@@ -211,7 +212,13 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
       date: registrationDate,
       semester: semester,
       academic_year: academic_year,
-      level: level || student.level || "100",
+      level:
+        levelStringFromCourse(
+          courses.find((c) => c.id === courseDetails[0]?.course_id),
+        ) ||
+        level ||
+        student.level ||
+        "100",
     });
 
     // Create Funding transaction (Debit)
@@ -245,15 +252,22 @@ export const registerCourse = TryCatchFunction(async (req, res) => {
     });
   }
 
+  const courseById = new Map(courses.map((c) => [c.id, c]));
+
   // Create registrations for all courses
   const registrations = [];
   for (const courseDetail of courseDetails) {
+    const courseRow = courseById.get(courseDetail.course_id);
     const registration = await CourseReg.create({
       student_id: studentId,
       course_id: courseDetail.course_id,
       academic_year: academic_year,
       semester: semester,
-      level: level || student.level || "100",
+      level:
+        levelStringFromCourse(courseRow) ||
+        level ||
+        student.level ||
+        "100",
       course_reg_id: courseOrder ? courseOrder.id : null,
       registration_status: "registered",
       registered_at: registrationDate,

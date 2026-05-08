@@ -13,6 +13,7 @@ import {
   allocateCoursesForSingleStudent,
   getCurrentActiveSemester,
 } from "../../../services/automaticCourseAllocationService.js";
+import { levelStringFromCourse } from "../../../utils/courseCatalogLevel.js";
 
 async function resolveTargetSemesterOrThrow(req) {
   const body = req.body || {};
@@ -298,6 +299,7 @@ export const allocateCourses = TryCatchFunction(async (req, res) => {
             );
             await existing.update({
               allocated_price: currentPrice,
+              level: levelStringFromCourse(course) ?? existing.level,
             });
             results.skipped++;
           } else {
@@ -321,7 +323,7 @@ export const allocateCourses = TryCatchFunction(async (req, res) => {
           semester: semester.toString(),
           program_id: student.program_id,
           facaulty_id: student.facaulty_id,
-          level: student.level,
+          level: levelStringFromCourse(course) ?? student.level,
           registration_status: "allocated",
           allocated_price: price,
           allocated_at: allocationDate,

@@ -13,6 +13,7 @@ import { checkSchoolFeesPayment } from "../../services/paymentVerificationServic
 import { checkAndProgressStudentLevel } from "../../services/studentLevelProgressionService.js";
 import { getWalletBalance } from "../../services/walletBalanceService.js";
 import { allocateCoursesForSingleStudent } from "../../services/automaticCourseAllocationService.js";
+import { levelStringFromCourse } from "../../utils/courseCatalogLevel.js";
 
 // Helper function to get course price for semester
 const getCoursePriceForSemester = async (courseId, academicYear, semester) => {
@@ -369,7 +370,7 @@ export const registerAllocatedCourses = TryCatchFunction(async (req, res) => {
       {
         model: Courses,
         as: "course",
-        attributes: ["id", "title", "course_code", "price", "currency"],
+        attributes: ["id", "title", "course_code", "price", "currency", "course_level"],
       },
     ],
   });
@@ -486,7 +487,8 @@ export const registerAllocatedCourses = TryCatchFunction(async (req, res) => {
     date: new Date(),
     semester: currentSemester.semester?.toString(),
     academic_year: currentSemester.academic_year?.toString(),
-    level: student.level,
+    level:
+      levelStringFromCourse(allocatedCourses[0]?.course) ?? student.level,
   });
 
   // Generate transaction reference for course registration
@@ -526,6 +528,7 @@ export const registerAllocatedCourses = TryCatchFunction(async (req, res) => {
       course_reg_id: courseOrder.id,
       registered_at: registrationDate,
       allocated_price: currentPrice, // Update to current price
+      level: levelStringFromCourse(allocation.course) ?? allocation.level,
     });
   }
 

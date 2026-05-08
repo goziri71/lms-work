@@ -5,6 +5,7 @@ import { CourseReg } from "../models/course_reg.js";
 import { Semester } from "../models/auth/semester.js";
 import { CourseSemesterPricing } from "../models/course/courseSemesterPricing.js";
 import { GeneralSetup } from "../models/settings/generalSetup.js";
+import { levelStringFromCourse } from "../utils/courseCatalogLevel.js";
 
 function assertSemesterStr(semester) {
   const semesterStr = semester?.toString().toUpperCase();
@@ -51,7 +52,7 @@ async function allocateMatchingWpuCoursesForStudent(
 
   const matchingCourses = await Courses.findAll({
     where: courseWhere,
-    attributes: ["id", "price", "title", "course_code", "currency"],
+    attributes: ["id", "price", "title", "course_code", "currency", "course_level"],
   });
 
   if (matchingCourses.length === 0) {
@@ -117,7 +118,7 @@ async function allocateMatchingWpuCoursesForStudent(
         semester: semesterStr,
         program_id: student.program_id,
         facaulty_id: student.facaulty_id,
-        level: student.level,
+        level: levelStringFromCourse(course) ?? String(student.level),
         registration_status: "allocated",
         allocated_price: finalPrice,
         allocated_at: allocationDate,

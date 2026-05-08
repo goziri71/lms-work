@@ -8,6 +8,7 @@ import { Program } from "../../models/program/program.js";
 import { Faculty } from "../../models/faculty/faculty.js";
 import { Op } from "sequelize";
 import { checkCourseFeesPayment } from "../../services/paymentVerificationService.js";
+import { levelStringFromCourse } from "../../utils/courseCatalogLevel.js";
 
 export const getStudentCourses = TryCatchFunction(async (req, res) => {
   // Accept either /student/:startYear/:endYear/:semester or query params
@@ -114,7 +115,14 @@ export const getStudentCourses = TryCatchFunction(async (req, res) => {
   // Add paid boolean to each course
   const coursesWithPaidStatus = await Promise.all(
     data.map(async (course) => {
+      const catalogLevel = levelStringFromCourse(course);
       const courseData = course.toJSON();
+      if (catalogLevel && courseData.registration) {
+        courseData.registration = {
+          ...courseData.registration,
+          level: catalogLevel,
+        };
+      }
       const registration = courseData.registration;
 
       // Determine if course is paid

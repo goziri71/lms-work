@@ -2,7 +2,6 @@ import { Op, Transaction } from "sequelize";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { Students } from "../../models/auth/student.js";
-import { CourseReg } from "../../models/course_reg.js";
 import { SchoolFees } from "../../models/payment/schoolFees.js";
 import { SchoolFeesConfiguration } from "../../models/payment/schoolFeesConfiguration.js";
 import { Funding } from "../../models/payment/funding.js";
@@ -607,14 +606,20 @@ export const paySchoolFeesFromWallet = TryCatchFunction(async (req, res) => {
           throw createError;
         }
 
-        await CourseReg.update(
-          { level: levelForTerm },
+        await db.query(
+          `UPDATE course_reg AS cr
+           SET level = LEFT(CAST(c.course_level AS VARCHAR(10)), 5)
+           FROM courses c
+           WHERE cr.course_id = c.id
+             AND cr.student_id = :studentId
+             AND TRIM(cr.academic_year) = TRIM(:academicYear)
+             AND UPPER(TRIM(cr.semester)) = UPPER(TRIM(:semester))
+             AND cr.registration_status IN ('allocated', 'registered')`,
           {
-            where: {
-              student_id: studentId,
-              academic_year: academicYear,
-              semester: semester,
-              registration_status: { [Op.in]: ["allocated", "registered"] },
+            replacements: {
+              studentId,
+              academicYear,
+              semester,
             },
             transaction,
           },
