@@ -159,6 +159,31 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
     }
   }
 
+  const rowsForDisplay = await CourseReg.findAll({
+    where: {
+      student_id: studentId,
+      academic_year: academicYearStr,
+      semester: semesterStr,
+      registration_status: { [Op.in]: ["allocated", "registered"] },
+    },
+    include: [
+      {
+        model: Courses,
+        as: "course",
+        attributes: [
+          "id",
+          "title",
+          "course_code",
+          "course_unit",
+          "program_id",
+          "faculty_id",
+          "currency",
+        ],
+      },
+    ],
+    order: [[{ model: Courses, as: "course" }, "course_code", "ASC"]],
+  });
+
   // Get exchange rate for currency conversion
   const generalSetup = await GeneralSetup.findOne({
     order: [["id", "DESC"]],
@@ -174,7 +199,7 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
   // Calculate total amount using CURRENT prices (not allocated prices)
   let totalAmount = 0;
   const coursesWithDetails = await Promise.all(
-    allocatedCourses.map(async (allocation) => {
+    rowsForDisplay.map(async (allocation) => {
       // Get current price for this course in this semester
       const semesterPricing = await CourseSemesterPricing.findOne({
         where: {
@@ -211,7 +236,9 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
         priceInStudentCurrency = Math.round(priceInStudentCurrency * 100) / 100;
       }
 
-      totalAmount += priceInStudentCurrency;
+      if (allocation.registration_status === "allocated") {
+        totalAmount += priceInStudentCurrency;
+      }
 
       return {
         allocation_id: allocation.id,
@@ -227,6 +254,8 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
           ? parseFloat(allocation.allocated_price)
           : null,
         allocated_at: allocation.allocated_at,
+        registration_status: allocation.registration_status,
+        already_registered: allocation.registration_status === "registered",
       };
     })
   );
@@ -260,7 +289,7 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
       },
       allocated_courses: coursesWithDetails,
       total_amount: totalAmount,
-      course_count: allocatedCourses.length,
+      course_count: rowsForDisplay.length,
       school_fees_paid: schoolFeesPaid,
       registered_course_count: registeredCount,
       can_register: !deadlinePassed && allocatedCourses.length > 0,

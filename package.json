@@ -28,7 +28,8 @@
     "migrate:tutor-transfer-pin": "node scripts/migrate-add-tutor-transfer-pin.js",
     "migrate:platform-payout-fee": "node scripts/migrate-platform-payout-fee-db.js",
     "scan:level-inconsistencies": "node scripts/scan-student-level-inconsistencies.js",
-    "sync:course-reg-level": "node scripts/sync-course-reg-level-from-student.js"
+    "sync:course-reg-level": "node scripts/sync-course-reg-level-from-student.js",
+    "mark:legacy-course-reg-paid": "node scripts/mark-legacy-course-registration-paid.js"
   },
   "keywords": [],
   "author": "",
