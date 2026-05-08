@@ -105,6 +105,7 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
       {
         model: Courses,
         as: "course",
+        required: true,
         attributes: [
           "id",
           "title",
@@ -138,6 +139,7 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
           {
             model: Courses,
             as: "course",
+            required: true,
             attributes: [
               "id",
               "title",
@@ -170,6 +172,7 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
       {
         model: Courses,
         as: "course",
+        required: true,
         attributes: [
           "id",
           "title",
@@ -196,9 +199,8 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
   });
   const studentCurrency = (student?.currency || "NGN").toUpperCase();
 
-  // Calculate total amount using CURRENT prices (not allocated prices)
-  let totalAmount = 0;
-  const coursesWithDetails = await Promise.all(
+  // Per-row current prices; checkout total computed after dropping invalid rows
+  const coursesWithDetailsRaw = await Promise.all(
     rowsForDisplay.map(async (allocation) => {
       // Get current price for this course in this semester
       const semesterPricing = await CourseSemesterPricing.findOne({
@@ -236,10 +238,6 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
         priceInStudentCurrency = Math.round(priceInStudentCurrency * 100) / 100;
       }
 
-      if (allocation.registration_status === "allocated") {
-        totalAmount += priceInStudentCurrency;
-      }
-
       return {
         allocation_id: allocation.id,
         course: {
@@ -259,6 +257,14 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
       };
     })
   );
+
+  const coursesWithDetails = coursesWithDetailsRaw.filter(
+    (d) => d.course != null && d.course.id != null,
+  );
+
+  const totalAmount = coursesWithDetails
+    .filter((d) => d.registration_status === "allocated")
+    .reduce((sum, d) => sum + d.price, 0);
 
   // Check if deadline has passed
   const deadline = currentSemester.registration_deadline
@@ -289,7 +295,7 @@ export const getMyAllocatedCourses = TryCatchFunction(async (req, res) => {
       },
       allocated_courses: coursesWithDetails,
       total_amount: totalAmount,
-      course_count: rowsForDisplay.length,
+      course_count: coursesWithDetails.length,
       school_fees_paid: schoolFeesPaid,
       registered_course_count: registeredCount,
       can_register: !deadlinePassed && allocatedCourses.length > 0,
