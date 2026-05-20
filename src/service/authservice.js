@@ -6,6 +6,23 @@ import crypto from "crypto"; // For MD5 hashing
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret";
 const REFRESH_SECRET = process.env.REFRESH_TOKEN_SECRET || "refresh-secret";
 
+const ACCESS_TOKEN_EXPIRES_STUDENT = "24h";
+const ACCESS_TOKEN_EXPIRES_DEFAULT = "4h";
+const ACCESS_TOKEN_EXPIRES_STUDENT_SECONDS = 86400;
+const ACCESS_TOKEN_EXPIRES_DEFAULT_SECONDS = 14400;
+
+export function getAccessTokenExpiresIn(userType) {
+  return userType === "student"
+    ? ACCESS_TOKEN_EXPIRES_STUDENT
+    : ACCESS_TOKEN_EXPIRES_DEFAULT;
+}
+
+export function getAccessTokenExpiresInSeconds(userType) {
+  return userType === "student"
+    ? ACCESS_TOKEN_EXPIRES_STUDENT_SECONDS
+    : ACCESS_TOKEN_EXPIRES_DEFAULT_SECONDS;
+}
+
 export class AuthService {
   constructor() {
     this.jwt = jwt;
@@ -29,9 +46,11 @@ export class AuthService {
   }
 
   // OPTIMIZATION: Faster token generation with cached secrets
-  async generateAccessToken(payload) {
+  async generateAccessToken(payload, expiresInOverride) {
+    const expiresIn =
+      expiresInOverride ?? getAccessTokenExpiresIn(payload.userType);
     return this.jwt.sign(payload, JWT_SECRET, {
-      expiresIn: "4h", // 4 hours instead of 30 minutes
+      expiresIn,
       algorithm: "HS256", // Explicit algorithm for speed
     });
   }

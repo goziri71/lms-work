@@ -2,7 +2,10 @@ import { Students } from "../../models/auth/student.js";
 import { Staff } from "../../models/auth/staff.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
-import { authService } from "../../service/authservice.js";
+import {
+  authService,
+  getAccessTokenExpiresInSeconds,
+} from "../../service/authservice.js";
 import { emailService } from "../../services/emailService.js";
 import { EmailLog } from "../../models/email/emailLog.js";
 import { EmailPreference } from "../../models/email/emailPreference.js";
@@ -89,7 +92,7 @@ export const studentLogin = TryCatchFunction(async (req, res) => {
         user: studentData,
         accessToken,
         userType: "student",
-        expiresIn: 14400, // 4 hours in seconds
+        expiresIn: getAccessTokenExpiresInSeconds("student"),
       },
     });
   } catch (error) {
@@ -163,7 +166,7 @@ export const staffLogin = TryCatchFunction(async (req, res) => {
         user: staffData,
         accessToken,
         userType: "staff",
-        expiresIn: 14400, // 4 hours in seconds
+        expiresIn: getAccessTokenExpiresInSeconds("staff"),
       },
     });
   } catch (error) {
@@ -370,7 +373,7 @@ export const login = TryCatchFunction(async (req, res) => {
       user: userData,
       accessToken,
       userType,
-      expiresIn: 14400, // 4 hours in seconds
+      expiresIn: getAccessTokenExpiresInSeconds(userType),
     },
   });
 });
