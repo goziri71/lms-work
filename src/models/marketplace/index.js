@@ -83,4 +83,9 @@ export { MailMessage } from "./mailMessage.js";
 // Job Board exports
 export { JobCache } from "./jobCache.js";
 export { SavedJob } from "./savedJob.js";
+// Event ticket sales
+export { TicketedEvent } from "./ticketedEvent.js";
+export { EventTicketTier } from "./eventTicketTier.js";
+export { EventTicketOrder } from "./eventTicketOrder.js";
+export { EventTicket } from "./eventTicket.js";
 

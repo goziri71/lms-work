@@ -173,6 +173,48 @@ import {
 } from "../controllers/public/salesPage.js";
 import { getTutorProductsBySlug } from "../controllers/public/tutorPublicStore.js";
 import {
+  browseEvents,
+  getEventBySlug,
+  getTutorPublicEvents,
+} from "../controllers/marketplace/publicEventTickets.js";
+import {
+  createEventOrder,
+  confirmEventOrderPayment,
+  payEventOrderWithWallet,
+  getEventOrderStatus,
+  cancelEventOrder,
+} from "../controllers/marketplace/eventTicketCheckout.js";
+import {
+  getTicketsByAccessToken,
+  downloadEventCalendarIcs,
+  resendTicketEmail,
+  getMyTickets,
+} from "../controllers/marketplace/eventTicketAccess.js";
+import {
+  uploadEventCover,
+  uploadEventCoverMiddleware,
+  createEvent,
+  listMyEvents,
+  getEventById,
+  updateEvent,
+  publishEvent,
+  unpublishEvent,
+  cancelEvent as cancelTicketedEvent,
+  createTier,
+  listTiers,
+  updateTier,
+  deleteTier,
+  getEventSales,
+  listAttendees,
+  exportAttendeesCsv,
+  listEventOrders,
+} from "../controllers/marketplace/tutorEventManagement.js";
+import {
+  checkInLookup,
+  checkInTicket,
+  checkInStats,
+} from "../controllers/marketplace/eventCheckIn.js";
+import {
   getFeaturedProducts,
   getTrendingProducts,
   getTopProducts,
@@ -430,6 +472,29 @@ router.get("/public/sales/:slug", getSalesPageBySlug);
 
 // Public Tutor Store - all products by sole tutor slug (No authentication required)
 router.get("/public/tutor/:slug/products", getTutorProductsBySlug);
+router.get("/public/tutor/:slug/events", getTutorPublicEvents);
+
+// Public ticketed events
+router.get("/events", browseEvents);
+router.get("/events/slug/:slug", optionalAuthorize, getEventBySlug);
+router.post("/events/:eventId/orders", optionalAuthorize, createEventOrder);
+router.post("/events/orders/:orderId/confirm-payment", confirmEventOrderPayment);
+router.post(
+  "/events/orders/:orderId/pay-with-wallet",
+  authorize,
+  payEventOrderWithWallet
+);
+router.get("/events/orders/:orderId/status", optionalAuthorize, getEventOrderStatus);
+router.post("/events/orders/:orderId/cancel", optionalAuthorize, cancelEventOrder);
+
+// Ticket access (magic link + student)
+router.get("/tickets/order/:accessToken", getTicketsByAccessToken);
+router.get(
+  "/tickets/order/:accessToken/calendar.ics",
+  downloadEventCalendarIcs
+);
+router.post("/tickets/order/:accessToken/resend-email", resendTicketEmail);
+router.get("/my-tickets", authorize, getMyTickets);
 
 // Top Products (No authentication required)
 router.get("/products/featured", getFeaturedProducts);
@@ -1248,5 +1313,33 @@ router.get(
   tutorAuthorize,
   getLearnerCourseProgress
 );
+
+// ============================================
+// TICKETED EVENTS (TUTOR / ORGANIZATION)
+// ============================================
+router.post(
+  "/tutor/events/upload-cover",
+  tutorAuthorize,
+  uploadEventCoverMiddleware,
+  uploadEventCover
+);
+router.post("/tutor/events", tutorAuthorize, createEvent);
+router.get("/tutor/events", tutorAuthorize, listMyEvents);
+router.get("/tutor/events/:id/sales", tutorAuthorize, getEventSales);
+router.get("/tutor/events/:id/attendees/export", tutorAuthorize, exportAttendeesCsv);
+router.get("/tutor/events/:id/attendees", tutorAuthorize, listAttendees);
+router.get("/tutor/events/:id/orders", tutorAuthorize, listEventOrders);
+router.post("/tutor/events/:id/check-in/lookup", tutorAuthorize, checkInLookup);
+router.post("/tutor/events/:id/check-in", tutorAuthorize, checkInTicket);
+router.get("/tutor/events/:id/check-in/stats", tutorAuthorize, checkInStats);
+router.get("/tutor/events/:id", tutorAuthorize, getEventById);
+router.put("/tutor/events/:id", tutorAuthorize, updateEvent);
+router.post("/tutor/events/:id/publish", tutorAuthorize, publishEvent);
+router.post("/tutor/events/:id/unpublish", tutorAuthorize, unpublishEvent);
+router.post("/tutor/events/:id/cancel", tutorAuthorize, cancelTicketedEvent);
+router.post("/tutor/events/:eventId/tiers", tutorAuthorize, createTier);
+router.get("/tutor/events/:eventId/tiers", tutorAuthorize, listTiers);
+router.put("/tutor/events/:eventId/tiers/:tierId", tutorAuthorize, updateTier);
+router.delete("/tutor/events/:eventId/tiers/:tierId", tutorAuthorize, deleteTier);
 
 export default router;

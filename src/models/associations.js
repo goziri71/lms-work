@@ -94,6 +94,10 @@ import {
   TutorAvailability,
   CoachingBookingRequest,
   SavedJob,
+  TicketedEvent,
+  EventTicketTier,
+  EventTicketOrder,
+  EventTicket,
 } from "./marketplace/index.js";
 
 export const setupAssociations = () => {
@@ -1461,5 +1465,57 @@ export const setupAssociations = () => {
   SavedJob.belongsTo(Students, {
     foreignKey: "student_id",
     as: "student",
+  });
+
+  // ============================================
+  // EVENT TICKET SALES ASSOCIATIONS
+  // ============================================
+  TicketedEvent.hasMany(EventTicketTier, {
+    foreignKey: "event_id",
+    as: "tiers",
+  });
+  EventTicketTier.belongsTo(TicketedEvent, {
+    foreignKey: "event_id",
+    as: "event",
+  });
+
+  TicketedEvent.hasMany(EventTicketOrder, {
+    foreignKey: "event_id",
+    as: "orders",
+  });
+  EventTicketOrder.belongsTo(TicketedEvent, {
+    foreignKey: "event_id",
+    as: "event",
+  });
+  EventTicketOrder.belongsTo(Students, {
+    foreignKey: "student_id",
+    as: "student",
+  });
+
+  TicketedEvent.hasMany(EventTicket, {
+    foreignKey: "event_id",
+    as: "tickets",
+  });
+  EventTicket.belongsTo(TicketedEvent, {
+    foreignKey: "event_id",
+    as: "event",
+  });
+
+  EventTicketOrder.hasMany(EventTicket, {
+    foreignKey: "order_id",
+    as: "tickets",
+  });
+  EventTicket.belongsTo(EventTicketOrder, {
+    foreignKey: "order_id",
+    as: "order",
+  });
+
+  EventTicketTier.hasMany(EventTicket, {
+    foreignKey: "tier_id",
+    as: "tickets",
+  });
+  EventTicket.belongsTo(EventTicketTier, {
+    foreignKey: "tier_id",
+    as: "tier",
   });
 };

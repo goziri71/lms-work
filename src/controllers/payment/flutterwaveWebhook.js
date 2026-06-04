@@ -66,12 +66,35 @@ export const flutterwaveWebhook = TryCatchFunction(async (req, res) => {
     });
 
     if (!paymentTransaction) {
-      // Client never called /api/wallet/fund — recover if charge carries meta.student_id from Flutterwave
       if (
         event.event === "charge.completed" &&
         isTransactionSuccessful(transactionData)
       ) {
         const meta = parseFlutterwaveMeta(transactionData);
+        if (
+          meta.type === "event_ticket" ||
+          (txRef && String(txRef).startsWith("EVT-ORDER-"))
+        ) {
+          try {
+            const { fulfillEventOrderFromWebhook } = await import(
+              "../../services/eventTicketService.js"
+            );
+            const evtResult = await fulfillEventOrderFromWebhook(
+              txRef,
+              transactionData
+            );
+            if (evtResult.handled) {
+              console.log(
+                `✅ Event ticket order fulfilled via webhook (${txRef})`
+              );
+              return res.status(200).json({ message: "Webhook received" });
+            }
+          } catch (evtErr) {
+            console.error("Event ticket webhook fulfillment failed:", evtErr);
+          }
+        }
+
+        // Client never called /api/wallet/fund — recover if charge carries meta.student_id from Flutterwave
         const rawSid = meta.student_id ?? meta.studentId;
         if (rawSid != null && String(rawSid).trim() !== "") {
           const sid = Number.parseInt(String(rawSid), 10);

@@ -430,6 +430,29 @@ connectDB().then(async (success) => {
       );
     }
 
+    // Expire stale pending event ticket orders (reservation release)
+    try {
+      const { expireStalePendingOrders } = await import(
+        "./src/services/eventTicketService.js"
+      );
+      setInterval(
+        async () => {
+          try {
+            await expireStalePendingOrders();
+          } catch (err) {
+            console.error("❌ Event ticket reservation cleanup:", err.message);
+          }
+        },
+        5 * 60 * 1000
+      );
+      console.log("⏰ Event ticket reservation cleanup started (every 5 min)");
+    } catch (error) {
+      console.warn(
+        "⚠️ Could not setup event ticket reservation cleanup:",
+        error.message
+      );
+    }
+
     // Product popularity score update job (runs daily)
     try {
       const { runProductPopularityUpdate } =
