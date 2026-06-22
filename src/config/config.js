@@ -7,6 +7,19 @@ import {
 
 dotenv.config({ debug: false });
 
+/** Render/small Postgres: keep total connections low (LMS + library pools). */
+const dbPoolMax = parseInt(process.env.DB_POOL_MAX || "5", 10);
+const dbPoolMin = parseInt(process.env.DB_POOL_MIN || "0", 10);
+const dbPoolAcquire = parseInt(process.env.DB_POOL_ACQUIRE_MS || "20000", 10);
+
+const sharedPool = {
+  max: dbPoolMax,
+  min: dbPoolMin,
+  acquire: dbPoolAcquire,
+  idle: 10000,
+  evict: 1000,
+};
+
 export const Config = {
   port: process.env.PORT || 3000,
   JWT_SECRET: process.env.JWT_SECRET,
@@ -35,13 +48,7 @@ export const Config = {
         rejectUnauthorized: false,
       },
     },
-    pool: {
-      max: 20, // Increased for better concurrency
-      min: 5,
-      acquire: 30000,
-      idle: 10000,
-      evict: 1000, // Check for idle connections every second
-    },
+    pool: sharedPool,
   },
 
   databaseLibrary: {
@@ -57,13 +64,7 @@ export const Config = {
         rejectUnauthorized: false,
       },
     },
-    pool: {
-      max: 20, // Increased for better concurrency
-      min: 5, // Keep connections warm
-      acquire: 30000,
-      idle: 10000,
-      evict: 1000, // Check for idle connections every second
-    },
+    pool: sharedPool,
   },
 
   // Tutor mailbox OAuth (optional; falls back to GOOGLE_* / APP_URL)

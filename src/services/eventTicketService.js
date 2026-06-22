@@ -566,8 +566,11 @@ export async function expireStalePendingOrders() {
       status: "pending",
       reservation_expires_at: { [Op.lt]: new Date() },
     },
-    limit: 100,
+    limit: 10,
+    attributes: ["id", "line_items", "status"],
   });
+
+  if (!stale.length) return;
 
   for (const order of stale) {
     const t = await db.transaction();
@@ -576,7 +579,7 @@ export async function expireStalePendingOrders() {
         lock: t.LOCK.UPDATE,
         transaction: t,
       });
-      if (locked.status !== "pending") {
+      if (!locked || locked.status !== "pending") {
         await t.commit();
         continue;
       }

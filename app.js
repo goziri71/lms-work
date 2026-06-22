@@ -120,6 +120,23 @@ app.use((error, req, res, next) => {
     });
   }
 
+  const msg = error.message || "";
+  const isDbPoolTimeout =
+    error.name === "SequelizeConnectionAcquireTimeoutError" ||
+    error.name === "SequelizeConnectionError" ||
+    msg.includes("Operation timeout") ||
+    msg.includes("Connection terminated");
+
+  if (isDbPoolTimeout) {
+    console.error("❌ Database pool/connection error:", msg);
+    return res.status(503).json({
+      status: false,
+      code: 503,
+      message:
+        "Database is temporarily unavailable. Please wait a moment and try again.",
+    });
+  }
+
   res.status(500).json({
     status: false,
     code: 500,
@@ -443,9 +460,11 @@ connectDB().then(async (success) => {
             console.error("❌ Event ticket reservation cleanup:", err.message);
           }
         },
-        5 * 60 * 1000
+        15 * 60 * 1000
       );
-      console.log("⏰ Event ticket reservation cleanup started (every 5 min)");
+      console.log(
+        "⏰ Event ticket reservation cleanup started (every 15 min)"
+      );
     } catch (error) {
       console.warn(
         "⚠️ Could not setup event ticket reservation cleanup:",
