@@ -8,16 +8,28 @@ import {
 dotenv.config({ debug: false });
 
 /** Render/small Postgres: keep total connections low (LMS + library pools). */
-const dbPoolMax = parseInt(process.env.DB_POOL_MAX || "5", 10);
+const dbPoolMax = parseInt(process.env.DB_POOL_MAX || "3", 10);
 const dbPoolMin = parseInt(process.env.DB_POOL_MIN || "0", 10);
-const dbPoolAcquire = parseInt(process.env.DB_POOL_ACQUIRE_MS || "20000", 10);
+const dbPoolAcquire = parseInt(process.env.DB_POOL_ACQUIRE_MS || "15000", 10);
 
-const sharedPool = {
+const createPoolConfig = () => ({
   max: dbPoolMax,
   min: dbPoolMin,
   acquire: dbPoolAcquire,
   idle: 10000,
   evict: 1000,
+});
+
+const pgDialectOptions = {
+  ssl: {
+    require: true,
+    rejectUnauthorized: false,
+  },
+  statement_timeout: parseInt(process.env.DB_STATEMENT_TIMEOUT_MS || "20000", 10),
+  idle_in_transaction_session_timeout: parseInt(
+    process.env.DB_IDLE_TX_TIMEOUT_MS || "10000",
+    10
+  ),
 };
 
 export const Config = {
@@ -42,13 +54,8 @@ export const Config = {
     dialect: "postgres",
     port: process.env.DB_PORT,
     url: process.env.DATABASE_URL,
-    dialectOptions: {
-      ssl: {
-        require: true,
-        rejectUnauthorized: false,
-      },
-    },
-    pool: sharedPool,
+    dialectOptions: pgDialectOptions,
+    pool: createPoolConfig(),
   },
 
   databaseLibrary: {
@@ -58,13 +65,8 @@ export const Config = {
     host: process.env.DATABASE_H,
     dialect: "postgres",
     port: process.env.DB_PORT,
-    dialectOptions: {
-      ssl: {
-        require: true,
-        rejectUnauthorized: false,
-      },
-    },
-    pool: sharedPool,
+    dialectOptions: pgDialectOptions,
+    pool: createPoolConfig(),
   },
 
   // Tutor mailbox OAuth (optional; falls back to GOOGLE_* / APP_URL)
