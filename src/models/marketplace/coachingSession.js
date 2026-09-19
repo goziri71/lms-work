@@ -121,7 +121,9 @@ export const CoachingSession = db.define(
         "Engineering & Physical Science",
         "Health & Medicine",
         "Arts & Humanities",
-        "Personal Development & Education"
+        "Personal Development & Education",
+        "Religious and Faith",
+        "Social and Impact"
       ),
       allowNull: true,
       comment: "Session category",
