@@ -297,15 +297,7 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Category is required", 400);
   }
 
-  if (
-    marketplace_status === "published" &&
-    (!price || parseFloat(price) <= 0)
-  ) {
-    throw new ErrorClass(
-      "Published courses must have a price greater than 0",
-      400
-    );
-  }
+  // Free courses (price 0 / pricing_type free) are allowed when publishing
   if (price && parseFloat(price) > 0 && (!price_usd || parseFloat(price_usd) <= 0)) {
     throw new ErrorClass(
       "Paid courses must include a valid USD price (price_usd)",
@@ -707,16 +699,8 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
     image_url,
   } = req.body;
 
-  // Validation for published status
-  if (marketplace_status === "published") {
-    const newPrice = price ? parseFloat(price) : parseFloat(course.price || 0);
-    if (newPrice <= 0) {
-      throw new ErrorClass(
-        "Published courses must have a price greater than 0",
-        400
-      );
-    }
-  }
+  // Validation for published status: free (0) or paid (>0) both allowed
+  // Paid courses must include USD price
   const effectivePrice = price !== undefined ? parseFloat(price || 0) : parseFloat(course.price || 0);
   const effectiveUsdPrice =
     price_usd !== undefined
@@ -1009,15 +993,21 @@ export const updateCourseStatus = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Course not found", 404);
   }
 
-  // Validation for publishing
+  // Validation for publishing: free (price 0) is allowed
+  const updatePayload = { marketplace_status };
   if (marketplace_status === "published") {
     const price = parseFloat(course.price || 0);
-    if (price <= 0) {
-      throw new ErrorClass("Cannot publish course without a valid price", 400);
+    if (Number.isNaN(price) || price < 0) {
+      throw new ErrorClass("Cannot publish course with an invalid price", 400);
+    }
+    if (price === 0) {
+      updatePayload.pricing_type = "free";
+    } else if (course.pricing_type === "free") {
+      updatePayload.pricing_type = "one_time";
     }
   }
 
-  await course.update({ marketplace_status });
+  await course.update(updatePayload);
 
   res.status(200).json({
     success: true,
@@ -1029,6 +1019,7 @@ export const updateCourseStatus = TryCatchFunction(async (req, res) => {
         id: course.id,
         title: course.title,
         marketplace_status: course.marketplace_status,
+        pricing_type: course.pricing_type,
       },
     },
   });

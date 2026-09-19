@@ -39,12 +39,12 @@ export async function connectDB() {
     await dbLibrary.authenticate();
     console.log("✅ Library Database connection established successfully.");
 
-    // Connect MongoDB (for chat)
+    // Connect MongoDB (for chat) — optional; server still starts if Atlas is unreachable
     const mongoUri = process.env.MONGO_URI;
     if (mongoUri) {
       try {
         await mongoose.connect(mongoUri, {
-          serverSelectionTimeoutMS: 10000, // 10 second timeout
+          serverSelectionTimeoutMS: 10000,
           socketTimeoutMS: 45000,
           maxPoolSize: 10,
           minPoolSize: 2,
@@ -52,15 +52,18 @@ export async function connectDB() {
         console.log("✅ MongoDB connection established successfully.");
         console.log(`   Database: ${mongoose.connection.db.databaseName}`);
       } catch (mongoError) {
-        console.error("❌ MongoDB connection failed:", mongoError.message);
-        console.error(
-          "   Make sure MONGO_URI is correct and IP is whitelisted in MongoDB Atlas"
+        console.warn(
+          "⚠️  MongoDB connection failed (chat may be unavailable):",
+          mongoError.message
         );
-        throw new Error("MongoDB connection required for chat features");
+        console.warn(
+          "   Check MONGO_URI / Atlas DNS / IP allowlist. Continuing without MongoDB."
+        );
       }
     } else {
-      console.error("❌ MONGO_URI not set in .env");
-      throw new Error("MONGO_URI required for chat features");
+      console.warn(
+        "⚠️  MONGO_URI not set — chat features unavailable. Continuing without MongoDB."
+      );
     }
 
     return true;

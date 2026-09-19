@@ -35,11 +35,12 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("This course is not available on marketplace", 400);
   }
 
-  // Validate course price
+  // Validate course price (0 = free course)
   const coursePrice = parseFloat(course.price || 0);
-  if (coursePrice <= 0) {
+  if (Number.isNaN(coursePrice) || coursePrice < 0) {
     throw new ErrorClass("Course price is invalid or not set", 400);
   }
+  const isFree = coursePrice === 0 || course.pricing_type === "free";
 
   // Verify student exists
   const student = await Students.findByPk(studentId);
@@ -102,61 +103,60 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
   }
 
   // All transactions use wallet balance (Flutterwave only funds wallet)
-  // Check wallet balance (with automatic migration of old balances)
-  // Wallet balance is always in student's currency
-  const { balance: walletBalance } = await getWalletBalance(studentId, true);
+  // Free courses skip wallet debit and revenue sharing
+  let walletBalance = 0;
+  let newBalance = 0;
+  let txRef = null;
+  let result = null;
 
-  // Check if wallet has sufficient balance (compare in student's currency)
-  if (walletBalance < priceInStudentCurrency) {
-    // Format amounts for display - always show in student's currency first
-    let requiredDisplay;
-    if (courseCurrency !== studentCurrency) {
-      // Show converted amount in student's currency, with original in parentheses
-      requiredDisplay = `${priceInStudentCurrency.toFixed(2)} ${studentCurrency} (${coursePrice} ${courseCurrency})`;
-    } else {
-      // Same currency - just show the amount
-      requiredDisplay = `${priceInStudentCurrency.toFixed(2)} ${studentCurrency}`;
+  if (!isFree) {
+    const wallet = await getWalletBalance(studentId, true);
+    walletBalance = wallet.balance;
+
+    if (walletBalance < priceInStudentCurrency) {
+      let requiredDisplay;
+      if (courseCurrency !== studentCurrency) {
+        requiredDisplay = `${priceInStudentCurrency.toFixed(2)} ${studentCurrency} (${coursePrice} ${courseCurrency})`;
+      } else {
+        requiredDisplay = `${priceInStudentCurrency.toFixed(2)} ${studentCurrency}`;
+      }
+
+      throw new ErrorClass(
+        `Insufficient wallet balance. Required: ${requiredDisplay}, Available: ${walletBalance.toFixed(2)} ${studentCurrency}. Please fund your wallet first.`,
+        400
+      );
     }
-    
-    throw new ErrorClass(
-      `Insufficient wallet balance. Required: ${requiredDisplay}, Available: ${walletBalance.toFixed(2)} ${studentCurrency}. Please fund your wallet first.`,
-      400
-    );
+
+    txRef = `MARKETPLACE-${course_id}-${Date.now()}`;
+    const today = new Date().toISOString().split("T")[0];
+    newBalance = walletBalance - priceInStudentCurrency;
+
+    await Funding.create({
+      student_id: studentId,
+      amount: priceInStudentCurrency,
+      type: "Debit",
+      service_name: "Marketplace Course Purchase",
+      ref: txRef,
+      date: today,
+      semester: null,
+      academic_year: null,
+      currency: studentCurrency,
+      balance: newBalance.toString(),
+    });
+
+    await student.update({
+      wallet_balance: newBalance,
+    });
+
+    result = await processMarketplacePurchase({
+      course_id,
+      student_id: studentId,
+      payment_reference: txRef,
+      payment_method: "wallet",
+    });
+  } else {
+    txRef = `MARKETPLACE-FREE-${course_id}-${Date.now()}`;
   }
-
-  // Generate transaction reference for wallet debit
-  const txRef = `MARKETPLACE-${course_id}-${Date.now()}`;
-  const today = new Date().toISOString().split("T")[0];
-
-  // Debit wallet (in student's currency)
-  const newBalance = walletBalance - priceInStudentCurrency;
-
-  // Create Funding transaction (Debit) - store in student's currency
-  await Funding.create({
-    student_id: studentId,
-    amount: priceInStudentCurrency, // DECIMAL(10, 2) - supports decimal amounts accurately
-    type: "Debit",
-    service_name: "Marketplace Course Purchase",
-    ref: txRef,
-    date: today,
-    semester: null, // Marketplace courses are not tied to semester
-    academic_year: null, // Marketplace courses are not tied to academic year
-    currency: studentCurrency, // Store in student's currency
-    balance: newBalance.toString(),
-  });
-
-  // Update student wallet_balance
-  await student.update({
-    wallet_balance: newBalance,
-  });
-
-  // Process marketplace purchase and distribute revenue
-  const result = await processMarketplacePurchase({
-    course_id,
-    student_id: studentId,
-    payment_reference: txRef,
-    payment_method: "wallet", // Always wallet for marketplace purchases
-  });
 
   // Enroll student in course with lifetime access (not tied to semester)
   const purchaseDate = new Date();
@@ -165,12 +165,12 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
   await CourseReg.create({
     student_id: studentId,
     course_id: course_id,
-    academic_year: null, // Lifetime access - not tied to academic year
-    semester: null, // Lifetime access - not tied to semester
+    academic_year: null,
+    semester: null,
     date: purchaseDateString,
     registration_status: "marketplace_purchased",
-    course_reg_id: null, // No CourseOrder (marketplace uses MarketplaceTransaction)
-    program_id: null, // Not part of program allocation
+    course_reg_id: null,
+    program_id: null,
     facaulty_id: null,
     level: null,
     first_ca: 0,
@@ -179,39 +179,56 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
     exam_score: 0,
   });
 
-  // Build response based on course type
   const isWPUCourse = course.owner_type === "wpu" || course.owner_type === "wsp";
-  
+
   res.status(201).json({
     success: true,
-    message: "Course purchased and enrollment successful",
+    message: isFree
+      ? "Free course enrolled successfully"
+      : "Course purchased and enrollment successful",
     data: {
-      transaction: {
-        id: result.transaction.id,
-        course_price: result.revenue.coursePrice,
-        wsp_commission: result.revenue.wspCommission,
-        tutor_earnings: isWPUCourse ? null : result.revenue.tutorEarnings, // Null for WPU courses
-        commission_rate: result.revenue.commissionRate,
-        owner_type: course.owner_type,
-        note: isWPUCourse 
-          ? "WPU marketplace course - 100% revenue to WPU" 
-          : "Regular marketplace course - commission split applied",
-      },
+      transaction: result
+        ? {
+            id: result.transaction.id,
+            course_price: result.revenue.coursePrice,
+            wsp_commission: result.revenue.wspCommission,
+            tutor_earnings: isWPUCourse ? null : result.revenue.tutorEarnings,
+            commission_rate: result.revenue.commissionRate,
+            owner_type: course.owner_type,
+            note: isWPUCourse
+              ? "WPU marketplace course - 100% revenue to WPU"
+              : "Regular marketplace course - commission split applied",
+          }
+        : {
+            id: null,
+            course_price: 0,
+            wsp_commission: 0,
+            tutor_earnings: 0,
+            commission_rate: 0,
+            owner_type: course.owner_type,
+            note: "Free course - no payment required",
+          },
       enrollment: {
         course_id: course_id,
-        access_type: "lifetime", // Lifetime access - not tied to semester
+        access_type: "lifetime",
         purchased_at: purchaseDateString,
+        is_free: isFree,
       },
-      wallet: {
-        previous_balance: walletBalance,
-        new_balance: newBalance,
-        debited: priceInStudentCurrency,
-        currency: studentCurrency,
-        course_price_original: courseCurrency !== studentCurrency ? {
-          amount: coursePrice,
-          currency: courseCurrency,
-        } : null,
-      },
+      wallet: isFree
+        ? null
+        : {
+            previous_balance: walletBalance,
+            new_balance: newBalance,
+            debited: priceInStudentCurrency,
+            currency: studentCurrency,
+            course_price_original:
+              courseCurrency !== studentCurrency
+                ? {
+                    amount: coursePrice,
+                    currency: courseCurrency,
+                  }
+                : null,
+          },
     },
   });
 });
