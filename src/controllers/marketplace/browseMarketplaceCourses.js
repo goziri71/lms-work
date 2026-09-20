@@ -112,7 +112,7 @@ export const browseMarketplaceCourses = TryCatchFunction(async (req, res) => {
       "enrollment_limit",
       "access_duration_days",
     ],
-    order: [["title", "ASC"]],
+    order: [["id", "DESC"]],
     limit: Number(limit),
     offset: offset,
   });
