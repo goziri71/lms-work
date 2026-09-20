@@ -1,11 +1,14 @@
 /**
- * Public Tutor Store - get all products for a sole tutor by slug
+ * Public Tutor/Org Store - get all products by storefront slug
  * GET /api/marketplace/public/tutor/:slug/products
+ *
+ * Resolves sole tutors first, then organizations (same URL namespace).
  */
 
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
+import { Organization } from "../../models/marketplace/organization.js";
 import { Courses } from "../../models/course/courses.js";
 import { EBooks } from "../../models/marketplace/ebooks.js";
 import { DigitalDownloads } from "../../models/marketplace/digitalDownloads.js";
@@ -14,7 +17,6 @@ import { Membership } from "../../models/marketplace/membership.js";
 import { Op } from "sequelize";
 
 /**
- * Get all published/active products for a sole tutor by their slug
  * GET /api/marketplace/public/tutor/:slug/products
  */
 export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
@@ -24,9 +26,11 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Tutor slug is required", 400);
   }
 
+  const normalizedSlug = slug.trim().toLowerCase();
+
   const tutor = await SoleTutor.findOne({
     where: {
-      slug: slug.trim().toLowerCase(),
+      slug: normalizedSlug,
       status: "active",
     },
     attributes: [
@@ -43,18 +47,68 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
     ],
   });
 
-  if (!tutor) {
-    throw new ErrorClass("Tutor not found", 404);
-  }
+  let ownerType;
+  let ownerId;
+  let storefront;
 
-  const tutorId = tutor.id;
-  const ownerType = "sole_tutor";
+  if (tutor) {
+    ownerType = "sole_tutor";
+    ownerId = tutor.id;
+    const displayName = tutor.mname
+      ? `${tutor.fname} ${tutor.mname} ${tutor.lname}`.trim()
+      : `${tutor.fname} ${tutor.lname}`.trim();
+    storefront = {
+      id: tutor.id,
+      slug: tutor.slug,
+      name: displayName,
+      profile_image: tutor.profile_image,
+      bio: tutor.bio,
+      specialization: tutor.specialization,
+      rating: tutor.rating ? parseFloat(tutor.rating) : null,
+      total_reviews: tutor.total_reviews || 0,
+      owner_type: "sole_tutor",
+    };
+  } else {
+    const org = await Organization.findOne({
+      where: {
+        slug: normalizedSlug,
+        status: "active",
+      },
+      attributes: [
+        "id",
+        "name",
+        "slug",
+        "logo",
+        "description",
+        "rating",
+        "total_reviews",
+      ],
+    });
+
+    if (!org) {
+      throw new ErrorClass("Tutor not found", 404);
+    }
+
+    ownerType = "organization";
+    ownerId = org.id;
+    storefront = {
+      id: org.id,
+      slug: org.slug,
+      name: org.name,
+      profile_image: org.logo,
+      bio: org.description,
+      specialization: null,
+      rating: org.rating ? parseFloat(org.rating) : null,
+      total_reviews: org.total_reviews || 0,
+      owner_type: "organization",
+    };
+  }
 
   const [courses, ebooks, digitalDownloads, communities, memberships] =
     await Promise.all([
       Courses.findAll({
         where: {
-          owner_id: tutorId,
+          owner_id: ownerId,
           owner_type: ownerType,
           is_marketplace: true,
           marketplace_status: "published",
@@ -77,7 +131,7 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
       }),
       EBooks.findAll({
         where: {
-          owner_id: tutorId,
+          owner_id: ownerId,
           owner_type: ownerType,
           status: "published",
         },
@@ -99,7 +153,7 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
       }),
       DigitalDownloads.findAll({
         where: {
-          owner_id: tutorId,
+          owner_id: ownerId,
           owner_type: ownerType,
           status: "published",
         },
@@ -119,7 +173,7 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
       }),
       Community.findAll({
         where: {
-          tutor_id: tutorId,
+          tutor_id: ownerId,
           tutor_type: ownerType,
           status: "published",
           visibility: "public",
@@ -141,7 +195,7 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
       }),
       Membership.findAll({
         where: {
-          tutor_id: tutorId,
+          tutor_id: ownerId,
           tutor_type: ownerType,
           status: "active",
         },
@@ -161,10 +215,6 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
         order: [["id", "DESC"]],
       }),
     ]);
-
-  const displayName = tutor.mname
-    ? `${tutor.fname} ${tutor.mname} ${tutor.lname}`.trim()
-    : `${tutor.fname} ${tutor.lname}`.trim();
 
   const formatProduct = (p, type) => {
     const base = {
@@ -197,16 +247,7 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
     success: true,
     message: "Tutor and products retrieved successfully",
     data: {
-      tutor: {
-        id: tutor.id,
-        slug: tutor.slug,
-        name: displayName,
-        profile_image: tutor.profile_image,
-        bio: tutor.bio,
-        specialization: tutor.specialization,
-        rating: tutor.rating ? parseFloat(tutor.rating) : null,
-        total_reviews: tutor.total_reviews || 0,
-      },
+      tutor: storefront,
       products,
       meta: {
         total: products.length,

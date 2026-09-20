@@ -7,10 +7,24 @@ import { generateSlug, generateUniqueSlug } from "./slugGenerator.js";
 import { Op } from "sequelize";
 import { Courses } from "../models/course/courses.js";
 import { SoleTutor } from "../models/marketplace/soleTutor.js";
+import { Organization } from "../models/marketplace/organization.js";
 import { EBooks } from "../models/marketplace/ebooks.js";
 import { DigitalDownloads } from "../models/marketplace/digitalDownloads.js";
 import { Community } from "../models/marketplace/community.js";
 import { Membership } from "../models/marketplace/membership.js";
+
+async function storefrontSlugTaken(slug, { excludeTutorId = null, excludeOrgId = null } = {}) {
+  const tutorWhere = { slug };
+  if (excludeTutorId) tutorWhere.id = { [Op.ne]: excludeTutorId };
+  const orgWhere = { slug };
+  if (excludeOrgId) orgWhere.id = { [Op.ne]: excludeOrgId };
+
+  const [tutor, org] = await Promise.all([
+    SoleTutor.findOne({ where: tutorWhere, attributes: ["id"] }),
+    Organization.findOne({ where: orgWhere, attributes: ["id"] }),
+  ]);
+  return !!(tutor || org);
+}
 
 /**
  * Generate unique slug for a course
@@ -117,12 +131,21 @@ export async function generateTutorSlug(fname, lname, excludeId = null) {
     return `tutor-${excludeId || Date.now()}`;
   }
 
-  return await generateUniqueSlug(baseSlug, async (slug) => {
-    const where = { slug };
-    if (excludeId) {
-      where.id = { [Op.ne]: excludeId };
-    }
-    const existing = await SoleTutor.findOne({ where });
-    return !!existing;
-  });
+  return await generateUniqueSlug(baseSlug, async (slug) =>
+    storefrontSlugTaken(slug, { excludeTutorId: excludeId })
+  );
+}
+
+/**
+ * Generate unique slug for an organization (from name)
+ */
+export async function generateOrganizationSlug(name, excludeId = null) {
+  const baseSlug = generateSlug(name);
+  if (!baseSlug) {
+    return `org-${excludeId || Date.now()}`;
+  }
+
+  return await generateUniqueSlug(baseSlug, async (slug) =>
+    storefrontSlugTaken(slug, { excludeOrgId: excludeId })
+  );
 }

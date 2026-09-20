@@ -13,6 +13,12 @@ export const Organization = db.define(
       type: DataTypes.STRING(200),
       allowNull: false,
     },
+    slug: {
+      type: DataTypes.STRING(120),
+      allowNull: true,
+      unique: true,
+      comment: "URL-friendly slug for public org storefront (e.g. binah-church-international)",
+    },
     email: {
       type: DataTypes.STRING(255),
       allowNull: false,
@@ -224,6 +230,10 @@ export const Organization = db.define(
       {
         unique: true,
         fields: ["email"],
+      },
+      {
+        unique: true,
+        fields: ["slug"],
       },
       {
         fields: ["status"],

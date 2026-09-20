@@ -5,6 +5,7 @@ import { TicketedEvent } from "../../models/marketplace/ticketedEvent.js";
 import { EventTicketTier } from "../../models/marketplace/eventTicketTier.js";
 import { EventTicketOrder } from "../../models/marketplace/eventTicketOrder.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
+import { Organization } from "../../models/marketplace/organization.js";
 import {
   formatEventPublic,
   formatTierPublic,
@@ -146,15 +147,26 @@ export const getTutorPublicEvents = TryCatchFunction(async (req, res) => {
   let ownerType;
   let ownerId;
 
+  const normalizedSlug = slug.trim().toLowerCase();
+
   const tutor = await SoleTutor.findOne({
-    where: { slug: slug.trim().toLowerCase(), status: "active" },
+    where: { slug: normalizedSlug, status: "active" },
     attributes: ["id"],
   });
-  if (!tutor) {
-    throw new ErrorClass("Tutor not found", 404);
+  if (tutor) {
+    ownerType = "sole_tutor";
+    ownerId = tutor.id;
+  } else {
+    const org = await Organization.findOne({
+      where: { slug: normalizedSlug, status: "active" },
+      attributes: ["id"],
+    });
+    if (!org) {
+      throw new ErrorClass("Tutor not found", 404);
+    }
+    ownerType = "organization";
+    ownerId = org.id;
   }
-  ownerType = "sole_tutor";
-  ownerId = tutor.id;
 
   const events = await TicketedEvent.findAll({
     where: {

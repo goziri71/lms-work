@@ -206,9 +206,15 @@ export const registerOrganization = TryCatchFunction(async (req, res) => {
   }
   if (!finalCurrency) finalCurrency = "NGN";
 
+  const { generateOrganizationSlug } = await import(
+    "../../utils/productSlugHelper.js"
+  );
+  const slug = await generateOrganizationSlug(name.trim(), null);
+
   // Create organization (auto-approved)
   const organization = await Organization.create({
     name: name.trim(),
+    slug,
     email: email.toLowerCase().trim(),
     password: hashedPassword,
     description: description?.trim() || null,
@@ -236,6 +242,7 @@ export const registerOrganization = TryCatchFunction(async (req, res) => {
       organization: {
         id: organization.id,
         name: organization.name,
+        slug: organization.slug,
         email: organization.email,
         status: organization.status,
       },

@@ -66,14 +66,14 @@ export async function getEventHost(ownerType, ownerId) {
     };
   }
   const o = await Organization.findByPk(ownerId, {
-    attributes: ["id", "name", "logo"],
+    attributes: ["id", "name", "slug", "logo"],
   });
   if (!o) return null;
   return {
     owner_type: "organization",
     owner_id: o.id,
     display_name: o.name,
-    slug: null,
+    slug: o.slug || null,
     logo_url: o.logo,
   };
 }
