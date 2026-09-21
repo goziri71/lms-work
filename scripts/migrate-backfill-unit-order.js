@@ -1,8 +1,9 @@
 /**
- * Renumber units so newest = 1 (top), oldest = N (bottom).
+ * Revert unit order numbers: oldest = 1 … newest = N
+ * (undoes newest-first renumbering)
+ *
  * Run: node scripts/migrate-backfill-unit-order.js
  */
-
 import dotenv from "dotenv";
 import { connectDB, dbLibrary } from "../src/database/database.js";
 import { QueryTypes } from "sequelize";
@@ -17,16 +18,15 @@ async function run() {
       process.exit(1);
     }
 
-    console.log("📦 Renumber units: newest=1 … oldest=N\n");
+    console.log("📦 Revert units.order: oldest=1 … newest=N\n");
 
-    // Newest created → order 1; oldest → highest
     await dbLibrary.query(`
       WITH ranked AS (
         SELECT
           id,
           ROW_NUMBER() OVER (
             PARTITION BY module_id
-            ORDER BY created_at DESC NULLS LAST, id DESC
+            ORDER BY created_at ASC NULLS LAST, id ASC
           ) AS new_order
         FROM units
       )
@@ -46,7 +46,7 @@ async function run() {
       { type: QueryTypes.SELECT }
     );
 
-    console.log("Sample (1=newest at top):");
+    console.log("Sample (1=oldest):");
     console.log(sample);
     console.log("\n✅ Done");
     process.exit(0);

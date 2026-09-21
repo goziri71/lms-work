@@ -123,7 +123,7 @@ export const getModulesByCourse = TryCatchFunction(async (req, res) => {
         required: false,
       },
     ],
-    order: [["created_at", "DESC"], ["id", "DESC"]],
+    order: [["created_at", "ASC"], ["id", "ASC"]],
   });
 
   const modulesData = modules.map((module) => {
@@ -243,7 +243,7 @@ export const createUnit = TryCatchFunction(async (req, res) => {
     title,
     content,
     content_type = "html",
-    order,
+    order = 1,
     status = "draft",
     duration_min,
   } = req.body;
@@ -261,25 +261,13 @@ export const createUnit = TryCatchFunction(async (req, res) => {
   // Verify tutor owns the course
   await verifyTutorCourseAccess(tutor, userType, moduleRecord.course_id);
 
-  // Newest unit is always #1 at the top; existing units shift down (1→2, 2→3, …)
-  let unitOrder = order;
-  if (unitOrder === undefined || unitOrder === null || unitOrder === "") {
-    await Units.increment("order", {
-      by: 1,
-      where: { module_id: parseInt(moduleId) },
-    });
-    unitOrder = 1;
-  } else {
-    unitOrder = parseInt(unitOrder, 10) || 1;
-  }
-
   // Create unit
   const unit = await Units.create({
     module_id: parseInt(moduleId),
     title: title.trim(),
     content: content || null,
     content_type: content_type,
-    order: unitOrder,
+    order: order,
     status: status,
     duration_min: duration_min || null,
     created_by: tutor.id,
@@ -328,8 +316,7 @@ export const getUnitsByModule = TryCatchFunction(async (req, res) => {
     where: {
       module_id: parseInt(moduleId),
     },
-    // 1 = newest (top), higher numbers = older (bottom)
-    order: [["order", "ASC"], ["created_at", "DESC"], ["id", "DESC"]],
+    order: [["created_at", "ASC"], ["id", "ASC"]],
   });
 
   res.status(200).json({

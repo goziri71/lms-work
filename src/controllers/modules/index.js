@@ -235,12 +235,10 @@ export const getModulesByCourse = TryCatchFunction(async (req, res) => {
         model: Units,
         as: "units",
         required: false,
-        // 1 = newest (top); higher = older (bottom)
-        order: [["order", "ASC"], ["created_at", "DESC"], ["id", "DESC"]],
-        separate: true,
+        order: [["created_at", "ASC"], ["id", "ASC"]],
       },
     ],
-    order: [["created_at", "DESC"], ["id", "DESC"]],
+    order: [["created_at", "ASC"], ["id", "ASC"]],
   });
   res.status(200).json({
     status: true,
@@ -505,25 +503,13 @@ export const createUnit = TryCatchFunction(async (req, res) => {
   // Get creator ID (admin ID for admins, staff ID for staff)
   const creatorId = getCreatorId(userType, userId);
 
-  // Newest unit is always #1 at the top; existing units shift down (1→2, 2→3, …)
-  let unitOrder = order;
-  if (unitOrder === undefined || unitOrder === null || unitOrder === "") {
-    await Units.increment("order", {
-      by: 1,
-      where: { module_id },
-    });
-    unitOrder = 1;
-  } else {
-    unitOrder = parseInt(unitOrder, 10) || 1;
-  }
-
   // Create unit first to get ID for image uploads
   const unit = await Units.create({
     module_id,
     title,
     content: null, // We'll update this after processing images
     content_type: content_type ?? "html",
-    order: unitOrder,
+    order: order ?? 1,
     status: status ?? "draft",
     created_by: creatorId,
     updated_by: creatorId,
@@ -637,8 +623,7 @@ export const getUnitsByModule = TryCatchFunction(async (req, res) => {
 
   const units = await Units.findAll({
     where: { module_id: moduleId },
-    // 1 = newest (top), higher numbers = older (bottom)
-    order: [["order", "ASC"], ["created_at", "DESC"], ["id", "DESC"]],
+    order: [["created_at", "ASC"], ["id", "ASC"]],
   });
 
   // Track module view activity for students
