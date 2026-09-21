@@ -199,6 +199,8 @@ import {
   updateEvent,
   publishEvent,
   unpublishEvent,
+  closeEventSales,
+  openEventSales,
   cancelEvent as cancelTicketedEvent,
   createTier as createEventTier,
   listTiers as listEventTiers,
@@ -1431,6 +1433,8 @@ router.get("/tutor/events/:id", tutorAuthorize, getEventById);
 router.put("/tutor/events/:id", tutorAuthorize, updateEvent);
 router.post("/tutor/events/:id/publish", tutorAuthorize, publishEvent);
 router.post("/tutor/events/:id/unpublish", tutorAuthorize, unpublishEvent);
+router.post("/tutor/events/:id/close-sales", tutorAuthorize, closeEventSales);
+router.post("/tutor/events/:id/open-sales", tutorAuthorize, openEventSales);
 router.post("/tutor/events/:id/cancel", tutorAuthorize, cancelTicketedEvent);
 router.post("/tutor/events/:eventId/tiers", tutorAuthorize, createEventTier);
 router.get("/tutor/events/:eventId/tiers", tutorAuthorize, listEventTiers);

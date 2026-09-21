@@ -25,8 +25,34 @@ import { Config } from "../config/config.js";
 export const RESERVATION_MINUTES = 15;
 
 export function generateTicketCode() {
-  const part = crypto.randomBytes(4).toString("hex").toUpperCase();
-  return `EVT-${part}`;
+  // Short unique code e.g. YDHSJ3 (A-Z0-9, no ambiguous I/O/0/1)
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  const bytes = crypto.randomBytes(6);
+  for (let i = 0; i < 6; i++) {
+    code += alphabet[bytes[i] % alphabet.length];
+  }
+  return code;
+}
+
+export function normalizeTierBenefits(benefits) {
+  if (benefits == null) return [];
+  if (typeof benefits === "string") {
+    try {
+      const parsed = JSON.parse(benefits);
+      return normalizeTierBenefits(parsed);
+    } catch {
+      return benefits
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+  }
+  if (!Array.isArray(benefits)) return [];
+  return benefits
+    .map((b) => (typeof b === "string" ? b.trim() : String(b ?? "").trim()))
+    .filter(Boolean)
+    .slice(0, 50);
 }
 
 export function generateAccessToken() {
@@ -103,8 +129,11 @@ export function formatEventPublic(event, { includeOnlineUrl = false } = {}) {
     ends_at: event.ends_at,
     doors_open_at: event.doors_open_at,
     cover_image_url: event.cover_image_url,
+    video_url: event.video_url || null,
     category: event.category,
     status: event.status,
+    sales_open: event.sales_open !== false,
+    sales_status: event.sales_open === false ? "closed" : "open",
     refund_policy: event.refund_policy,
     refund_policy_text: event.refund_policy_text,
     venue,
@@ -136,12 +165,18 @@ export function isTierSalesOpen(tier, now = new Date()) {
 
 export function formatTierPublic(tier) {
   const available = tierAvailable(tier);
+  const benefits = Array.isArray(tier.benefits)
+    ? tier.benefits
+    : normalizeTierBenefits(tier.benefits);
   return {
     id: tier.id,
     name: tier.name,
     description: tier.description,
+    benefits,
+    // Creator-set price (not platform-fixed); 0 = free
     price: parseFloat(tier.price).toFixed(2),
     currency: tier.currency,
+    quantity_total: tier.quantity_total,
     quantity_available: Math.max(0, available),
     max_per_order: tier.max_per_order,
     sales_start: tier.sales_start,

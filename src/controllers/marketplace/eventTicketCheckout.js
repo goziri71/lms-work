@@ -30,6 +30,9 @@ export const createEventOrder = TryCatchFunction(async (req, res) => {
   if (event.status !== "published") {
     throw new ErrorClass("Event is not available for ticket sales", 400);
   }
+  if (event.sales_open === false) {
+    throw new ErrorClass("Ticket sales are closed for this event", 400);
+  }
   if (new Date(event.ends_at) < new Date()) {
     throw new ErrorClass("This event has ended", 400);
   }

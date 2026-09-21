@@ -14,6 +14,7 @@ import {
   formatEventPublic,
   formatTierPublic,
   tierAvailable,
+  normalizeTierBenefits,
 } from "../../services/eventTicketService.js";
 
 const coverUploader = multer({
@@ -40,10 +41,13 @@ function mapEventSummary(event, tiers = []) {
     slug: event.slug,
     format: event.format,
     status: event.status,
+    sales_open: event.sales_open !== false,
+    sales_status: event.sales_open === false ? "closed" : "open",
     starts_at: event.starts_at,
     ends_at: event.ends_at,
     timezone: event.timezone,
     cover_image_url: event.cover_image_url,
+    video_url: event.video_url || null,
     category: event.category,
     tier_count: tiers.length,
     tickets_sold: sold,
@@ -108,6 +112,7 @@ export const createEvent = TryCatchFunction(async (req, res) => {
     longitude,
     online_url,
     cover_image_url,
+    video_url,
     category,
     refund_policy,
     refund_policy_text,
@@ -144,11 +149,13 @@ export const createEvent = TryCatchFunction(async (req, res) => {
     longitude,
     online_url,
     cover_image_url,
+    video_url: video_url || null,
     category,
     refund_policy: refund_policy || "none",
     refund_policy_text,
     max_attendees,
     status: "draft",
+    sales_open: true,
   });
 
   res.status(201).json({
@@ -256,8 +263,8 @@ export const updateEvent = TryCatchFunction(async (req, res) => {
   const allowed = [
     "title", "description", "format", "timezone", "starts_at", "ends_at",
     "doors_open_at", "venue_name", "address_line1", "city", "region", "country",
-    "latitude", "longitude", "online_url", "cover_image_url", "category",
-    "refund_policy", "refund_policy_text", "max_attendees",
+    "latitude", "longitude", "online_url", "cover_image_url", "video_url",
+    "category", "refund_policy", "refund_policy_text", "max_attendees",
   ];
 
   for (const key of allowed) {
@@ -298,7 +305,7 @@ export const publishEvent = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Tiers must have quantity_total > 0", 400);
   }
 
-  await event.update({ status: "published" });
+  await event.update({ status: "published", sales_open: true });
 
   res.status(200).json({
     success: true,
@@ -313,11 +320,47 @@ export const unpublishEvent = TryCatchFunction(async (req, res) => {
   if (!event) throw new ErrorClass("Event not found", 404);
   await assertEventOwnedByTutor(event, tutorId, tutorType);
 
-  await event.update({ status: "draft" });
+  await event.update({ status: "draft", sales_open: false });
 
   res.status(200).json({
     success: true,
     message: "Event unpublished",
+    data: { event: formatEventPublic(event) },
+  });
+});
+
+/** Close ticket sales without unpublishing (event page still visible). */
+export const closeEventSales = TryCatchFunction(async (req, res) => {
+  const { tutorId, tutorType } = getTutorInfo(req);
+  const event = await TicketedEvent.findByPk(req.params.id);
+  if (!event) throw new ErrorClass("Event not found", 404);
+  await assertEventOwnedByTutor(event, tutorId, tutorType);
+
+  await event.update({ sales_open: false });
+
+  res.status(200).json({
+    success: true,
+    message: "Ticket sales closed",
+    data: { event: formatEventPublic(event) },
+  });
+});
+
+/** Re-open ticket sales (event must be published). */
+export const openEventSales = TryCatchFunction(async (req, res) => {
+  const { tutorId, tutorType } = getTutorInfo(req);
+  const event = await TicketedEvent.findByPk(req.params.id);
+  if (!event) throw new ErrorClass("Event not found", 404);
+  await assertEventOwnedByTutor(event, tutorId, tutorType);
+
+  if (event.status !== "published") {
+    throw new ErrorClass("Publish the event before opening sales", 400);
+  }
+
+  await event.update({ sales_open: true });
+
+  res.status(200).json({
+    success: true,
+    message: "Ticket sales opened",
     data: { event: formatEventPublic(event) },
   });
 });
@@ -328,7 +371,7 @@ export const cancelEvent = TryCatchFunction(async (req, res) => {
   if (!event) throw new ErrorClass("Event not found", 404);
   await assertEventOwnedByTutor(event, tutorId, tutorType);
 
-  await event.update({ status: "cancelled" });
+  await event.update({ status: "cancelled", sales_open: false });
 
   res.status(200).json({
     success: true,
@@ -347,6 +390,7 @@ export const createTier = TryCatchFunction(async (req, res) => {
   const {
     name,
     description,
+    benefits,
     price,
     currency,
     quantity_total,
@@ -361,11 +405,21 @@ export const createTier = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("name and quantity_total are required", 400);
   }
 
+  // price is set by the creator (any amount incl. 0 for free); not platform-fixed
+  const tierPrice =
+    price === undefined || price === null || price === ""
+      ? 0
+      : parseFloat(price);
+  if (Number.isNaN(tierPrice) || tierPrice < 0) {
+    throw new ErrorClass("price must be a non-negative number set by you", 400);
+  }
+
   const tier = await EventTicketTier.create({
     event_id: eventId,
     name,
-    description,
-    price: price ?? 0,
+    description: description || null,
+    benefits: normalizeTierBenefits(benefits),
+    price: tierPrice,
     currency: currency || "NGN",
     quantity_total: parseInt(quantity_total, 10),
     max_per_order: max_per_order ?? 4,
@@ -430,11 +484,23 @@ export const updateTier = TryCatchFunction(async (req, res) => {
   }
 
   const fields = [
-    "name", "description", "price", "currency", "max_per_order",
+    "name", "description", "currency", "max_per_order",
     "sales_start", "sales_end", "sort_order", "is_hidden",
   ];
   for (const f of fields) {
     if (req.body[f] !== undefined) tier[f] = req.body[f];
+  }
+
+  if (req.body.benefits !== undefined) {
+    tier.benefits = normalizeTierBenefits(req.body.benefits);
+  }
+
+  if (req.body.price !== undefined) {
+    const tierPrice = parseFloat(req.body.price);
+    if (Number.isNaN(tierPrice) || tierPrice < 0) {
+      throw new ErrorClass("price must be a non-negative number set by you", 400);
+    }
+    tier.price = tierPrice;
   }
 
   await tier.save();

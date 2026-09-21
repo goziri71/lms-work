@@ -23,10 +23,17 @@ export const EventTicketTier = db.define(
       type: DataTypes.TEXT,
       allowNull: true,
     },
+    benefits: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: [],
+      comment: "List of package benefits set by the creator (e.g. VIP seating, merch)",
+    },
     price: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
       defaultValue: 0,
+      comment: "Creator-defined price (not a fixed platform price); 0 = free RSVP",
     },
     currency: {
       type: DataTypes.STRING(10),

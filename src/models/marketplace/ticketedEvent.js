@@ -89,6 +89,11 @@ export const TicketedEvent = db.define(
       type: DataTypes.TEXT,
       allowNull: true,
     },
+    video_url: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: "Optional promo / trailer video URL set by the creator",
+    },
     category: {
       type: DataTypes.STRING(120),
       allowNull: true,
@@ -103,6 +108,12 @@ export const TicketedEvent = db.define(
       ),
       allowNull: false,
       defaultValue: "draft",
+    },
+    sales_open: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true,
+      comment: "Creator can close ticket sales without unpublishing the event",
     },
     refund_policy: {
       type: DataTypes.STRING(64),
