@@ -4,7 +4,11 @@ import { DirectMessage } from "../../models/chat/directMessage.js";
 import { Staff } from "../../models/auth/staff.js";
 import { Students } from "../../models/auth/student.js";
 import { Op } from "sequelize";
-import mongoose from "mongoose";
+import {
+  isMongoReady,
+  getMongoStatus,
+  connectMongo,
+} from "../../database/mongo.js";
 import {
   cacheChatList,
   getCachedChatList,
@@ -15,9 +19,20 @@ import {
   invalidateChatCache,
 } from "../../utils/chatCache.js";
 
-function isMongoReady() {
-  // 1 = connected
-  return mongoose.connection?.readyState === 1;
+function unavailablePayload(page, limit, search) {
+  const status = getMongoStatus();
+  return {
+    threads: [],
+    pagination: {
+      current_page: page,
+      per_page: limit,
+      returned: 0,
+    },
+    filters: { search: search || null },
+    unavailable: true,
+    reason: "mongo_unavailable",
+    detail: status.lastError || "MongoDB not connected",
+  };
 }
 
 // GET /api/chat/dm/threads?page=&limit=&search=
@@ -47,20 +62,16 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
   }
 
   if (!isMongoReady()) {
+    // One quick reconnect attempt (no long wait if Atlas host is dead)
+    await connectMongo({ silent: true });
+  }
+
+  if (!isMongoReady()) {
     return res.status(200).json({
       status: true,
       code: 200,
       message: "Chat temporarily unavailable",
-      data: {
-        threads: [],
-        pagination: {
-          current_page: page,
-          per_page: limit,
-          returned: 0,
-        },
-        filters: { search: search || null },
-        unavailable: true,
-      },
+      data: unavailablePayload(page, limit, search),
     });
   }
 
@@ -115,14 +126,8 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
       code: 200,
       message: "Chat temporarily unavailable",
       data: {
-        threads: [],
-        pagination: {
-          current_page: page,
-          per_page: limit,
-          returned: 0,
-        },
-        filters: { search: search || null },
-        unavailable: true,
+        ...unavailablePayload(page, limit, search),
+        detail: err.message,
       },
     });
   }

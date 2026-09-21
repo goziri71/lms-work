@@ -1,7 +1,10 @@
 import { Sequelize } from "sequelize";
-import mongoose from "mongoose";
 import dotenv from "dotenv";
 import { Config } from "../config/config.js";
+import {
+  connectMongo,
+  startMongoReconnectLoop,
+} from "./mongo.js";
 
 dotenv.config({ debug: false });
 
@@ -39,32 +42,9 @@ export async function connectDB() {
     await dbLibrary.authenticate();
     console.log("✅ Library Database connection established successfully.");
 
-    // Connect MongoDB (for chat) — optional; server still starts if Atlas is unreachable
-    const mongoUri = process.env.MONGO_URI;
-    if (mongoUri) {
-      try {
-        await mongoose.connect(mongoUri, {
-          serverSelectionTimeoutMS: 10000,
-          socketTimeoutMS: 45000,
-          maxPoolSize: 10,
-          minPoolSize: 2,
-        });
-        console.log("✅ MongoDB connection established successfully.");
-        console.log(`   Database: ${mongoose.connection.db.databaseName}`);
-      } catch (mongoError) {
-        console.warn(
-          "⚠️  MongoDB connection failed (chat may be unavailable):",
-          mongoError.message
-        );
-        console.warn(
-          "   Check MONGO_URI / Atlas DNS / IP allowlist. Continuing without MongoDB."
-        );
-      }
-    } else {
-      console.warn(
-        "⚠️  MONGO_URI not set — chat features unavailable. Continuing without MongoDB."
-      );
-    }
+    // Chat (Mongo) — optional at boot; retries in background if Atlas is down
+    await connectMongo();
+    startMongoReconnectLoop();
 
     return true;
   } catch (error) {
