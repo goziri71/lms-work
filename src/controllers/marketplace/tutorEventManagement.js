@@ -63,6 +63,39 @@ export const uploadEventCover = TryCatchFunction(async (req, res) => {
   const timestamp = Date.now();
   const objectPath = `tutors/${tutorId}/covers/${timestamp}_${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
 
+  // Ensure bucket exists (create if missing — same pattern as communities/memberships)
+  try {
+    const { data: buckets, error: listError } =
+      await supabase.storage.listBuckets();
+    if (!listError) {
+      const bucketExists = buckets?.some((b) => b.name === bucket);
+      if (!bucketExists) {
+        const { error: createError } = await supabase.storage.createBucket(
+          bucket,
+          {
+            public: true,
+            allowedMimeTypes: [
+              "image/jpeg",
+              "image/jpg",
+              "image/png",
+              "image/webp",
+            ],
+            fileSizeLimit: 5 * 1024 * 1024,
+          }
+        );
+        if (createError) {
+          throw new ErrorClass(
+            `Storage bucket "${bucket}" does not exist and could not be created. Create it in Supabase Storage (or set EVENTS_BUCKET). Error: ${createError.message}`,
+            500
+          );
+        }
+      }
+    }
+  } catch (error) {
+    if (error instanceof ErrorClass) throw error;
+    console.warn("Could not verify events bucket:", error.message);
+  }
+
   const { error: uploadError } = await supabase.storage
     .from(bucket)
     .upload(objectPath, req.file.buffer, {
@@ -71,6 +104,15 @@ export const uploadEventCover = TryCatchFunction(async (req, res) => {
     });
 
   if (uploadError) {
+    if (
+      uploadError.message?.includes("Bucket not found") ||
+      uploadError.message?.includes("not found")
+    ) {
+      throw new ErrorClass(
+        `Storage bucket "${bucket}" not found. Create a public bucket named "${bucket}" in Supabase Storage, or set EVENTS_BUCKET to an existing bucket.`,
+        500
+      );
+    }
     throw new ErrorClass(`Upload failed: ${uploadError.message}`, 500);
   }
 
