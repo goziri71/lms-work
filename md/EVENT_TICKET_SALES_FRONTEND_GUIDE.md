@@ -242,8 +242,61 @@ Cannot set `quantity_total` below sold + reserved.
 | GET | `/tutor/events/:id/orders` | Orders list |
 | GET | `/tutor/events/:id/attendees` | Ticket holders |
 | GET | `/tutor/events/:id/attendees/export` | CSV download |
-| POST | `/tutor/events/:id/check-in/lookup` | Preview ticket `{ "ticket_code": "YDHSJ3" }` |
+| POST | `/tutor/events/:id/check-in/lookup` | Preview ticket + customer `{ "ticket_code": "YDHSJ3" }` |
 | POST | `/tutor/events/:id/check-in` | Mark used `{ "ticket_code": "YDHSJ3" }` |
+
+**Lookup response (found):**
+
+```json
+{
+  "success": true,
+  "message": "Ticket found",
+  "data": {
+    "found": true,
+    "valid": true,
+    "already_checked_in": false,
+    "ticket_code": "YDHSJ3",
+    "ticket": {
+      "id": 1,
+      "ticket_code": "YDHSJ3",
+      "status": "valid",
+      "holder_name": "Ada Okafor",
+      "holder_email": "ada@example.com",
+      "tier_name": "Premium",
+      "buyer": {
+        "name": "Ada Okafor",
+        "email": "ada@example.com",
+        "phone": "+234..."
+      },
+      "order": { "id": 10, "status": "paid", "paid_at": "...", "total_amount": "1000.00", "currency": "NGN" }
+    },
+    "customer": {
+      "name": "Ada Okafor",
+      "email": "ada@example.com",
+      "phone": "+234..."
+    }
+  }
+}
+```
+
+**Lookup response (wrong / unknown code):**
+
+```json
+{
+  "success": true,
+  "message": "Ticket not found",
+  "data": {
+    "found": false,
+    "valid": false,
+    "already_checked_in": false,
+    "ticket_code": "WRONG1",
+    "ticket": null,
+    "customer": null
+  }
+}
+```
+
+Use `data.found` / `data.customer` — do **not** treat every `200` as a valid ticket.
 | GET | `/tutor/events/:id/check-in/stats` | Checked-in counts |
 
 Ticket codes are case-insensitive on check-in (stored uppercase).
