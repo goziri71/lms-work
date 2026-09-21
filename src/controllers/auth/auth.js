@@ -96,6 +96,9 @@ export const studentLogin = TryCatchFunction(async (req, res) => {
       },
     });
   } catch (error) {
+    if (error instanceof ErrorClass) {
+      throw error;
+    }
     console.error("Database error:", error);
     throw new ErrorClass("Database connection error", 500);
   }
@@ -170,6 +173,9 @@ export const staffLogin = TryCatchFunction(async (req, res) => {
       },
     });
   } catch (error) {
+    if (error instanceof ErrorClass) {
+      throw error;
+    }
     console.error("Database error:", error);
     throw new ErrorClass("Database connection error", 500);
   }

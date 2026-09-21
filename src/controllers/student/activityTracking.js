@@ -66,8 +66,23 @@ export const trackActivity = TryCatchFunction(async (req, res) => {
     "other",
   ];
 
-  if (!validActivityTypes.includes(activity_type)) {
-    throw new ErrorClass(`Invalid activity_type. Must be one of: ${validActivityTypes.join(", ")}`, 400);
+  // Map common frontend aliases; unknown types → other (don't spam 400s)
+  const activityTypeAliases = {
+    page_view: "course_view",
+    lesson_view: "unit_view",
+    video_start: "video_play",
+    video_pause: "video_play",
+    video_complete: "video_play",
+    quiz_start: "quiz_attempt",
+    quiz_submit: "quiz_attempt",
+    exam_start: "exam_attempt",
+    exam_submit: "exam_attempt",
+  };
+
+  if (activityTypeAliases[activity_type]) {
+    activity_type = activityTypeAliases[activity_type];
+  } else if (!validActivityTypes.includes(activity_type)) {
+    activity_type = "other";
   }
 
   // Validate course access if course_id provided
@@ -260,6 +275,18 @@ export const trackBatch = TryCatchFunction(async (req, res) => {
     "other",
   ];
 
+  const activityTypeAliases = {
+    page_view: "course_view",
+    lesson_view: "unit_view",
+    video_start: "video_play",
+    video_pause: "video_play",
+    video_complete: "video_play",
+    quiz_start: "quiz_attempt",
+    quiz_submit: "quiz_attempt",
+    exam_start: "exam_attempt",
+    exam_submit: "exam_attempt",
+  };
+
   let processed = 0;
   const errors = [];
 
@@ -274,10 +301,13 @@ export const trackBatch = TryCatchFunction(async (req, res) => {
         continue;
       }
 
-      if (!validActivityTypes.includes(event.activity_type)) {
-        errors.push({ index: i, error: `Invalid activity_type: ${event.activity_type}` });
-        continue;
+      let activityType = event.activity_type;
+      if (activityTypeAliases[activityType]) {
+        activityType = activityTypeAliases[activityType];
+      } else if (!validActivityTypes.includes(activityType)) {
+        activityType = "other";
       }
+      event.activity_type = activityType;
 
       // Validate course access if course_id provided
       if (event.course_id) {

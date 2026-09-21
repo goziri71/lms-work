@@ -4,6 +4,7 @@ import { DirectMessage } from "../../models/chat/directMessage.js";
 import { Staff } from "../../models/auth/staff.js";
 import { Students } from "../../models/auth/student.js";
 import { Op } from "sequelize";
+import mongoose from "mongoose";
 import {
   cacheChatList,
   getCachedChatList,
@@ -13,6 +14,11 @@ import {
   invalidateChatList,
   invalidateChatCache,
 } from "../../utils/chatCache.js";
+
+function isMongoReady() {
+  // 1 = connected
+  return mongoose.connection?.readyState === 1;
+}
 
 // GET /api/chat/dm/threads?page=&limit=&search=
 // Returns recent 1:1 threads for the authenticated user (student or staff)
@@ -38,6 +44,24 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
         data: cachedList,
       });
     }
+  }
+
+  if (!isMongoReady()) {
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: "Chat temporarily unavailable",
+      data: {
+        threads: [],
+        pagination: {
+          current_page: page,
+          per_page: limit,
+          returned: 0,
+        },
+        filters: { search: search || null },
+        unavailable: true,
+      },
+    });
   }
 
   // Aggregate threads grouped by peerId only (avoids duplicate threads when peerType is null)
@@ -81,7 +105,27 @@ export const getRecentDMThreads = TryCatchFunction(async (req, res) => {
     { $limit: limit },
   ];
 
-  const grouped = await DirectMessage.aggregate(pipeline).exec();
+  let grouped;
+  try {
+    grouped = await DirectMessage.aggregate(pipeline).exec();
+  } catch (err) {
+    console.warn("DM threads unavailable:", err.message);
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: "Chat temporarily unavailable",
+      data: {
+        threads: [],
+        pagination: {
+          current_page: page,
+          per_page: limit,
+          returned: 0,
+        },
+        filters: { search: search || null },
+        unavailable: true,
+      },
+    });
+  }
   const peerIds = grouped.map((g) => g._id);
 
   // Collect all user IDs we need for lookups (peers + current user for deriving types)

@@ -13,6 +13,7 @@ import { EBookPurchase } from "../../models/marketplace/ebookPurchase.js";
 import { DigitalDownloadPurchase } from "../../models/marketplace/digitalDownloadPurchase.js";
 import { CommunityPurchase } from "../../models/marketplace/communityPurchase.js";
 import { MembershipSubscription } from "../../models/marketplace/membershipSubscription.js";
+import { CourseReg } from "../../models/course_reg.js";
 import { Op } from "sequelize";
 import { db } from "../../database/database.js";
 
@@ -21,15 +22,25 @@ import { db } from "../../database/database.js";
  */
 async function checkProductPurchase(studentId, productType, productId) {
   switch (productType) {
-    case "course":
+    case "course": {
       const coursePurchase = await MarketplaceTransaction.findOne({
         where: {
           student_id: studentId,
           course_id: productId,
-          status: "successful",
+          payment_status: "completed",
         },
       });
-      return !!coursePurchase;
+      if (coursePurchase) return true;
+
+      // Enrolled via course registration (marketplace or WPU)
+      const registration = await CourseReg.findOne({
+        where: {
+          student_id: studentId,
+          course_id: productId,
+        },
+      });
+      return !!registration;
+    }
 
     case "ebook":
       const ebookPurchase = await EBookPurchase.findOne({

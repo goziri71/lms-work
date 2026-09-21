@@ -258,8 +258,9 @@ export async function searchJobs(searchParams = {}) {
       }
     }
 
-    throw new Error(
-      "Job search is temporarily unavailable. Please try again later."
+    throw new ErrorClass(
+      "Job search is temporarily unavailable. Please try again later.",
+      status === 403 ? 403 : 503
     );
   }
 }

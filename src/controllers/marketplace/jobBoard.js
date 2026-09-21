@@ -43,22 +43,42 @@ export const searchJobListings = TryCatchFunction(async (req, res) => {
     : (forwardedFor ? String(forwardedFor).split(",")[0].trim() : req.ip);
   const userAgent = req.headers["user-agent"] || "Mozilla/5.0";
 
-  const result = await searchJobs({
-    locale: locale ?? locale_code,
-    was,
-    location,
-    berufsfeld,
-    arbeitszeit,
-    angebotsart,
-    befristung,
-    veroeffentlichtseit,
-    zeitarbeit,
-    arbeitgeber,
-    user_ip: userIp,
-    user_agent: userAgent,
-    page,
-    size,
-  });
+  let result;
+  try {
+    result = await searchJobs({
+      locale: locale ?? locale_code,
+      was,
+      location,
+      berufsfeld,
+      arbeitszeit,
+      angebotsart,
+      befristung,
+      veroeffentlichtseit,
+      zeitarbeit,
+      arbeitgeber,
+      user_ip: userIp,
+      user_agent: userAgent,
+      page,
+      size,
+    });
+  } catch (err) {
+    // Careerjet IP allowlist / upstream outages should not 500 the app shell
+    const status = err instanceof ErrorClass ? err.statusCode : 503;
+    return res.status(status >= 400 && status < 600 ? status : 503).json({
+      success: false,
+      message: err.message || "Job search is temporarily unavailable.",
+      data: {
+        jobs: [],
+        pages: 0,
+        hits: 0,
+        unavailable: true,
+        reason:
+          status === 403
+            ? "careerjet_ip_unauthorized"
+            : "careerjet_unavailable",
+      },
+    });
+  }
 
   // Check which jobs are saved by this student
   const jobs = result.jobs || [];
