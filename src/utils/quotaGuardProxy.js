@@ -2,15 +2,24 @@
  * QuotaGuard Static IP proxy (Heroku add-on / similar).
  * Outbound HTTPS uses QUOTAGUARDSTATIC_URL or QUOTAGUARD_URL so external APIs
  * (e.g. Flutterwave, Careerjet IP allowlists) see one static egress IP.
+ *
+ * Env is read at call time (not module load) so dotenv / late env injection works.
  */
-const QUOTAGUARD_PROXY_URL =
-  process.env.QUOTAGUARDSTATIC_URL || process.env.QUOTAGUARD_URL || null;
+
+export function getQuotaGuardProxyUrl() {
+  return (
+    process.env.QUOTAGUARDSTATIC_URL ||
+    process.env.QUOTAGUARD_URL ||
+    null
+  );
+}
 
 export function getQuotaGuardAxiosProxyConfig() {
-  if (!QUOTAGUARD_PROXY_URL) return null;
+  const proxyUrl = getQuotaGuardProxyUrl();
+  if (!proxyUrl) return null;
 
   try {
-    const parsed = new URL(QUOTAGUARD_PROXY_URL);
+    const parsed = new URL(proxyUrl);
     const host = parsed.hostname;
     const port = Number(parsed.port);
     const protocol = parsed.protocol?.replace(":", "");

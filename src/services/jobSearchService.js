@@ -178,6 +178,16 @@ export async function searchJobs(searchParams = {}) {
       ? getQuotaGuardAxiosProxyConfig()
       : null;
 
+    if (shouldUseQuotaGuardProxy() && !proxyConfig) {
+      console.warn(
+        "Careerjet: QUOTAGUARDSTATIC_URL/QUOTAGUARD_URL not set — request will use Render's dynamic IP (Careerjet may 403)."
+      );
+    } else if (proxyConfig) {
+      console.log(
+        `Careerjet: using QuotaGuard proxy ${proxyConfig.host}:${proxyConfig.port}`
+      );
+    }
+
     const response = await axios.get(BASE_URL, {
       headers: {
         Authorization: basicAuthHeader,
