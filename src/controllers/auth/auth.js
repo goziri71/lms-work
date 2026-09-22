@@ -43,7 +43,7 @@ export const studentLogin = TryCatchFunction(async (req, res) => {
     // Compare password
     const isPasswordValid = await authService.comparePassword(
       password,
-      student.password
+      student.password,
     );
 
     if (!isPasswordValid) {
@@ -134,7 +134,7 @@ export const staffLogin = TryCatchFunction(async (req, res) => {
     // Compare password
     const isPasswordValid = await authService.comparePassword(
       password,
-      staff.password
+      staff.password,
     );
 
     if (!isPasswordValid) {
@@ -226,7 +226,7 @@ export const login = TryCatchFunction(async (req, res) => {
     const escapedEmail = normalizedEmail.replace(/'/g, "''");
     student = await Students.findOne({
       where: literal(
-        `LOWER(REGEXP_REPLACE(TRIM(email), '[^\\x20-\\x7E]', '', 'g')) = '${escapedEmail}'`
+        `LOWER(REGEXP_REPLACE(TRIM(email), '[^\\x20-\\x7E]', '', 'g')) = '${escapedEmail}'`,
       ),
     });
   }
@@ -265,7 +265,7 @@ export const login = TryCatchFunction(async (req, res) => {
   // Compare password
   const isPasswordValid = await authService.comparePassword(
     password,
-    user.password
+    user.password,
   );
 
   if (!isPasswordValid) {
@@ -293,12 +293,10 @@ export const login = TryCatchFunction(async (req, res) => {
 
   // Track login history for students
   if (userType === "student") {
-    const { LearnerLoginHistory } = await import(
-      "../../models/marketplace/learnerLoginHistory.js"
-    );
-    const { getIPGeolocation, parseUserAgent } = await import(
-      "../../services/ipGeolocationService.js"
-    );
+    const { LearnerLoginHistory } =
+      await import("../../models/marketplace/learnerLoginHistory.js");
+    const { getIPGeolocation, parseUserAgent } =
+      await import("../../services/ipGeolocationService.js");
 
     const ipAddress =
       req.ip ||
@@ -445,7 +443,7 @@ export const changeStudentPassword = TryCatchFunction(async (req, res) => {
   if (currentPassword === newPassword) {
     throw new ErrorClass(
       "New password must be different from current password",
-      400
+      400,
     );
   }
 
@@ -453,7 +451,7 @@ export const changeStudentPassword = TryCatchFunction(async (req, res) => {
   if (newPassword.length < 6) {
     throw new ErrorClass(
       "New password must be at least 6 characters long",
-      400
+      400,
     );
   }
 
@@ -466,7 +464,7 @@ export const changeStudentPassword = TryCatchFunction(async (req, res) => {
   // Verify current password
   const isPasswordValid = await authService.comparePassword(
     currentPassword,
-    student.password
+    student.password,
   );
 
   if (!isPasswordValid) {
@@ -623,7 +621,7 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
   if (!email || !password || !fname || !lname) {
     throw new ErrorClass(
       "Email, password, first name, and last name are required",
-      400
+      400,
     );
   }
 
@@ -644,19 +642,26 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
   let finalCurrency = null;
 
   try {
-    const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip;
+    const clientIp =
+      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip;
     const geoData = await getIPGeolocation(clientIp);
     if (geoData.success && geoData.country) {
       if (!finalCountry) finalCountry = geoData.country;
     }
   } catch (geoErr) {
     // Geo detection failed - proceed with defaults, don't block registration
-    console.warn("Geo detection failed during student registration:", geoErr.message);
+    console.warn(
+      "Geo detection failed during student registration:",
+      geoErr.message,
+    );
   }
 
   const explicitCurrency =
-    currency !== undefined && currency !== null && String(currency).trim() !== "";
-  const allowManualCurrency = currency_override === true || currency_override === "true";
+    currency !== undefined &&
+    currency !== null &&
+    String(currency).trim() !== "";
+  const allowManualCurrency =
+    currency_override === true || currency_override === "true";
 
   if (explicitCurrency && allowManualCurrency) {
     // Manual override path
@@ -724,18 +729,18 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
         createError.parent?.detail?.includes("id")
       ) {
         console.error(
-          "⚠️ Database sequence out of sync. The students table sequence needs to be reset."
+          "⚠️ Database sequence out of sync. The students table sequence needs to be reset.",
         );
         throw new ErrorClass(
           "Registration temporarily unavailable due to a database issue. Please try again in a moment or contact support.",
-          500
+          500,
         );
       }
 
       throw new ErrorClass(
         errorMessages.join(", ") ||
           "A record with this information already exists",
-        409
+        409,
       );
     }
 
@@ -752,7 +757,7 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
           errors?.map((e) => `${e.field}: ${e.message}`).join(", ") ||
           createError.message
         }`,
-        400
+        400,
       );
     }
 
@@ -786,7 +791,7 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
         email: student.email,
         name: `${student.fname} ${student.lname}`,
       },
-      "student"
+      "student",
     )
     .then((result) => {
       // Log email send (optional - table may not exist)
@@ -837,7 +842,7 @@ export const registerStaff = TryCatchFunction(async (req, res) => {
   if (!email || !password || !fname || !lname) {
     throw new ErrorClass(
       "Email, password, first name, and last name are required",
-      400
+      400,
     );
   }
 
@@ -888,7 +893,7 @@ export const registerStaff = TryCatchFunction(async (req, res) => {
         email: staff.email,
         name: `${staff.fname} ${staff.lname}`,
       },
-      "staff"
+      "staff",
     )
     .then((result) => {
       // Log email send
@@ -903,7 +908,7 @@ export const registerStaff = TryCatchFunction(async (req, res) => {
         error_message: result.success ? null : result.message,
         sent_at: result.success ? new Date() : null,
       }).catch((logError) =>
-        console.error("Error logging welcome email:", logError)
+        console.error("Error logging welcome email:", logError),
       );
     })
     .catch((error) => {
@@ -940,7 +945,7 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
   if (!["student", "staff"].includes(userType)) {
     throw new ErrorClass(
       "Invalid user type. Must be 'student' or 'staff'",
-      400
+      400,
     );
   }
 
@@ -974,7 +979,7 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
   // Create reset URL (adjust based on your frontend)
   const resetUrl = joinFrontendUrl(
     Config.frontendUrl,
-    `reset-password?token=${resetToken}&type=${userType}`
+    `reset-password?token=${resetToken}&type=${userType}`,
   );
 
   // Send password reset email
@@ -985,7 +990,7 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
         name: `${user.fname} ${user.lname}`,
       },
       resetToken,
-      resetUrl
+      resetUrl,
     );
 
     // Log email send with detailed error information
@@ -1059,7 +1064,7 @@ export const resetPassword = TryCatchFunction(async (req, res) => {
   if (!token || !newPassword || !userType) {
     throw new ErrorClass(
       "Token, new password, and user type are required",
-      400
+      400,
     );
   }
 
@@ -1079,7 +1084,7 @@ export const resetPassword = TryCatchFunction(async (req, res) => {
   if (!user) {
     throw new ErrorClass(
       "Invalid or expired reset token. Please request a new password reset.",
-      400
+      400,
     );
   }
 
