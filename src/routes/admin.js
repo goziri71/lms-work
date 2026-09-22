@@ -32,6 +32,14 @@ import {
   requestKycResubmission,
   getKycStats,
 } from "../controllers/admin/tutorKycManagement.js";
+import {
+  getAllOrgKycSubmissions,
+  getOrgKycSubmissionById,
+  approveOrgKyc,
+  rejectOrgKyc,
+  requestOrgKycResubmission,
+  getOrgKycStats,
+} from "../controllers/admin/organizationKycManagement.js";
 
 // Super Admin Controllers
 import {
@@ -528,6 +536,17 @@ router.get("/tutor-kyc/:id", adminAuthorize, getKycSubmissionById);
 router.put("/tutor-kyc/:id/approve", adminAuthorize, approveKyc);
 router.put("/tutor-kyc/:id/reject", adminAuthorize, rejectKyc);
 router.put("/tutor-kyc/:id/request-resubmission", adminAuthorize, requestKycResubmission);
+
+router.get("/organization-kyc", adminAuthorize, getAllOrgKycSubmissions);
+router.get("/organization-kyc/stats", adminAuthorize, getOrgKycStats);
+router.get("/organization-kyc/:id", adminAuthorize, getOrgKycSubmissionById);
+router.put("/organization-kyc/:id/approve", adminAuthorize, approveOrgKyc);
+router.put("/organization-kyc/:id/reject", adminAuthorize, rejectOrgKyc);
+router.put(
+  "/organization-kyc/:id/request-resubmission",
+  adminAuthorize,
+  requestOrgKycResubmission
+);
 
 // ============================================
 // AI CONTENT GENERATION (Admin Access)

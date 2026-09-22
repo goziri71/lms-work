@@ -85,6 +85,7 @@ import {
   TutorNextOfKin,
   FundTransfer,
   TutorKyc,
+  OrganizationKyc,
   GoogleDriveConnection,
   ExternalFile,
   TutorMailbox,
@@ -1307,6 +1308,17 @@ export const setupAssociations = () => {
   TutorKyc.belongsTo(SoleTutor, {
     foreignKey: "tutor_id",
     as: "tutor",
+  });
+
+  // Organizations -> KYC (one-to-one business / CAC verification)
+  Organization.hasOne(OrganizationKyc, {
+    foreignKey: "organization_id",
+    as: "kyc",
+    onDelete: "CASCADE",
+  });
+  OrganizationKyc.belongsTo(Organization, {
+    foreignKey: "organization_id",
+    as: "organization",
   });
 
   // External File Storage associations

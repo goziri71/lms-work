@@ -238,7 +238,7 @@ import {
 import {
   getKycStatus,
   submitKyc,
-  uploadKycDocumentsMiddleware,
+  uploadTutorOrOrgKycMiddleware,
 } from "../controllers/marketplace/tutorKyc.js";
 import {
   initiateGoogleDriveConnection,
@@ -529,18 +529,18 @@ router.post("/next-of-kin", tutorAuthorize, upsertNextOfKin);
 router.put("/next-of-kin", tutorAuthorize, upsertNextOfKin);
 router.delete("/next-of-kin", tutorAuthorize, deleteNextOfKin);
 
-// Tutor KYC (Sole tutor authenticated)
+// Tutor / Organization KYC
 router.get("/tutor/kyc", tutorAuthorize, getKycStatus);
 router.post(
   "/tutor/kyc",
   tutorAuthorize,
-  uploadKycDocumentsMiddleware,
+  uploadTutorOrOrgKycMiddleware,
   submitKyc,
 );
 router.put(
   "/tutor/kyc",
   tutorAuthorize,
-  uploadKycDocumentsMiddleware,
+  uploadTutorOrOrgKycMiddleware,
   submitKyc,
 );
 

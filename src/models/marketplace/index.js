@@ -74,6 +74,7 @@ export { TutorNextOfKin } from "./tutorNextOfKin.js";
 export { FundTransfer } from "./fundTransfer.js";
 // KYC exports
 export { TutorKyc } from "./tutorKyc.js";
+export { OrganizationKyc } from "./organizationKyc.js";
 // External File Storage exports
 export { GoogleDriveConnection } from "./googleDriveConnection.js";
 export { ExternalFile } from "./externalFile.js";
