@@ -1,4 +1,3 @@
-import { Op } from "sequelize";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { TicketedEvent } from "../../models/marketplace/ticketedEvent.js";
@@ -83,9 +82,17 @@ export const createEventOrder = TryCatchFunction(async (req, res) => {
   try {
     await reserveTierInventory(tiersToReserve, transaction);
 
-    const expiresAt = isFree
-      ? null
-      : new Date(Date.now() + RESERVATION_MINUTES * 60 * 1000);
+    // Free / approval: hold seats until decide; paid instant still has payment window
+    const expiresAt =
+      isFree || event.requires_approval
+        ? null
+        : new Date(Date.now() + RESERVATION_MINUTES * 60 * 1000);
+
+    // Paid + approval still needs a payment window before application is pending
+    const paidApprovalExpires =
+      !isFree && event.requires_approval
+        ? new Date(Date.now() + RESERVATION_MINUTES * 60 * 1000)
+        : expiresAt;
 
     order = await EventTicketOrder.create(
       {
@@ -94,15 +101,16 @@ export const createEventOrder = TryCatchFunction(async (req, res) => {
         buyer_email: normalizeEmail(buyer_email),
         buyer_name: buyer_name.trim(),
         buyer_phone: buyer_phone || null,
-        status: isFree ? "pending" : "pending",
+        status: "pending",
         total_amount: totalAmount,
         currency,
         ticket_count: totalTickets,
         line_items: lineItems,
         payment_method: payMethod,
         idempotency_key: idempotencyKey || null,
-        reservation_expires_at: expiresAt,
+        reservation_expires_at: paidApprovalExpires,
         access_token: generateAccessToken(),
+        holder_names: Array.isArray(holder_names) ? holder_names : null,
       },
       { transaction }
     );
@@ -119,22 +127,39 @@ export const createEventOrder = TryCatchFunction(async (req, res) => {
   }
 
   if (isFree) {
-    const { order: paidOrder, tickets } = await fulfillPaidOrder(order.id, {
-      paymentMethod: "free",
-      holderNames: holder_names,
-    });
+    const { order: resultOrder, tickets, awaitingApproval } =
+      await fulfillPaidOrder(order.id, {
+        paymentMethod: "free",
+        holderNames: holder_names,
+      });
+
+    if (awaitingApproval) {
+      return res.status(200).json({
+        success: true,
+        message: "Application submitted — awaiting organizer approval",
+        data: buildPendingApprovalPayload(resultOrder),
+      });
+    }
+
     return res.status(200).json({
       success: true,
       message: "RSVP confirmed",
-      data: buildSuccessPayload(paidOrder, tickets),
+      data: buildSuccessPayload(resultOrder, tickets),
     });
   }
 
   if (studentId && payMethod === "wallet") {
-    const { order: paidOrder, tickets } = await payOrderWithWallet(
-      order.id,
-      studentId
-    );
+    const { order: paidOrder, tickets, awaitingApproval } =
+      await payOrderWithWallet(order.id, studentId);
+
+    if (awaitingApproval) {
+      return res.status(200).json({
+        success: true,
+        message: "Payment received — awaiting organizer approval",
+        data: buildPendingApprovalPayload(paidOrder),
+      });
+    }
+
     return res.status(200).json({
       success: true,
       message: "Order paid with wallet",
@@ -149,6 +174,7 @@ export const createEventOrder = TryCatchFunction(async (req, res) => {
     data: {
       order: formatOrder(refreshed),
       payment: buildFlutterwavePaymentPayload(refreshed),
+      requires_approval: !!event.requires_approval,
     },
   });
 });
@@ -163,12 +189,20 @@ async function respondWithOrder(res, order, event) {
       data: buildSuccessPayload(order, tickets),
     });
   }
+  if (order.status === "pending_approval") {
+    return res.status(200).json({
+      success: true,
+      message: "Application awaiting approval",
+      data: buildPendingApprovalPayload(order),
+    });
+  }
   return res.status(201).json({
     success: true,
     message: "Order created",
     data: {
       order: formatOrder(order),
       payment: buildFlutterwavePaymentPayload(order),
+      requires_approval: !!event?.requires_approval,
     },
   });
 }
@@ -181,6 +215,15 @@ function formatOrder(order) {
     currency: order.currency,
     ticket_count: order.ticket_count,
     reservation_expires_at: order.reservation_expires_at,
+  };
+}
+
+function buildPendingApprovalPayload(order) {
+  return {
+    order: formatOrder(order),
+    awaiting_approval: true,
+    message:
+      "Your request is pending organizer approval. Tickets will be issued if approved.",
   };
 }
 
@@ -203,10 +246,21 @@ export const confirmEventOrderPayment = TryCatchFunction(async (req, res) => {
   const orderId = parseInt(req.params.orderId, 10);
   const { transaction_reference, flutterwave_transaction_id } = req.body;
 
-  const { order, tickets, alreadyPaid } = await confirmOrderFlutterwave(
-    orderId,
-    { transactionReference: transaction_reference, flutterwaveTransactionId: flutterwave_transaction_id }
-  );
+  const { order, tickets, alreadyPaid, awaitingApproval } =
+    await confirmOrderFlutterwave(orderId, {
+      transactionReference: transaction_reference,
+      flutterwaveTransactionId: flutterwave_transaction_id,
+    });
+
+  if (awaitingApproval) {
+    return res.status(200).json({
+      success: true,
+      message: alreadyPaid
+        ? "Payment already recorded — awaiting approval"
+        : "Payment confirmed — awaiting organizer approval",
+      data: buildPendingApprovalPayload(order),
+    });
+  }
 
   res.status(200).json({
     success: true,
@@ -221,7 +275,18 @@ export const payEventOrderWithWallet = TryCatchFunction(async (req, res) => {
   }
 
   const orderId = parseInt(req.params.orderId, 10);
-  const { order, tickets } = await payOrderWithWallet(orderId, req.user.id);
+  const { order, tickets, awaitingApproval } = await payOrderWithWallet(
+    orderId,
+    req.user.id
+  );
+
+  if (awaitingApproval) {
+    return res.status(200).json({
+      success: true,
+      message: "Payment successful — awaiting organizer approval",
+      data: buildPendingApprovalPayload(order),
+    });
+  }
 
   res.status(200).json({
     success: true,
@@ -252,6 +317,7 @@ export const getEventOrderStatus = TryCatchFunction(async (req, res) => {
     data: {
       order_id: order.id,
       status: order.status,
+      awaiting_approval: order.status === "pending_approval",
       access_token: order.status === "paid" ? order.access_token : null,
     },
   });

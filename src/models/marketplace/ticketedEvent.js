@@ -115,6 +115,13 @@ export const TicketedEvent = db.define(
       defaultValue: true,
       comment: "Creator can close ticket sales without unpublishing the event",
     },
+    requires_approval: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment:
+        "If true, tickets are only allocated after creator approves the order",
+    },
     refund_policy: {
       type: DataTypes.STRING(64),
       allowNull: true,

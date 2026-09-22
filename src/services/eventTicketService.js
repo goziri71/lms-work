@@ -134,6 +134,7 @@ export function formatEventPublic(event, { includeOnlineUrl = false } = {}) {
     status: event.status,
     sales_open: event.sales_open !== false,
     sales_status: event.sales_open === false ? "closed" : "open",
+    requires_approval: !!event.requires_approval,
     refund_policy: event.refund_policy,
     refund_policy_text: event.refund_policy_text,
     venue,
@@ -366,7 +367,16 @@ export async function fulfillPaidOrder(
     if (order.status === "paid") {
       await transaction.commit();
       const tickets = await EventTicket.findAll({ where: { order_id: order.id } });
-      return { order, tickets, alreadyPaid: true };
+      return { order, tickets, alreadyPaid: true, awaitingApproval: false };
+    }
+    if (order.status === "pending_approval") {
+      await transaction.commit();
+      return {
+        order,
+        tickets: [],
+        alreadyPaid: true,
+        awaitingApproval: true,
+      };
     }
     if (order.status !== "pending") {
       throw new ErrorClass(`Order cannot be completed (status: ${order.status})`, 400);
@@ -382,9 +392,47 @@ export async function fulfillPaidOrder(
       throw new ErrorClass("Reservation expired. Please start checkout again.", 410);
     }
 
+    const event = await TicketedEvent.findByPk(order.event_id, { transaction });
+    const accessToken = order.access_token || generateAccessToken();
+    const names =
+      holderNames?.length > 0
+        ? holderNames
+        : Array.isArray(order.holder_names)
+          ? order.holder_names
+          : null;
+
+    // Approval-required: take payment / accept application, hold seats, no tickets yet
+    if (event?.requires_approval) {
+      await order.update(
+        {
+          status: "pending_approval",
+          payment_method: paymentMethod || order.payment_method,
+          transaction_ref: transactionRef || order.transaction_ref,
+          flutterwave_transaction_id:
+            flutterwaveId || order.flutterwave_transaction_id,
+          access_token: accessToken,
+          paid_at: parseFloat(order.total_amount) > 0 ? new Date() : null,
+          reservation_expires_at: null,
+          holder_names: names || order.holder_names,
+        },
+        { transaction }
+      );
+      await transaction.commit();
+
+      sendApplicationReceivedEmail(order, event).catch((err) =>
+        console.error("Application email error:", err.message)
+      );
+
+      return {
+        order: await EventTicketOrder.findByPk(orderId),
+        tickets: [],
+        alreadyPaid: false,
+        awaitingApproval: true,
+      };
+    }
+
     await confirmTierSale(order.line_items, transaction);
 
-    const accessToken = order.access_token || generateAccessToken();
     await order.update(
       {
         status: "paid",
@@ -395,13 +443,13 @@ export async function fulfillPaidOrder(
         access_token: accessToken,
         paid_at: new Date(),
         reservation_expires_at: null,
+        holder_names: names || order.holder_names,
       },
       { transaction }
     );
 
-    const tickets = await issueTicketsForOrder(order, holderNames, transaction);
+    const tickets = await issueTicketsForOrder(order, names, transaction);
 
-    const event = await TicketedEvent.findByPk(order.event_id, { transaction });
     await maybeMarkEventSoldOut(event, transaction);
 
     await transaction.commit();
@@ -410,11 +458,229 @@ export async function fulfillPaidOrder(
       console.error("Ticket email error:", err.message)
     );
 
-    return { order, tickets, alreadyPaid: false };
+    return { order, tickets, alreadyPaid: false, awaitingApproval: false };
   } catch (err) {
     await transaction.rollback();
     throw err;
   }
+}
+
+/**
+ * Creator approves a pending_approval order → allocate tickets.
+ */
+export async function approveEventOrder(
+  orderId,
+  { holderNames, approvedBy } = {}
+) {
+  const transaction = await db.transaction();
+  try {
+    const order = await EventTicketOrder.findByPk(orderId, {
+      lock: transaction.LOCK.UPDATE,
+      transaction,
+    });
+    if (!order) throw new ErrorClass("Order not found", 404);
+    if (order.status === "paid") {
+      await transaction.commit();
+      const tickets = await EventTicket.findAll({ where: { order_id: order.id } });
+      return { order, tickets, alreadyApproved: true };
+    }
+    if (order.status !== "pending_approval") {
+      throw new ErrorClass(
+        `Only pending_approval orders can be approved (status: ${order.status})`,
+        400
+      );
+    }
+
+    const event = await TicketedEvent.findByPk(order.event_id, { transaction });
+    if (!event) throw new ErrorClass("Event not found", 404);
+
+    await confirmTierSale(order.line_items, transaction);
+
+    const names =
+      holderNames?.length > 0
+        ? holderNames
+        : Array.isArray(order.holder_names)
+          ? order.holder_names
+          : null;
+
+    const accessToken = order.access_token || generateAccessToken();
+    await order.update(
+      {
+        status: "paid",
+        access_token: accessToken,
+        paid_at: order.paid_at || new Date(),
+        holder_names: names || order.holder_names,
+        rejection_reason: null,
+      },
+      { transaction }
+    );
+
+    const tickets = await issueTicketsForOrder(order, names, transaction);
+    await maybeMarkEventSoldOut(event, transaction);
+    await transaction.commit();
+
+    sendTicketConfirmationEmail(order, event, tickets).catch((err) =>
+      console.error("Ticket email error:", err.message)
+    );
+
+    return { order: await EventTicketOrder.findByPk(orderId), tickets, alreadyApproved: false, approvedBy };
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
+  }
+}
+
+/**
+ * Creator rejects a pending_approval order → release seats + refund if paid.
+ */
+export async function rejectEventOrder(orderId, { reason } = {}) {
+  const transaction = await db.transaction();
+  let order;
+  try {
+    order = await EventTicketOrder.findByPk(orderId, {
+      lock: transaction.LOCK.UPDATE,
+      transaction,
+    });
+    if (!order) throw new ErrorClass("Order not found", 404);
+    if (order.status !== "pending_approval") {
+      throw new ErrorClass(
+        `Only pending_approval orders can be rejected (status: ${order.status})`,
+        400
+      );
+    }
+
+    await releaseTierReservation(order.line_items, transaction);
+
+    const amount = parseFloat(order.total_amount);
+    let refundStatus = null;
+
+    if (amount > 0 && order.payment_method === "wallet" && order.student_id) {
+      await refundWalletPayment(order, amount, transaction);
+      refundStatus = "refunded";
+      await order.update(
+        {
+          status: "refunded",
+          rejection_reason: reason || null,
+          reservation_expires_at: null,
+        },
+        { transaction }
+      );
+    } else if (amount > 0 && order.payment_method === "flutterwave") {
+      // Mark rejected; attempt Flutterwave refund after commit
+      await order.update(
+        {
+          status: "rejected",
+          rejection_reason: reason || null,
+          reservation_expires_at: null,
+        },
+        { transaction }
+      );
+      refundStatus = "pending_gateway";
+    } else {
+      await order.update(
+        {
+          status: "rejected",
+          rejection_reason: reason || null,
+          reservation_expires_at: null,
+        },
+        { transaction }
+      );
+    }
+
+    const event = await TicketedEvent.findByPk(order.event_id, { transaction });
+    await transaction.commit();
+
+    if (refundStatus === "pending_gateway") {
+      try {
+        const fwResult = await refundFlutterwavePayment(order);
+        if (fwResult?.success) {
+          await order.update({ status: "refunded" });
+          refundStatus = "refunded";
+        } else {
+          refundStatus = "manual_required";
+          console.error(
+            "Flutterwave refund failed for order",
+            order.id,
+            fwResult?.message
+          );
+        }
+      } catch (e) {
+        refundStatus = "manual_required";
+        console.error("Flutterwave refund error:", e.message);
+      }
+    }
+
+    sendApplicationRejectedEmail(order, event, reason).catch((err) =>
+      console.error("Rejection email error:", err.message)
+    );
+
+    return {
+      order: await EventTicketOrder.findByPk(orderId),
+      refund_status: refundStatus,
+    };
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
+  }
+}
+
+async function refundWalletPayment(order, amount, transaction) {
+  const student = await Students.findByPk(order.student_id, {
+    lock: transaction.LOCK.UPDATE,
+    transaction,
+  });
+  if (!student) return;
+
+  const current = parseFloat(student.wallet_balance || 0);
+  const newBalance = Math.round((current + amount) * 100) / 100;
+  const today = new Date().toISOString().split("T")[0];
+  const ref = `EVT-REFUND-${order.id}-${Date.now()}`;
+
+  await Funding.create(
+    {
+      student_id: student.id,
+      amount,
+      type: "Credit",
+      service_name: "Event Ticket Rejection Refund",
+      ref,
+      date: today,
+      semester: null,
+      academic_year: null,
+      currency: order.currency,
+      balance: newBalance.toString(),
+    },
+    { transaction }
+  );
+  await student.update({ wallet_balance: newBalance }, { transaction });
+}
+
+async function refundFlutterwavePayment(order) {
+  const secretKey = process.env.FLUTTERWAVE_SECRET_KEY?.trim();
+  const txId = order.flutterwave_transaction_id;
+  if (!secretKey || !txId) {
+    return { success: false, message: "Missing Flutterwave credentials or transaction id" };
+  }
+
+  const amount = parseFloat(order.total_amount);
+  const res = await fetch(
+    `https://api.flutterwave.com/v3/transactions/${txId}/refund`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${secretKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ amount }),
+    }
+  );
+  const data = await res.json().catch(() => ({}));
+  if (data.status === "success") {
+    return { success: true, data };
+  }
+  return {
+    success: false,
+    message: data.message || `Flutterwave refund HTTP ${res.status}`,
+  };
 }
 
 async function maybeMarkEventSoldOut(event, transaction) {
@@ -450,6 +716,49 @@ export async function sendTicketConfirmationEmail(order, event, tickets) {
     to: order.buyer_email,
     name: order.buyer_name,
     subject: `Tickets confirmed: ${event.title}`,
+    htmlBody: html,
+    useTutorLearnerBranding: true,
+  });
+}
+
+export async function sendApplicationReceivedEmail(order, event) {
+  const html = `
+    <h2>Application received: ${event.title}</h2>
+    <p>Hi ${order.buyer_name},</p>
+    <p>Your ticket request is awaiting the organizer's approval. We'll email you when it's approved or declined.</p>
+    <p>Event starts: ${new Date(event.starts_at).toLocaleString()} (${event.timezone})</p>
+  `;
+
+  await emailService.sendEmail({
+    to: order.buyer_email,
+    name: order.buyer_name,
+    subject: `Application received: ${event.title}`,
+    htmlBody: html,
+    useTutorLearnerBranding: true,
+  });
+}
+
+export async function sendApplicationRejectedEmail(order, event, reason) {
+  if (!event) return;
+  const reasonLine = reason
+    ? `<p>Reason: ${String(reason).replace(/</g, "&lt;")}</p>`
+    : "";
+  const refundNote =
+    parseFloat(order.total_amount) > 0
+      ? "<p>If you paid, a refund will be processed.</p>"
+      : "";
+  const html = `
+    <h2>Application not approved: ${event.title}</h2>
+    <p>Hi ${order.buyer_name},</p>
+    <p>Unfortunately your ticket request was not approved.</p>
+    ${reasonLine}
+    ${refundNote}
+  `;
+
+  await emailService.sendEmail({
+    to: order.buyer_email,
+    name: order.buyer_name,
+    subject: `Application not approved: ${event.title}`,
     htmlBody: html,
     useTutorLearnerBranding: true,
   });
@@ -524,7 +833,10 @@ export async function confirmOrderFlutterwave(orderId, { transactionReference, f
   if (!order) throw new ErrorClass("Order not found", 404);
   if (order.status === "paid") {
     const tickets = await EventTicket.findAll({ where: { order_id: order.id } });
-    return { order, tickets, alreadyPaid: true };
+    return { order, tickets, alreadyPaid: true, awaitingApproval: false };
+  }
+  if (order.status === "pending_approval") {
+    return { order, tickets: [], alreadyPaid: true, awaitingApproval: true };
   }
 
   const verifyId = flutterwaveTransactionId || transactionReference || order.transaction_ref;
@@ -575,7 +887,13 @@ export async function fulfillEventOrderFromWebhook(txRef, transactionData) {
   const order = await EventTicketOrder.findOne({
     where: { transaction_ref: txRef },
   });
-  if (!order || order.status === "paid") return { handled: !!order, order };
+  if (
+    !order ||
+    order.status === "paid" ||
+    order.status === "pending_approval"
+  ) {
+    return { handled: !!order, order };
+  }
 
   if (!isTransactionSuccessful(transactionData)) {
     return { handled: false, order };

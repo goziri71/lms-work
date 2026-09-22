@@ -36,13 +36,24 @@ export const EventTicketOrder = db.define(
     status: {
       type: DataTypes.ENUM(
         "pending",
+        "pending_approval",
         "paid",
         "failed",
         "cancelled",
-        "refunded"
+        "refunded",
+        "rejected"
       ),
       allowNull: false,
       defaultValue: "pending",
+    },
+    holder_names: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      comment: "Optional per-ticket holder names; used when issuing after approval",
+    },
+    rejection_reason: {
+      type: DataTypes.TEXT,
+      allowNull: true,
     },
     total_amount: {
       type: DataTypes.DECIMAL(10, 2),

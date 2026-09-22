@@ -210,6 +210,8 @@ import {
   listAttendees,
   exportAttendeesCsv,
   listEventOrders,
+  approveEventTicketOrder,
+  rejectEventTicketOrder,
 } from "../controllers/marketplace/tutorEventManagement.js";
 import {
   checkInLookup,
@@ -1426,6 +1428,16 @@ router.get(
 );
 router.get("/tutor/events/:id/attendees", tutorAuthorize, listAttendees);
 router.get("/tutor/events/:id/orders", tutorAuthorize, listEventOrders);
+router.post(
+  "/tutor/events/:id/orders/:orderId/approve",
+  tutorAuthorize,
+  approveEventTicketOrder,
+);
+router.post(
+  "/tutor/events/:id/orders/:orderId/reject",
+  tutorAuthorize,
+  rejectEventTicketOrder,
+);
 router.post("/tutor/events/:id/check-in/lookup", tutorAuthorize, checkInLookup);
 router.post("/tutor/events/:id/check-in", tutorAuthorize, checkInTicket);
 router.get("/tutor/events/:id/check-in/stats", tutorAuthorize, checkInStats);

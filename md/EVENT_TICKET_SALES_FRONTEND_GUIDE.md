@@ -8,6 +8,7 @@ Migrations (already applied on production DB):
 ```bash
 node scripts/migrate-create-event-ticket-tables.js
 node scripts/migrate-event-ticket-video-benefits-sales.js
+node scripts/migrate-event-ticket-approval.js
 ```
 
 ---
@@ -21,6 +22,7 @@ node scripts/migrate-event-ticket-video-benefits-sales.js
 | Benefits | Each package has `benefits: string[]` (e.g. `["VIP seat", "Merch"]`). |
 | Ticket code | Every sold/RSVP ticket gets a short code like `YDHSJ3`. |
 | Open / close sales | `sales_open` / `sales_status: "open" \| "closed"`. Closing stops checkout; event can stay published. |
+| Instant vs approval | `requires_approval: false` (default) = ticket allocated immediately. `true` = buyer applies/pays, creator must **approve** before tickets are issued. |
 | Buyers | Guest checkout (email + name) or logged-in student (wallet or Flutterwave). |
 | Formats | `online` \| `in_person` \| `hybrid` |
 
@@ -98,11 +100,14 @@ Pass `cover_image_url` into create/update event.
   "category": "concert",
   "max_attendees": 500,
   "refund_policy": "none",
-  "refund_policy_text": null
+  "refund_policy_text": null,
+  "requires_approval": false
 }
 ```
 
 Required: `title`, `format`, `starts_at`, `ends_at`.
+
+Optional: **`requires_approval`** (`false` = instant tickets, `true` = creator must approve before tickets are issued).
 
 Starts as `status: "draft"`, `sales_open: true`.
 
@@ -116,7 +121,7 @@ Starts as `status: "draft"`, `sales_open: true`.
 | GET | `/tutor/events/:id` |
 | PUT | `/tutor/events/:id` |
 
-Updatable fields include: `title`, `description`, `format`, dates, venue fields, `online_url`, `cover_image_url`, **`video_url`**, `category`, refund fields, `max_attendees`, `slug`.
+Updatable fields include: `title`, `description`, `format`, dates, venue fields, `online_url`, `cover_image_url`, **`video_url`**, `category`, refund fields, `max_attendees`, `slug`, **`requires_approval`**.
 
 List/summary includes:
 
@@ -513,16 +518,30 @@ Each ticket includes:
 - [ ] Create / edit event (incl. video URL + cover upload)  
 - [ ] Package manager (price, benefits list, quantity)  
 - [ ] Publish / unpublish / open sales / close sales  
+- [ ] **Approval queue** — list orders with `?status=pending_approval`, approve / reject  
 - [ ] Sales dashboard + attendees + CSV  
 - [ ] Check-in scanner (code or QR)  
 
 **Public / buyer**
 
 - [ ] Event browse + detail (video, packages, benefits)  
+- [ ] If `requires_approval`, show **Apply** / “Awaiting approval” instead of instant tickets  
 - [ ] Guest checkout + Flutterwave  
 - [ ] Student wallet checkout  
-- [ ] Ticket confirmation page (codes + QR)  
+- [ ] Ticket confirmation page (codes + QR) — only after `status: paid`  
 - [ ] My tickets (logged-in)  
+
+---
+
+## Approval flow (when `requires_approval: true`)
+
+1. Buyer submits checkout (free) or pays (wallet / Flutterwave).
+2. Order becomes `pending_approval`. **No ticket codes yet.** Seats stay reserved.
+3. Creator lists: `GET /tutor/events/:id/orders?status=pending_approval`
+4. Approve: `POST /tutor/events/:id/orders/:orderId/approve` → status `paid`, tickets issued + email.
+5. Reject: `POST /tutor/events/:id/orders/:orderId/reject` body `{ "reason": "optional" }` → seats released; wallet refunded automatically; Flutterwave refund attempted (else `refund_status: "manual_required"`).
+
+Checkout responses include `awaiting_approval: true` and **no** `tickets` / `access_token` until approved.
 
 ---
 
@@ -547,6 +566,8 @@ PUT    /tutor/events/:eventId/tiers/:tierId
 DELETE /tutor/events/:eventId/tiers/:tierId
 GET    /tutor/events/:id/sales
 GET    /tutor/events/:id/orders
+POST   /tutor/events/:id/orders/:orderId/approve
+POST   /tutor/events/:id/orders/:orderId/reject
 GET    /tutor/events/:id/attendees
 GET    /tutor/events/:id/attendees/export
 POST   /tutor/events/:id/check-in/lookup

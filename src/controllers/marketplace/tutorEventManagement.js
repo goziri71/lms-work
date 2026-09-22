@@ -15,6 +15,8 @@ import {
   formatTierPublic,
   tierAvailable,
   normalizeTierBenefits,
+  approveEventOrder,
+  rejectEventOrder,
 } from "../../services/eventTicketService.js";
 
 const coverUploader = multer({
@@ -43,6 +45,7 @@ function mapEventSummary(event, tiers = []) {
     status: event.status,
     sales_open: event.sales_open !== false,
     sales_status: event.sales_open === false ? "closed" : "open",
+    requires_approval: !!event.requires_approval,
     starts_at: event.starts_at,
     ends_at: event.ends_at,
     timezone: event.timezone,
@@ -160,6 +163,7 @@ export const createEvent = TryCatchFunction(async (req, res) => {
     refund_policy_text,
     max_attendees,
     slug,
+    requires_approval,
   } = req.body;
 
   if (!title || !format || !starts_at || !ends_at) {
@@ -198,6 +202,7 @@ export const createEvent = TryCatchFunction(async (req, res) => {
     max_attendees,
     status: "draft",
     sales_open: true,
+    requires_approval: !!requires_approval,
   });
 
   res.status(201).json({
@@ -307,10 +312,17 @@ export const updateEvent = TryCatchFunction(async (req, res) => {
     "doors_open_at", "venue_name", "address_line1", "city", "region", "country",
     "latitude", "longitude", "online_url", "cover_image_url", "video_url",
     "category", "refund_policy", "refund_policy_text", "max_attendees",
+    "requires_approval",
   ];
 
   for (const key of allowed) {
-    if (req.body[key] !== undefined) event[key] = req.body[key];
+    if (req.body[key] !== undefined) {
+      if (key === "requires_approval") {
+        event[key] = !!req.body[key];
+      } else {
+        event[key] = req.body[key];
+      }
+    }
   }
 
   if (req.body.slug && req.body.slug !== event.slug) {
@@ -725,6 +737,91 @@ export const listEventOrders = TryCatchFunction(async (req, res) => {
         total: count,
         total_pages: Math.ceil(count / parseInt(limit, 10)),
       },
+    },
+  });
+});
+
+/**
+ * Approve a pending ticket application → allocate tickets
+ * POST /tutor/events/:id/orders/:orderId/approve
+ */
+export const approveEventTicketOrder = TryCatchFunction(async (req, res) => {
+  const { tutorId, tutorType } = getTutorInfo(req);
+  const event = await TicketedEvent.findByPk(req.params.id);
+  if (!event) throw new ErrorClass("Event not found", 404);
+  await assertEventOwnedByTutor(event, tutorId, tutorType);
+
+  const orderId = parseInt(req.params.orderId, 10);
+  const order = await EventTicketOrder.findByPk(orderId);
+  if (!order || order.event_id !== event.id) {
+    throw new ErrorClass("Order not found for this event", 404);
+  }
+
+  const { order: approved, tickets, alreadyApproved } = await approveEventOrder(
+    orderId,
+    {
+      holderNames: req.body?.holder_names,
+      approvedBy: tutorId,
+    }
+  );
+
+  res.status(200).json({
+    success: true,
+    message: alreadyApproved ? "Order already approved" : "Order approved — tickets allocated",
+    data: {
+      order: {
+        id: approved.id,
+        status: approved.status,
+        buyer_name: approved.buyer_name,
+        buyer_email: approved.buyer_email,
+        ticket_count: approved.ticket_count,
+        total_amount: parseFloat(approved.total_amount).toFixed(2),
+        currency: approved.currency,
+      },
+      tickets: tickets.map((t) => ({
+        id: t.id,
+        ticket_code: t.ticket_code,
+        holder_name: t.holder_name,
+        holder_email: t.holder_email,
+        status: t.status,
+      })),
+    },
+  });
+});
+
+/**
+ * Reject a pending ticket application → release seats + refund if paid
+ * POST /tutor/events/:id/orders/:orderId/reject
+ */
+export const rejectEventTicketOrder = TryCatchFunction(async (req, res) => {
+  const { tutorId, tutorType } = getTutorInfo(req);
+  const event = await TicketedEvent.findByPk(req.params.id);
+  if (!event) throw new ErrorClass("Event not found", 404);
+  await assertEventOwnedByTutor(event, tutorId, tutorType);
+
+  const orderId = parseInt(req.params.orderId, 10);
+  const order = await EventTicketOrder.findByPk(orderId);
+  if (!order || order.event_id !== event.id) {
+    throw new ErrorClass("Order not found for this event", 404);
+  }
+
+  const reason = req.body?.reason || req.body?.rejection_reason || null;
+  const { order: rejected, refund_status } = await rejectEventOrder(orderId, {
+    reason,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Order rejected",
+    data: {
+      order: {
+        id: rejected.id,
+        status: rejected.status,
+        buyer_name: rejected.buyer_name,
+        buyer_email: rejected.buyer_email,
+        rejection_reason: rejected.rejection_reason,
+      },
+      refund_status,
     },
   });
 });
