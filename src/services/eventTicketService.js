@@ -7,10 +7,13 @@ import { EventTicketOrder } from "../models/marketplace/eventTicketOrder.js";
 import { EventTicket } from "../models/marketplace/eventTicket.js";
 import { SoleTutor } from "../models/marketplace/soleTutor.js";
 import { Organization } from "../models/marketplace/organization.js";
+import { TutorWalletTransaction } from "../models/marketplace/tutorWalletTransaction.js";
 import { Students } from "../models/auth/student.js";
 import { Funding } from "../models/payment/funding.js";
 import { ErrorClass } from "../utils/errorClass/index.js";
 import { getWalletBalance } from "./walletBalanceService.js";
+import { calculateRevenue } from "./revenueSharingService.js";
+import { applyLegacyWalletMirror } from "../utils/tutorWallet.js";
 import {
   verifyTransaction,
   isTransactionSuccessful,
@@ -23,6 +26,7 @@ import { joinFrontendUrl } from "../utils/frontendUrl.js";
 import { Config } from "../config/config.js";
 
 export const RESERVATION_MINUTES = 15;
+const DEFAULT_EVENT_COMMISSION_RATE = 15;
 
 export function generateTicketCode() {
   // Short unique code e.g. YDHSJ3 (A-Z0-9, no ambiguous I/O/0/1)
@@ -351,6 +355,112 @@ export async function issueTicketsForOrder(order, holderNames, transaction) {
   return tickets;
 }
 
+/**
+ * Credit event owner wallet when tickets are allocated (status → paid).
+ * Free orders skipped. Idempotent if tutor_earnings already stored on order.
+ * Uses owner commission_rate (default 15%) — same as courses/downloads.
+ */
+export async function creditEventCreatorFromOrder(order, event, dbTransaction) {
+  const gross = parseFloat(order.total_amount || 0);
+  if (!event || gross <= 0) {
+    return { credited: false, tutorEarnings: 0, platformFee: 0 };
+  }
+
+  // Already credited for this order
+  if (order.tutor_earnings != null && parseFloat(order.tutor_earnings) > 0) {
+    return {
+      credited: false,
+      alreadyCredited: true,
+      tutorEarnings: parseFloat(order.tutor_earnings),
+      platformFee: parseFloat(order.platform_fee || 0),
+    };
+  }
+
+  const ownerType = event.owner_type;
+  const ownerId = event.owner_id;
+  const OwnerModel = ownerType === "sole_tutor" ? SoleTutor : Organization;
+
+  const owner = await OwnerModel.findByPk(ownerId, {
+    lock: dbTransaction.LOCK.UPDATE,
+    transaction: dbTransaction,
+  });
+  if (!owner) {
+    throw new ErrorClass("Event owner not found for revenue credit", 404);
+  }
+
+  const commissionRate = parseFloat(
+    owner.commission_rate != null
+      ? owner.commission_rate
+      : DEFAULT_EVENT_COMMISSION_RATE
+  );
+  const { wspCommission, tutorEarnings } = calculateRevenue(
+    gross,
+    commissionRate
+  );
+
+  const currency = (order.currency || "NGN").toString().toUpperCase();
+  let balanceBefore = 0;
+  let balanceAfter = 0;
+  const updates = {
+    total_earnings: parseFloat(
+      (parseFloat(owner.total_earnings || 0) + gross).toFixed(2)
+    ),
+  };
+
+  if (currency === "USD") {
+    balanceBefore = parseFloat(owner.wallet_balance_usd || 0);
+    balanceAfter = parseFloat((balanceBefore + tutorEarnings).toFixed(2));
+    updates.wallet_balance_usd = balanceAfter;
+  } else if (currency === "GBP") {
+    balanceBefore = parseFloat(owner.wallet_balance_gbp || 0);
+    balanceAfter = parseFloat((balanceBefore + tutorEarnings).toFixed(2));
+    updates.wallet_balance_gbp = balanceAfter;
+  } else {
+    balanceBefore = parseFloat(owner.wallet_balance_primary || 0);
+    balanceAfter = parseFloat((balanceBefore + tutorEarnings).toFixed(2));
+    updates.wallet_balance_primary = balanceAfter;
+    applyLegacyWalletMirror(updates, balanceAfter);
+  }
+
+  await owner.update(updates, { transaction: dbTransaction });
+
+  await TutorWalletTransaction.create(
+    {
+      tutor_id: ownerId,
+      tutor_type: ownerType,
+      transaction_type: "credit",
+      amount: tutorEarnings,
+      currency,
+      service_name: "Event Ticket Sale",
+      transaction_reference: order.transaction_ref || `EVT-ORDER-${order.id}`,
+      flutterwave_transaction_id: order.flutterwave_transaction_id || null,
+      balance_before: balanceBefore,
+      balance_after: balanceAfter,
+      related_id: order.id,
+      related_type: "event_ticket_order",
+      status: "successful",
+      notes: `Event #${event.id}: ${event.title} — order #${order.id}`,
+    },
+    { transaction: dbTransaction }
+  );
+
+  await order.update(
+    {
+      commission_rate: commissionRate,
+      platform_fee: wspCommission,
+      tutor_earnings: tutorEarnings,
+    },
+    { transaction: dbTransaction }
+  );
+
+  return {
+    credited: true,
+    tutorEarnings,
+    platformFee: wspCommission,
+    commissionRate,
+  };
+}
+
 export async function fulfillPaidOrder(
   orderId,
   { paymentMethod, transactionRef, flutterwaveId, holderNames } = {}
@@ -447,6 +557,9 @@ export async function fulfillPaidOrder(
       },
       { transaction }
     );
+    await order.reload({ transaction });
+
+    await creditEventCreatorFromOrder(order, event, transaction);
 
     const tickets = await issueTicketsForOrder(order, names, transaction);
 
@@ -458,7 +571,12 @@ export async function fulfillPaidOrder(
       console.error("Ticket email error:", err.message)
     );
 
-    return { order, tickets, alreadyPaid: false, awaitingApproval: false };
+    return {
+      order: await EventTicketOrder.findByPk(orderId),
+      tickets,
+      alreadyPaid: false,
+      awaitingApproval: false,
+    };
   } catch (err) {
     await transaction.rollback();
     throw err;
@@ -514,6 +632,10 @@ export async function approveEventOrder(
       },
       { transaction }
     );
+    await order.reload({ transaction });
+
+    // Credit creator only when tickets are allocated (not while pending_approval)
+    await creditEventCreatorFromOrder(order, event, transaction);
 
     const tickets = await issueTicketsForOrder(order, names, transaction);
     await maybeMarkEventSoldOut(event, transaction);
@@ -523,7 +645,12 @@ export async function approveEventOrder(
       console.error("Ticket email error:", err.message)
     );
 
-    return { order: await EventTicketOrder.findByPk(orderId), tickets, alreadyApproved: false, approvedBy };
+    return {
+      order: await EventTicketOrder.findByPk(orderId),
+      tickets,
+      alreadyApproved: false,
+      approvedBy,
+    };
   } catch (err) {
     await transaction.rollback();
     throw err;

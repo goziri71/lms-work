@@ -23,6 +23,7 @@ node scripts/migrate-event-ticket-approval.js
 | Ticket code | Every sold/RSVP ticket gets a short code like `YDHSJ3`. |
 | Open / close sales | `sales_open` / `sales_status: "open" \| "closed"`. Closing stops checkout; event can stay published. |
 | Instant vs approval | `requires_approval: false` (default) = ticket allocated immediately. `true` = buyer applies/pays, creator must **approve** before tickets are issued. |
+| Creator revenue | On ticket allocation (`status: paid`), creator wallet is credited (net of commission, same rate as other products). Free = no credit. Approval events credit **on approve**, not while pending. |
 | Buyers | Guest checkout (email + name) or logged-in student (wallet or Flutterwave). |
 | Formats | `online` \| `in_person` \| `hybrid` |
 
