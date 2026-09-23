@@ -1,4 +1,5 @@
 import express from "express";
+import { authLimiter } from "../middlewares/rateLimiter.js";
 import {
   registerSoleTutor,
   registerOrganization,
@@ -588,35 +589,39 @@ router.post("/register/organization", registerOrganization);
 
 // Login
 // Unified login - auto-detects sole tutor or organization
-router.post("/login", unifiedTutorLogin);
+router.post("/login", authLimiter, unifiedTutorLogin);
 // Separate login endpoints (kept for backward compatibility)
-router.post("/login/sole-tutor", soleTutorLogin);
-router.post("/login/organization", organizationLogin);
-router.post("/login/organization-user", organizationUserLogin);
+router.post("/login/sole-tutor", authLimiter, soleTutorLogin);
+router.post("/login/organization", authLimiter, organizationLogin);
+router.post("/login/organization-user", authLimiter, organizationUserLogin);
 
 // Password Reset
 // Unified: one endpoint for both sole tutor and organization (recommended for "Forgot password" form)
-router.post("/password/reset-request", requestPasswordResetTutor);
-router.post("/password/reset/request", requestPasswordResetTutor);
+router.post("/password/reset-request", authLimiter, requestPasswordResetTutor);
+router.post("/password/reset/request", authLimiter, requestPasswordResetTutor);
 // Legacy: type-specific endpoints (still supported)
 router.post(
   "/password/reset-request/sole-tutor",
+  authLimiter,
   requestPasswordResetSoleTutor,
 );
 router.post(
   "/password/reset/request/sole-tutor",
+  authLimiter,
   requestPasswordResetSoleTutor,
 );
 router.post(
   "/password/reset-request/organization",
+  authLimiter,
   requestPasswordResetOrganization,
 );
 router.post(
   "/password/reset/request/organization",
+  authLimiter,
   requestPasswordResetOrganization,
 );
-router.post("/password/reset/sole-tutor", resetPasswordSoleTutor);
-router.post("/password/reset/organization", resetPasswordOrganization);
+router.post("/password/reset/sole-tutor", authLimiter, resetPasswordSoleTutor);
+router.post("/password/reset/organization", authLimiter, resetPasswordOrganization);
 
 // Logout (requires tutor authentication)
 router.post("/logout", tutorAuthorize, tutorLogout);
@@ -709,7 +714,7 @@ router.get("/tutor/dashboard", tutorAuthorize, getDashboard);
 // Profile Management
 router.get("/tutor/profile", tutorAuthorize, getProfile);
 router.put("/tutor/profile", tutorAuthorize, updateProfile);
-router.put("/tutor/change-password", tutorAuthorize, changePassword);
+router.put("/tutor/change-password", tutorAuthorize, authLimiter, changePassword);
 
 // Settings Management
 router.get("/tutor/settings", tutorAuthorize, getSettings);

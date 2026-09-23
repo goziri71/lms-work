@@ -106,6 +106,10 @@ export const Students = db.define(
       type: DataTypes.STRING,
       allowNull: true,
     },
+    token_expires_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
     a_status: {
       type: DataTypes.STRING,
       allowNull: true,

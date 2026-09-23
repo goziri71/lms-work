@@ -151,6 +151,10 @@ export const Organization = db.define(
       type: DataTypes.STRING(255),
       allowNull: true,
     },
+    password_reset_expires_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
     verification_documents: {
       type: DataTypes.JSONB,
       allowNull: true,

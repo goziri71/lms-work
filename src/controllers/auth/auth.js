@@ -41,9 +41,9 @@ export const studentLogin = TryCatchFunction(async (req, res) => {
     // admin_status is just informational (pending/active/inactive) for display purposes
 
     // Compare password
-    const isPasswordValid = await authService.comparePassword(
+    const isPasswordValid = await authService.verifyAndUpgradePassword(
       password,
-      student.password,
+      student,
     );
 
     if (!isPasswordValid) {
@@ -132,9 +132,9 @@ export const staffLogin = TryCatchFunction(async (req, res) => {
     }
 
     // Compare password
-    const isPasswordValid = await authService.comparePassword(
+    const isPasswordValid = await authService.verifyAndUpgradePassword(
       password,
-      staff.password,
+      staff,
     );
 
     if (!isPasswordValid) {
@@ -263,9 +263,9 @@ export const login = TryCatchFunction(async (req, res) => {
   // admin_status is just informational (pending/active/inactive) for display purposes
 
   // Compare password
-  const isPasswordValid = await authService.comparePassword(
+  const isPasswordValid = await authService.verifyAndUpgradePassword(
     password,
-    user.password,
+    user,
   );
 
   if (!isPasswordValid) {
@@ -462,9 +462,9 @@ export const changeStudentPassword = TryCatchFunction(async (req, res) => {
   }
 
   // Verify current password
-  const isPasswordValid = await authService.comparePassword(
+  const isPasswordValid = await authService.verifyAndUpgradePassword(
     currentPassword,
-    student.password,
+    student,
   );
 
   if (!isPasswordValid) {
@@ -503,16 +503,33 @@ export const changeStudentPassword = TryCatchFunction(async (req, res) => {
   });
 });
 
+// Fields a student is allowed to self-update. Everything else (password,
+// email, matric_number, admin_status, wallet_balance, level, program_id,
+// document/file URLs, etc.) must go through its own dedicated, validated
+// endpoint — never through this generic profile update.
+const STUDENT_EDITABLE_PROFILE_FIELDS = [
+  "fname",
+  "mname",
+  "lname",
+  "gender",
+  "dob",
+  "address",
+  "state_origin",
+  "lcda",
+  "country",
+  "phone",
+  "currency",
+];
+
 // Update student profile
 export const updateStudentProfile = TryCatchFunction(async (req, res) => {
   const { id } = req.user;
-  const updateData = req.body;
-
-  // Remove sensitive fields that shouldn't be updated via this endpoint
-  delete updateData.password;
-  delete updateData.email;
-  delete updateData.matric_number;
-  delete updateData.admin_status;
+  const updateData = {};
+  for (const field of STUDENT_EDITABLE_PROFILE_FIELDS) {
+    if (req.body[field] !== undefined) {
+      updateData[field] = req.body[field];
+    }
+  }
 
   const student = await Students.findByPk(id);
 
@@ -552,14 +569,26 @@ export const updateStudentProfile = TryCatchFunction(async (req, res) => {
   });
 });
 
+// Fields a staff member is allowed to self-update. password/email/token/file
+// must go through their own dedicated, validated endpoints.
+const STAFF_EDITABLE_PROFILE_FIELDS = [
+  "full_name",
+  "phone",
+  "linkedin",
+  "google_scholar",
+  "research_areas",
+  "home_address",
+];
+
 // Update staff profile
 export const updateStaffProfile = TryCatchFunction(async (req, res) => {
   const { id } = req.user;
-  const updateData = req.body;
-
-  // Remove sensitive fields
-  delete updateData.password;
-  delete updateData.email;
+  const updateData = {};
+  for (const field of STAFF_EDITABLE_PROFILE_FIELDS) {
+    if (req.body[field] !== undefined) {
+      updateData[field] = req.body[field];
+    }
+  }
 
   const staff = await Staff.findByPk(id);
 
@@ -970,10 +999,10 @@ export const requestPasswordReset = TryCatchFunction(async (req, res) => {
     .update(resetToken)
     .digest("hex");
 
-  // Save hashed token to user (expires in 1 hour)
+  // Save hashed token to user, valid for 1 hour only
   await user.update({
     token: hashedToken,
-    // If you have a token_expires field, set it to: new Date(Date.now() + 3600000)
+    token_expires_at: new Date(Date.now() + 3600000),
   });
 
   // Create reset URL (adjust based on your frontend)
@@ -1081,7 +1110,11 @@ export const resetPassword = TryCatchFunction(async (req, res) => {
     where: { token: hashedToken },
   });
 
-  if (!user) {
+  if (
+    !user ||
+    !user.token_expires_at ||
+    new Date(user.token_expires_at).getTime() < Date.now()
+  ) {
     throw new ErrorClass(
       "Invalid or expired reset token. Please request a new password reset.",
       400,
@@ -1095,6 +1128,7 @@ export const resetPassword = TryCatchFunction(async (req, res) => {
   await user.update({
     password: hashedPassword,
     token: null,
+    token_expires_at: null,
   });
 
   res.status(200).json({

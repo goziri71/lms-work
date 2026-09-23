@@ -249,6 +249,22 @@ export const requestPayout = TryCatchFunction(async (req, res) => {
       throw new ErrorClass("Tutor not found", 404);
     }
 
+    if (tutor.status === "suspended" || tutor.status === "rejected") {
+      await safeRollback();
+      throw new ErrorClass(
+        `Payouts are not available for accounts with status "${tutor.status}". Please contact support.`,
+        403
+      );
+    }
+
+    if (tutor.verification_status === "rejected") {
+      await safeRollback();
+      throw new ErrorClass(
+        "Payouts are disabled until your KYC verification issue is resolved. Please contact support.",
+        403
+      );
+    }
+
     await assertTransferPinForPayout(tutor, tutorId, tutorType, transfer_pin);
 
     const wc = (tutor.currency || "NGN").toString().toUpperCase();

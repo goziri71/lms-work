@@ -432,7 +432,7 @@ export const submitExam = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Exam already submitted", 400);
   }
 
-  // Calculate total score from objective answers
+  // Calculate total score from objective answers actually submitted
   const objectiveAnswers = await ExamAnswerObjective.findAll({
     where: { attempt_id: attemptId },
   });
@@ -442,34 +442,41 @@ export const submitExam = TryCatchFunction(async (req, res) => {
     0
   );
 
-  // Theory answers are not graded yet, so max_score will be updated when graded
-  const theoryAnswers = await ExamAnswerTheory.findAll({
-    where: { attempt_id: attemptId },
+  // max_score must be derived from every question in the exam, not just the
+  // ones the student happened to answer — otherwise skipping questions
+  // inflates the percentage instead of penalizing it.
+  const allExamItems = await ExamItem.findAll({
+    where: { exam_id: attempt.exam_id },
     include: [
       {
-        model: ExamItem,
-        as: "examItem",
+        model: QuestionBank,
+        as: "question",
         include: [
-          {
-            model: QuestionBank,
-            as: "question",
-            include: [{ model: QuestionTheory, as: "theory" }],
-          },
+          { model: QuestionObjective, as: "objective", required: false },
+          { model: QuestionTheory, as: "theory", required: false },
         ],
       },
     ],
   });
 
-  const maxTheoryScore = theoryAnswers.reduce(
-    (sum, ans) => sum + Number(ans.examItem?.question?.theory?.max_marks || 0),
-    0
-  );
+  let totalObjectiveMaxScore = 0;
+  let maxTheoryScore = 0;
+  let hasTheoryItems = false;
 
-  const totalObjectiveMaxScore = objectiveAnswers.length * 1; // Assuming 1 mark per objective question (can be dynamic)
+  for (const item of allExamItems) {
+    if (item.question?.question_type === "objective") {
+      totalObjectiveMaxScore += Number(item.question?.objective?.marks || 0);
+    } else if (item.question?.question_type === "theory") {
+      hasTheoryItems = true;
+      maxTheoryScore += Number(item.question?.theory?.max_marks || 0);
+    }
+  }
 
+  // Theory answers are not graded yet, so total_score only reflects the
+  // objective portion until grading fills in theory marks.
   await attempt.update({
     submitted_at: new Date(),
-    status: theoryAnswers.length > 0 ? "submitted" : "graded",
+    status: hasTheoryItems ? "submitted" : "graded",
     total_score: objectiveScore,
     max_score: totalObjectiveMaxScore + maxTheoryScore,
   });

@@ -40,9 +40,9 @@ export const adminLogin = TryCatchFunction(async (req, res) => {
   }
 
   // Verify password
-  const isPasswordValid = await authService.comparePassword(
+  const isPasswordValid = await authService.verifyAndUpgradePassword(
     password,
-    admin.password
+    admin
   );
 
   if (!isPasswordValid) {
@@ -185,9 +185,9 @@ export const changeAdminPassword = TryCatchFunction(async (req, res) => {
   }
 
   // Verify current password
-  const isPasswordValid = await authService.comparePassword(
+  const isPasswordValid = await authService.verifyAndUpgradePassword(
     currentPassword,
-    admin.password
+    admin
   );
 
   if (!isPasswordValid) {
@@ -316,9 +316,10 @@ export const requestAdminPasswordReset = TryCatchFunction(async (req, res) => {
     .update(resetToken)
     .digest("hex");
 
-  // Save hashed token
+  // Save hashed token, valid for 1 hour only
   await admin.update({
     password_reset_token: hashedToken,
+    password_reset_expires_at: new Date(Date.now() + 3600000),
   });
 
   // Create reset URL for admin (manage.* site)
@@ -375,7 +376,11 @@ export const resetAdminPassword = TryCatchFunction(async (req, res) => {
     where: { password_reset_token: hashedToken },
   });
 
-  if (!admin) {
+  if (
+    !admin ||
+    !admin.password_reset_expires_at ||
+    new Date(admin.password_reset_expires_at).getTime() < Date.now()
+  ) {
     throw new ErrorClass("Invalid or expired reset token", 400);
   }
 
@@ -386,6 +391,7 @@ export const resetAdminPassword = TryCatchFunction(async (req, res) => {
   await admin.update({
     password: hashedPassword,
     password_reset_token: null,
+    password_reset_expires_at: null,
   });
 
   // Send password changed notification email

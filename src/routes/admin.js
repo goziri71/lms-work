@@ -8,6 +8,7 @@ import {
   adminAuthorize,
   requireSuperAdmin,
 } from "../middlewares/adminAuthorize.js";
+import { authLimiter } from "../middlewares/rateLimiter.js";
 import {
   adminLogin,
   adminLogout,
@@ -223,13 +224,13 @@ const router = express.Router();
 // ============================================
 // ADMIN AUTHENTICATION (Public - No auth required)
 // ============================================
-router.post("/login", adminLogin);
+router.post("/login", authLimiter, adminLogin);
 router.post("/logout", adminAuthorize, adminLogout);
 router.get("/profile", adminAuthorize, getAdminProfile);
 router.put("/profile", adminAuthorize, updateAdminProfile);
-router.put("/change-password", adminAuthorize, changeAdminPassword);
-router.post("/password/reset-request", requestAdminPasswordReset);
-router.post("/password/reset", resetAdminPassword);
+router.put("/change-password", adminAuthorize, authLimiter, changeAdminPassword);
+router.post("/password/reset-request", authLimiter, requestAdminPasswordReset);
+router.post("/password/reset", authLimiter, resetAdminPassword);
 
 // ============================================
 // DASHBOARD (Super Admin Only)

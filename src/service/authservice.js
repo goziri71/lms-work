@@ -1,10 +1,19 @@
 // In authservice.js, add this export:
 import jwt from "jsonwebtoken";
-import crypto from "crypto"; // For MD5 hashing
+import crypto from "crypto"; // Only used to detect/verify legacy MD5 hashes
+import bcrypt from "bcrypt";
 
-// OPTIMIZATION: Cache JWT secret for faster access
-const JWT_SECRET = process.env.JWT_SECRET || "your-secret";
-const REFRESH_SECRET = process.env.REFRESH_TOKEN_SECRET || "refresh-secret";
+const BCRYPT_ROUNDS = 12;
+const BCRYPT_HASH_PATTERN = /^\$2[aby]\$\d{2}\$/;
+
+if (!process.env.JWT_SECRET || !process.env.REFRESH_TOKEN_SECRET) {
+  throw new Error(
+    "JWT_SECRET and REFRESH_TOKEN_SECRET must be set in the environment. Refusing to start with insecure fallback secrets.",
+  );
+}
+
+const JWT_SECRET = process.env.JWT_SECRET;
+const REFRESH_SECRET = process.env.REFRESH_TOKEN_SECRET;
 
 const ACCESS_TOKEN_EXPIRES_STUDENT = "24h";
 const ACCESS_TOKEN_EXPIRES_DEFAULT = "4h";
@@ -67,21 +76,41 @@ export class AuthService {
     return decoded;
   }
 
-  // OPTIMIZATION: Synchronous MD5 for maximum speed
   hashPassword(plainPassword) {
-    const md5Hash = crypto
-      .createHash("md5")
-      .update(plainPassword)
-      .digest("hex");
-    return md5Hash;
+    return bcrypt.hashSync(plainPassword, BCRYPT_ROUNDS);
+  }
+
+  isLegacyHash(hashedPassword) {
+    return !BCRYPT_HASH_PATTERN.test(hashedPassword || "");
   }
 
   comparePassword(plainPassword, hashedPassword) {
-    const md5Hash = crypto
-      .createHash("md5")
-      .update(plainPassword)
-      .digest("hex");
-    return md5Hash === hashedPassword;
+    if (!hashedPassword) return false;
+    if (this.isLegacyHash(hashedPassword)) {
+      // Legacy accounts hashed with unsalted MD5 before the bcrypt migration.
+      const md5Hash = crypto
+        .createHash("md5")
+        .update(plainPassword)
+        .digest("hex");
+      return md5Hash === hashedPassword;
+    }
+    return bcrypt.compareSync(plainPassword, hashedPassword);
+  }
+
+  // Verifies a password against a Sequelize instance and transparently
+  // upgrades legacy MD5 hashes to bcrypt on successful login, so passwords
+  // migrate off MD5 without forcing a mass password reset.
+  async verifyAndUpgradePassword(plainPassword, instance, field = "password") {
+    const storedHash = instance?.[field];
+    const isValid = this.comparePassword(plainPassword, storedHash);
+    if (isValid && this.isLegacyHash(storedHash)) {
+      try {
+        await instance.update({ [field]: this.hashPassword(plainPassword) });
+      } catch (error) {
+        console.error("Password rehash migration failed:", error.message);
+      }
+    }
+    return isValid;
   }
 }
 

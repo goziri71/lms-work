@@ -68,6 +68,10 @@ export const WpuAdmin = db.define(
       type: DataTypes.STRING,
       allowNull: true,
     },
+    password_reset_expires_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
     token: {
       type: DataTypes.STRING,
       allowNull: true,

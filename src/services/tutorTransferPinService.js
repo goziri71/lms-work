@@ -31,7 +31,12 @@ export function verifyTransferPin(pin, hash) {
 }
 
 function otpPepper() {
-  return Config.JWT_SECRET || "transfer-pin-otp-fallback";
+  if (!Config.JWT_SECRET) {
+    throw new Error(
+      "JWT_SECRET must be set in the environment. Refusing to derive transfer-PIN OTP pepper from an insecure fallback.",
+    );
+  }
+  return Config.JWT_SECRET;
 }
 
 /**

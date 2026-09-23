@@ -59,7 +59,7 @@ function normalizeAuthCode(code) {
 }
 
 export function createMailboxGmailState({ tutorId, tutorType, codeVerifier }) {
-  const secret = process.env.JWT_SECRET || "your-secret";
+  const secret = process.env.JWT_SECRET;
   const payload = {
     purpose: "tutor_mailbox_gmail",
     tutorId,
@@ -73,7 +73,7 @@ export function verifyMailboxGmailState(state) {
   if (!state || typeof state !== "string") {
     throw new ErrorClass("OAuth state is required", 400);
   }
-  const secret = process.env.JWT_SECRET || "your-secret";
+  const secret = process.env.JWT_SECRET;
   try {
     const decoded = jwt.verify(state, secret);
     if (decoded.purpose !== "tutor_mailbox_gmail") throw new Error("bad purpose");

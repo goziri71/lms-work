@@ -1,4 +1,5 @@
 import axios from "axios";
+import crypto from "crypto";
 import { ErrorClass } from "../utils/errorClass/index.js";
 import { getQuotaGuardAxiosProxyConfig } from "../utils/quotaGuardProxy.js";
 
@@ -228,18 +229,24 @@ export const verifyTransaction = async (transactionIdOrRef, options = {}) => {
  * @returns {boolean} True if signature is valid
  */
 export const verifyWebhookSignature = (signature, payload) => {
-  if (!FLUTTERWAVE_SECRET_KEY) {
+  if (!FLUTTERWAVE_SECRET_KEY || !signature) {
     return false;
   }
 
-  const crypto = require("crypto");
   const hash = crypto
     .createHmac("sha256", FLUTTERWAVE_SECRET_KEY)
     .update(JSON.stringify(payload))
     .digest("hex");
 
-  return hash === signature;
+  return timingSafeEqualStrings(hash, signature);
 };
+
+function timingSafeEqualStrings(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
 /** Must match the "Secret Hash" set in Flutterwave Dashboard → Webhooks (not the API secret key). */
 const FLUTTERWAVE_SECRET_HASH =
@@ -247,50 +254,41 @@ const FLUTTERWAVE_SECRET_HASH =
   process.env.FLW_SECRET_HASH?.trim();
 
 /**
- * Enforce webhook authenticity. In production (or when FLUTTERWAVE_REQUIRE_WEBHOOK_SIGNATURE=true),
- * a configured secret hash or verifiable HMAC is required.
+ * Enforce webhook authenticity. A configured secret hash is always required
+ * and always verified — signature enforcement must never depend on
+ * NODE_ENV, since a misconfigured/unset NODE_ENV would otherwise let
+ * anyone POST a forged webhook. The only bypass is an explicit,
+ * non-production opt-in for local testing.
  * @returns {{ ok: true } | { ok: false, status: number, message: string }}
  */
 export function assertFlutterwaveWebhookAllowed(req) {
   const signature =
     req.headers["verif-hash"] || req.headers["x-flutterwave-signature"];
-  const requireSig =
-    process.env.NODE_ENV === "production" ||
-    process.env.FLUTTERWAVE_REQUIRE_WEBHOOK_SIGNATURE === "true";
 
   if (FLUTTERWAVE_SECRET_HASH) {
-    if (!signature || signature !== FLUTTERWAVE_SECRET_HASH) {
+    if (!signature || !timingSafeEqualStrings(signature, FLUTTERWAVE_SECRET_HASH)) {
       return { ok: false, status: 401, message: "Invalid webhook signature" };
     }
     return { ok: true };
   }
 
-  if (FLUTTERWAVE_SECRET_KEY) {
-    if (requireSig && !signature) {
-      return { ok: false, status: 401, message: "Missing verif-hash header" };
-    }
-    if (signature) {
-      const rawBody = req.rawBody || JSON.stringify(req.body);
-      if (!verifyWebhookSignature(signature, rawBody)) {
-        return { ok: false, status: 401, message: "Invalid webhook signature" };
-      }
-    }
+  const allowInsecure =
+    process.env.NODE_ENV !== "production" &&
+    process.env.ALLOW_INSECURE_FLUTTERWAVE_WEBHOOKS === "true";
+
+  if (allowInsecure) {
+    console.warn(
+      "⚠️ Flutterwave webhook accepted without verification (explicit dev opt-in via ALLOW_INSECURE_FLUTTERWAVE_WEBHOOKS). Set FLUTTERWAVE_SECRET_HASH to enable real verification."
+    );
     return { ok: true };
   }
 
-  if (requireSig) {
-    return {
-      ok: false,
-      status: 503,
-      message:
-        "Webhook verification not configured (set FLUTTERWAVE_SECRET_HASH to match the dashboard secret hash)",
-    };
-  }
-
-  console.warn(
-    "⚠️ Flutterwave webhook accepted without verification (dev). Set FLUTTERWAVE_SECRET_HASH."
-  );
-  return { ok: true };
+  return {
+    ok: false,
+    status: 503,
+    message:
+      "Webhook verification not configured (set FLUTTERWAVE_SECRET_HASH to match the dashboard secret hash)",
+  };
 }
 
 /**

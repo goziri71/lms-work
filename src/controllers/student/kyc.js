@@ -409,7 +409,7 @@ export const getKycDocuments = TryCatchFunction(async (req, res) => {
 export const getSignedUrl = TryCatchFunction(async (req, res) => {
   const studentId = Number(req.user?.id);
   const userType = req.user?.userType;
-  const { document_type, file_url } = req.body;
+  const { document_type } = req.body;
 
   if (userType !== "student") {
     throw new ErrorClass("Only students can access signed URLs", 403);
@@ -433,8 +433,17 @@ export const getSignedUrl = TryCatchFunction(async (req, res) => {
     );
   }
 
+  // Look up the file URL from the authenticated student's own record —
+  // never trust a client-supplied URL/path here, or any student could
+  // request a signed URL for another student's private documents.
+  const student = await Students.findByPk(studentId);
+  if (!student) {
+    throw new ErrorClass("Student not found", 404);
+  }
+
+  const file_url = student[document_type];
   if (!file_url) {
-    throw new ErrorClass("File URL is required", 400);
+    throw new ErrorClass("No document uploaded for this document type", 404);
   }
 
   // Extract file path from URL
@@ -449,6 +458,13 @@ export const getSignedUrl = TryCatchFunction(async (req, res) => {
   const pathParts = pathPart.split("/");
   const bucket = pathParts[0];
   const objectPath = pathParts.slice(1).join("/");
+
+  // Defense in depth: the resolved object path must live under this
+  // student's own folder, even though it was derived from their own record.
+  const expectedPrefix = `students/${studentId}/`;
+  if (!objectPath.startsWith(expectedPrefix)) {
+    throw new ErrorClass("Document path does not belong to this account", 403);
+  }
 
   // Generate new signed URL (expires in 1 hour for security)
   const { data: signedUrlData, error } = await supabase.storage

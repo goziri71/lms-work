@@ -49,6 +49,10 @@ export const Staff = db.define(
       type: DataTypes.STRING,
       allowNull: true,
     },
+    token_expires_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
   },
   {
     tableName: "staff", // Specify the exact table name

@@ -284,9 +284,9 @@ export const changePassword = TryCatchFunction(async (req, res) => {
   }
 
   // Verify current password
-  const isPasswordValid = authService.comparePassword(
+  const isPasswordValid = await authService.verifyAndUpgradePassword(
     current_password,
-    tutor.password
+    tutor
   );
   if (!isPasswordValid) {
     throw new ErrorClass("Current password is incorrect", 401);

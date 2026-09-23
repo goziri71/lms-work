@@ -11,7 +11,12 @@ const TAG_LEN = 16;
 const KEY_LEN = 32;
 
 function getKey() {
-  const raw = process.env.MAILBOX_TOKEN_ENCRYPTION_KEY || process.env.JWT_SECRET || "dev-only-change-me";
+  const raw = process.env.MAILBOX_TOKEN_ENCRYPTION_KEY;
+  if (!raw) {
+    throw new Error(
+      "MAILBOX_TOKEN_ENCRYPTION_KEY must be set in the environment. Refusing to encrypt/decrypt OAuth tokens with an insecure fallback key.",
+    );
+  }
   return crypto.createHash("sha256").update(String(raw)).digest().subarray(0, KEY_LEN);
 }
 

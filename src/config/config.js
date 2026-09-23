@@ -7,8 +7,17 @@ import {
 
 dotenv.config({ debug: false });
 
-/** Render/small Postgres: keep total connections low (LMS + library pools). */
-const dbPoolMax = parseInt(process.env.DB_POOL_MAX || "3", 10);
+/**
+ * Render free-tier Postgres caps out around 22 total connections per
+ * instance. Each pool here talks to a separate Postgres instance (main +
+ * library), so this budget applies independently to each. The app runs as
+ * a 2-worker PM2 cluster (see ecosystem.config.cjs), and each worker gets
+ * its own pool of this size, so keep worker_count * DB_POOL_MAX comfortably
+ * under 22 (6 * 2 = 12, leaving ~10 connections for psql/scripts/migrations
+ * running alongside the app). Raise this only after upgrading the Postgres
+ * plan or reducing worker count accordingly.
+ */
+const dbPoolMax = parseInt(process.env.DB_POOL_MAX || "6", 10);
 const dbPoolMin = parseInt(process.env.DB_POOL_MIN || "0", 10);
 const dbPoolAcquire = parseInt(process.env.DB_POOL_ACQUIRE_MS || "15000", 10);
 

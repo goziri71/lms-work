@@ -301,7 +301,7 @@ export function getEmbedUrl(fileId, mimeType) {
  * Signed OAuth state so the browser callback (no JWT header) can be tied to a tutor.
  */
 export function createGoogleOAuthState({ tutorId, tutorType, codeVerifier }) {
-  const secret = process.env.JWT_SECRET || "your-secret";
+  const secret = process.env.JWT_SECRET;
   const payload = {
     purpose: "google_drive_oauth",
     tutorId,
@@ -320,7 +320,7 @@ export function verifyGoogleOAuthState(state) {
   if (!state || typeof state !== "string") {
     throw new ErrorClass("OAuth state is required", 400);
   }
-  const secret = process.env.JWT_SECRET || "your-secret";
+  const secret = process.env.JWT_SECRET;
   try {
     const decoded = jwt.verify(state, secret);
     if (decoded.purpose !== "google_drive_oauth") {

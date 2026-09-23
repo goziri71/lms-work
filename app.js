@@ -53,6 +53,55 @@ const server = http.createServer(app);
 const io = new SocketIOServer(server, { cors: { origin: "*" } });
 const PORT = process.env.PORT || 3000;
 
+// Socket.io keeps room/connection state in-process by default. Under a
+// clustered/multi-process deploy, a student connected to worker A would
+// never see a broadcast emitted from worker B (chat, discussions, coaching
+// messaging) without this adapter fanning events out over Redis. Degrades
+// gracefully to in-process-only behavior if Redis isn't reachable, matching
+// this app's existing "best effort" Redis usage elsewhere.
+if (process.env.REDIS_URL) {
+  try {
+    const { createAdapter } = await import("@socket.io/redis-adapter");
+    const { default: Redis } = await import("ioredis");
+    const redisOpts = {
+      ...(process.env.REDIS_URL.startsWith("rediss://")
+        ? { tls: { rejectUnauthorized: false } }
+        : {}),
+      // Keep retrying (unlike the best-effort cache client) since losing
+      // this connection means losing cross-worker realtime, but cap the
+      // backoff so a prolonged outage logs periodically instead of spinning.
+      retryStrategy: (times) => Math.min(times * 500, 10000),
+    };
+    const pubClient = new Redis(process.env.REDIS_URL, redisOpts);
+    const subClient = pubClient.duplicate();
+    pubClient.on("error", (err) =>
+      console.warn("⚠️ Socket.io Redis adapter (pub) error:", err.message),
+    );
+    subClient.on("error", (err) =>
+      console.warn("⚠️ Socket.io Redis adapter (sub) error:", err.message),
+    );
+    io.adapter(createAdapter(pubClient, subClient));
+    console.log("🔌 Socket.io Redis adapter attached (cross-worker realtime enabled)");
+  } catch (error) {
+    console.warn(
+      "⚠️ Could not attach Socket.io Redis adapter — realtime features will be process-local only:",
+      error.message,
+    );
+  }
+} else {
+  console.warn(
+    "⚠️ REDIS_URL not set — Socket.io realtime features will be process-local only (breaks across clustered workers).",
+  );
+}
+
+// When running under a PM2 cluster (or any multi-process setup), only one
+// worker should run boot-time schema sync/ALTER statements and cron-style
+// background jobs (subscription renewals, wallet-affecting jobs, etc). PM2
+// sets NODE_APP_INSTANCE per worker (0, 1, 2, ...); every other process
+// manager either leaves it unset or sets it to a single value, so treating
+// "0 or unset" as primary is safe for both clustered and single-process runs.
+const isPrimaryInstance = (process.env.NODE_APP_INSTANCE ?? "0") === "0";
+
 // Middleware
 app.use(cors());
 app.use(helmet());
@@ -160,6 +209,10 @@ connectDB().then(async (success) => {
     setupExamAssociations();
     console.log("🔗 Model associations established");
 
+    // Schema sync / ALTER statements must only run once, not once per
+    // clustered worker (concurrent ALTERs against the same tables at boot
+    // would race). Everything in this block is boot-time schema setup.
+    if (isPrimaryInstance) {
     // Ensure critical tables exist (especially email_logs)
     try {
       const [tableExists] = await db.query(`
@@ -262,10 +315,16 @@ connectDB().then(async (success) => {
     } catch (colErr) {
       console.warn("⚠️ Could not verify author_type columns:", colErr.message);
     }
+    } // end isPrimaryInstance (schema sync)
 
     setupDiscussionsSocket(io);
     setupDirectChatSocket(io);
     setupCoachingMessagingSocket(io);
+
+    // Cron-style background jobs must only run in one worker when clustered.
+    // Several of these are billing-affecting (subscription auto-renewal
+    // debits wallets) — running them in every worker would double-charge.
+    if (isPrimaryInstance) {
 
     // Setup background jobs for subscriptions
     try {
@@ -481,6 +540,7 @@ connectDB().then(async (success) => {
         error.message,
       );
     }
+    } // end isPrimaryInstance (background jobs)
 
     server.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);

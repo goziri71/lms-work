@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { Op } from "sequelize";
+import { Op, Transaction } from "sequelize";
 import { db } from "../database/database.js";
 import { TicketedEvent } from "../models/marketplace/ticketedEvent.js";
 import { EventTicketTier } from "../models/marketplace/eventTicketTier.js";
@@ -11,7 +11,10 @@ import { TutorWalletTransaction } from "../models/marketplace/tutorWalletTransac
 import { Students } from "../models/auth/student.js";
 import { Funding } from "../models/payment/funding.js";
 import { ErrorClass } from "../utils/errorClass/index.js";
-import { getWalletBalance } from "./walletBalanceService.js";
+import {
+  getWalletBalance,
+  calculateWalletBalanceFromFunding,
+} from "./walletBalanceService.js";
 import { calculateRevenue } from "./revenueSharingService.js";
 import { applyLegacyWalletMirror } from "../utils/tutorWallet.js";
 import {
@@ -75,7 +78,7 @@ export function buildQrPayload(ticket) {
     e: ticket.event_id,
   };
   const sig = crypto
-    .createHmac("sha256", Config.JWT_SECRET || "event-ticket")
+    .createHmac("sha256", Config.JWT_SECRET)
     .update(JSON.stringify(payload))
     .digest("hex")
     .slice(0, 16);
@@ -1081,8 +1084,10 @@ export async function sendApplicationRejectedEmail(order, event, reason) {
 }
 
 export async function payOrderWithWallet(orderId, studentId) {
-  const student = await Students.findByPk(studentId);
-  if (!student) throw new ErrorClass("Student not found", 404);
+  // Pre-check outside the transaction so we can fail fast with a clear
+  // error before taking a row lock; the authoritative check happens again
+  // under the lock below.
+  await getWalletBalance(studentId, true);
 
   const order = await EventTicketOrder.findByPk(orderId);
   if (!order) throw new ErrorClass("Order not found", 404);
@@ -1096,20 +1101,35 @@ export async function payOrderWithWallet(orderId, studentId) {
     throw new ErrorClass(`Order is ${order.status}`, 400);
   }
 
-  const { balance } = await getWalletBalance(studentId, true);
   const amount = parseFloat(order.total_amount);
-  if (balance < amount) {
-    throw new ErrorClass(
-      `Insufficient wallet balance. Required: ${amount.toFixed(2)} ${order.currency}, Available: ${balance.toFixed(2)}`,
-      400
-    );
-  }
-
   const txRef = buildOrderTxRef(order.id);
   const today = new Date().toISOString().split("T")[0];
-  const transaction = await db.transaction();
 
-  try {
+  await db.transaction(async (transaction) => {
+    // Lock the student's row for the duration of the transaction so two
+    // concurrent wallet payments can't both read the same starting balance
+    // and both pass the sufficiency check (which would drive the wallet
+    // negative).
+    const student = await Students.findByPk(studentId, {
+      transaction,
+      lock: Transaction.LOCK.UPDATE,
+      attributes: ["id", "wallet_balance", "currency"],
+    });
+    if (!student) throw new ErrorClass("Student not found", 404);
+
+    const balance = await calculateWalletBalanceFromFunding(
+      studentId,
+      student.currency,
+      transaction
+    );
+
+    if (balance < amount) {
+      throw new ErrorClass(
+        `Insufficient wallet balance. Required: ${amount.toFixed(2)} ${order.currency}, Available: ${balance.toFixed(2)}`,
+        400
+      );
+    }
+
     const newBalance = balance - amount;
     await Funding.create(
       {
@@ -1135,11 +1155,7 @@ export async function payOrderWithWallet(orderId, studentId) {
       },
       { transaction }
     );
-    await transaction.commit();
-  } catch (e) {
-    await transaction.rollback();
-    throw e;
-  }
+  });
 
   return fulfillPaidOrder(orderId, { paymentMethod: "wallet", transactionRef: txRef });
 }

@@ -313,9 +313,9 @@ export const soleTutorLogin = TryCatchFunction(async (req, res) => {
   }
 
   // Verify password
-  const isPasswordValid = await authService.comparePassword(
+  const isPasswordValid = await authService.verifyAndUpgradePassword(
     password,
-    tutor.password
+    tutor
   );
 
   if (!isPasswordValid) {
@@ -476,9 +476,9 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
   }
 
   // Verify password
-  const isPasswordValid = await authService.comparePassword(
+  const isPasswordValid = await authService.verifyAndUpgradePassword(
     password,
-    organization.password
+    organization
   );
 
   if (!isPasswordValid) {
@@ -650,9 +650,9 @@ export const organizationUserLogin = TryCatchFunction(async (req, res) => {
   }
 
   // Verify password
-  const isPasswordValid = await authService.comparePassword(
+  const isPasswordValid = await authService.verifyAndUpgradePassword(
     password,
-    orgUser.password
+    orgUser
   );
 
   if (!isPasswordValid) {
@@ -794,9 +794,9 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
     }
 
     // Verify password
-    const isPasswordValid = await authService.comparePassword(
+    const isPasswordValid = await authService.verifyAndUpgradePassword(
       password,
-      tutor.password
+      tutor
     );
 
     if (!isPasswordValid) {
@@ -935,9 +935,9 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
     }
 
     // Verify password
-    const isPasswordValid = await authService.comparePassword(
+    const isPasswordValid = await authService.verifyAndUpgradePassword(
       password,
-      organization.password
+      organization
     );
 
     if (!isPasswordValid) {
@@ -1155,6 +1155,7 @@ export const requestPasswordResetSoleTutor = TryCatchFunction(
 
     await tutor.update({
       password_reset_token: hashedToken,
+      password_reset_expires_at: new Date(Date.now() + 3600000),
     });
 
     const resetUrl = `${joinFrontendUrl(
@@ -1206,6 +1207,7 @@ export const requestPasswordResetOrganization = TryCatchFunction(
 
     await organization.update({
       password_reset_token: hashedToken,
+      password_reset_expires_at: new Date(Date.now() + 3600000),
     });
 
     const resetUrl = `${joinFrontendUrl(
@@ -1260,7 +1262,10 @@ export const requestPasswordResetTutor = TryCatchFunction(async (req, res) => {
     .digest("hex");
 
   if (soleTutor) {
-    await soleTutor.update({ password_reset_token: hashedToken });
+    await soleTutor.update({
+      password_reset_token: hashedToken,
+      password_reset_expires_at: new Date(Date.now() + 3600000),
+    });
     const resetUrl = joinFrontendUrl(
       Config.frontendUrl,
       `reset-password?token=${resetToken}&type=sole_tutor`
@@ -1272,7 +1277,10 @@ export const requestPasswordResetTutor = TryCatchFunction(async (req, res) => {
       "sole_tutor"
     );
   } else {
-    await organization.update({ password_reset_token: hashedToken });
+    await organization.update({
+      password_reset_token: hashedToken,
+      password_reset_expires_at: new Date(Date.now() + 3600000),
+    });
     const resetUrl = joinFrontendUrl(
       Config.frontendUrl,
       `reset-password?token=${resetToken}&type=organization`
@@ -1309,7 +1317,11 @@ export const resetPasswordSoleTutor = TryCatchFunction(async (req, res) => {
     where: { password_reset_token: hashedToken },
   });
 
-  if (!tutor) {
+  if (
+    !tutor ||
+    !tutor.password_reset_expires_at ||
+    new Date(tutor.password_reset_expires_at).getTime() < Date.now()
+  ) {
     throw new ErrorClass(
       "Invalid or expired reset token. Please request a new password reset.",
       400
@@ -1323,6 +1335,7 @@ export const resetPasswordSoleTutor = TryCatchFunction(async (req, res) => {
   await tutor.update({
     password: hashedPassword,
     password_reset_token: null,
+    password_reset_expires_at: null,
   });
 
   res.status(200).json({
@@ -1350,7 +1363,11 @@ export const resetPasswordOrganization = TryCatchFunction(async (req, res) => {
     where: { password_reset_token: hashedToken },
   });
 
-  if (!organization) {
+  if (
+    !organization ||
+    !organization.password_reset_expires_at ||
+    new Date(organization.password_reset_expires_at).getTime() < Date.now()
+  ) {
     throw new ErrorClass(
       "Invalid or expired reset token. Please request a new password reset.",
       400
@@ -1364,6 +1381,7 @@ export const resetPasswordOrganization = TryCatchFunction(async (req, res) => {
   await organization.update({
     password: hashedPassword,
     password_reset_token: null,
+    password_reset_expires_at: null,
   });
 
   res.status(200).json({

@@ -112,43 +112,33 @@ export const getStudentCourses = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("No courses found", 404);
   }
 
-  // Add paid boolean to each course
-  const coursesWithPaidStatus = await Promise.all(
-    data.map(async (course) => {
-      const catalogLevel = levelStringFromCourse(course);
-      const courseData = course.toJSON();
-      if (catalogLevel && courseData.registration) {
-        courseData.registration = {
-          ...courseData.registration,
-          level: catalogLevel,
-        };
-      }
-      const registration = courseData.registration;
+  // Add paid boolean to each course.
+  // Note: the `registration` include above already filters out
+  // registration_status = "marketplace_purchased", so every row here is a
+  // regular program-course registration — the same case checkCourseFeesPayment
+  // resolves using only registration.registration_status/course_reg_id, both
+  // of which are already loaded. Computing it locally avoids ~2 extra
+  // queries per course (a redundant Courses.findByPk + a CourseReg.findOne)
+  // that would otherwise fire once per course on every load of this page.
+  const coursesWithPaidStatus = data.map((course) => {
+    const catalogLevel = levelStringFromCourse(course);
+    const courseData = course.toJSON();
+    if (catalogLevel && courseData.registration) {
+      courseData.registration = {
+        ...courseData.registration,
+        level: catalogLevel,
+      };
+    }
+    const registration = courseData.registration;
 
-      // Determine if course is paid
-      let paid = false;
+    courseData.paid = Boolean(
+      registration &&
+        registration.registration_status === "registered" &&
+        registration.course_reg_id !== null
+    );
 
-      if (registration) {
-        const regAcademicYear = registration.academic_year;
-        const regSemester = registration.semester;
-
-        // Check payment status using the payment verification service
-        const paymentStatus = await checkCourseFeesPayment(
-          parsedStudentId,
-          courseData.id,
-          regAcademicYear,
-          regSemester
-        );
-
-        paid = paymentStatus.paid;
-      }
-
-      // Add paid field to course data
-      courseData.paid = paid;
-
-      return courseData;
-    })
-  );
+    return courseData;
+  });
 
   res.status(200).json({
     status: true,

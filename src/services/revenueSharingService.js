@@ -75,23 +75,129 @@ export async function processMarketplacePurchase(purchaseData) {
 
   // Handle WPU marketplace courses (100% revenue to WPU)
   if (course.owner_type === "wpu" || course.owner_type === "wsp") {
-    // WPU marketplace course - 100% revenue to WPU, no commission split
+    return db.transaction(async (dbTransaction) => {
+      // WPU marketplace course - 100% revenue to WPU, no commission split
+      let transaction;
+      try {
+        transaction = await MarketplaceTransaction.create(
+          {
+            course_id,
+            student_id,
+            owner_type: "wpu", // Use "wpu" for transaction record
+            owner_id: null, // WPU courses don't have owner_id
+            course_price: coursePrice,
+            currency: course.currency || "NGN",
+            commission_rate: 0, // No commission (100% to WPU)
+            wsp_commission: coursePrice, // 100% to WPU
+            tutor_earnings: 0, // No tutor earnings
+            payment_status: "completed",
+            payment_method: safePaymentMethod,
+            payment_reference: safePaymentReference,
+          },
+          { transaction: dbTransaction }
+        );
+      } catch (error) {
+        // Enhanced error logging to identify the problematic field
+        console.error("❌ Error creating MarketplaceTransaction:", {
+          error_message: error.message,
+          error_code: error.code,
+          error_detail: error.detail,
+          payment_reference: safePaymentReference,
+          payment_reference_length: safePaymentReference?.length,
+          payment_method: safePaymentMethod,
+          payment_method_length: safePaymentMethod?.length,
+          course_id,
+          student_id,
+        });
+
+        // Check if it's a VARCHAR length error
+        if (error.message && error.message.includes("character varying")) {
+          throw new Error(
+            `Database column size error: ${error.message}. ` +
+            `Payment reference length: ${safePaymentReference?.length}, ` +
+            `Payment method length: ${safePaymentMethod?.length}. ` +
+            `Please run: node scripts/force-fix-payment-reference-column.js`
+          );
+        }
+        throw error;
+      }
+
+      // Create WPU commission record (100% of course price)
+      await WspCommission.create(
+        {
+          transaction_id: transaction.id,
+          amount: coursePrice,
+          currency: course.currency || "NGN",
+          status: "collected",
+          collected_at: new Date(),
+        },
+        { transaction: dbTransaction }
+      );
+
+      return {
+        transaction,
+        revenue: {
+          coursePrice,
+          wspCommission: coursePrice, // 100% to WPU
+          tutorEarnings: 0, // No tutor earnings
+          commissionRate: 0, // No commission
+        },
+      };
+    });
+  }
+
+  // Handle regular marketplace courses (sole_tutor/organization) - commission split
+  const OwnerModel =
+    course.owner_type === "sole_tutor"
+      ? SoleTutor
+      : course.owner_type === "organization"
+        ? Organization
+        : null;
+
+  if (!OwnerModel) {
+    throw new Error("Course owner not found");
+  }
+
+  return db.transaction(async (dbTransaction) => {
+    // Lock the owner row for the duration of the transaction so two
+    // concurrent purchases of this owner's courses can't both read the
+    // same starting balance and lose one of the credits (lost update).
+    const owner = await OwnerModel.findByPk(course.owner_id, {
+      lock: dbTransaction.LOCK.UPDATE,
+      transaction: dbTransaction,
+    });
+
+    if (!owner) {
+      throw new Error("Course owner not found");
+    }
+
+    // Calculate revenue split
+    const commissionRate = parseFloat(owner.commission_rate || 15);
+    const { wspCommission, tutorEarnings } = calculateRevenue(
+      coursePrice,
+      commissionRate
+    );
+
+    // Create transaction record
     let transaction;
     try {
-      transaction = await MarketplaceTransaction.create({
-        course_id,
-        student_id,
-        owner_type: "wpu", // Use "wpu" for transaction record
-        owner_id: null, // WPU courses don't have owner_id
-        course_price: coursePrice,
-        currency: course.currency || "NGN",
-        commission_rate: 0, // No commission (100% to WPU)
-        wsp_commission: coursePrice, // 100% to WPU
-        tutor_earnings: 0, // No tutor earnings
-        payment_status: "completed",
-        payment_method: safePaymentMethod,
-        payment_reference: safePaymentReference,
-      });
+      transaction = await MarketplaceTransaction.create(
+        {
+          course_id,
+          student_id,
+          owner_type: course.owner_type,
+          owner_id: course.owner_id,
+          course_price: coursePrice,
+          currency: course.currency || "NGN",
+          commission_rate: commissionRate,
+          wsp_commission: wspCommission,
+          tutor_earnings: tutorEarnings,
+          payment_status: "completed",
+          payment_method: safePaymentMethod,
+          payment_reference: safePaymentReference,
+        },
+        { transaction: dbTransaction }
+      );
     } catch (error) {
       // Enhanced error logging to identify the problematic field
       console.error("❌ Error creating MarketplaceTransaction:", {
@@ -105,7 +211,7 @@ export async function processMarketplacePurchase(purchaseData) {
         course_id,
         student_id,
       });
-      
+
       // Check if it's a VARCHAR length error
       if (error.message && error.message.includes("character varying")) {
         throw new Error(
@@ -118,126 +224,47 @@ export async function processMarketplacePurchase(purchaseData) {
       throw error;
     }
 
-    // Create WPU commission record (100% of course price)
-    await WspCommission.create({
-      transaction_id: transaction.id,
-      amount: coursePrice,
-      currency: course.currency || "NGN",
-      status: "collected",
-      collected_at: new Date(),
-    });
+    // Create WPU commission record
+    await WspCommission.create(
+      {
+        transaction_id: transaction.id,
+        amount: wspCommission,
+        currency: course.currency || "NGN",
+        status: "collected", // Automatically collected when payment is successful
+        collected_at: new Date(),
+      },
+      { transaction: dbTransaction }
+    );
+
+    const newTotalEarnings = parseFloat(owner.total_earnings || 0) + coursePrice;
+    const cur = (course.currency || "NGN").toString().toUpperCase();
+    const updates = { total_earnings: newTotalEarnings };
+
+    if (cur === "USD") {
+      updates.wallet_balance_usd =
+        parseFloat(owner.wallet_balance_usd || 0) + tutorEarnings;
+    } else if (cur === "GBP") {
+      updates.wallet_balance_gbp =
+        parseFloat(owner.wallet_balance_gbp || 0) + tutorEarnings;
+    } else {
+      const nextPrimary =
+        parseFloat(owner.wallet_balance_primary || 0) + tutorEarnings;
+      updates.wallet_balance_primary = nextPrimary;
+      applyLegacyWalletMirror(updates, nextPrimary);
+    }
+
+    await owner.update(updates, { transaction: dbTransaction });
 
     return {
       transaction,
       revenue: {
         coursePrice,
-        wspCommission: coursePrice, // 100% to WPU
-        tutorEarnings: 0, // No tutor earnings
-        commissionRate: 0, // No commission
+        wspCommission,
+        tutorEarnings,
+        commissionRate,
       },
     };
-  }
-
-  // Handle regular marketplace courses (sole_tutor/organization) - commission split
-  // Get owner (tutor or organization)
-  let owner;
-  if (course.owner_type === "sole_tutor") {
-    owner = await SoleTutor.findByPk(course.owner_id);
-  } else if (course.owner_type === "organization") {
-    owner = await Organization.findByPk(course.owner_id);
-  }
-
-  if (!owner) {
-    throw new Error("Course owner not found");
-  }
-
-  // Calculate revenue split
-  const commissionRate = parseFloat(owner.commission_rate || 15);
-  const { wspCommission, tutorEarnings } = calculateRevenue(
-    coursePrice,
-    commissionRate
-  );
-
-  // Create transaction record
-  let transaction;
-  try {
-    transaction = await MarketplaceTransaction.create({
-      course_id,
-      student_id,
-      owner_type: course.owner_type,
-      owner_id: course.owner_id,
-      course_price: coursePrice,
-      currency: course.currency || "NGN",
-      commission_rate: commissionRate,
-      wsp_commission: wspCommission,
-      tutor_earnings: tutorEarnings,
-      payment_status: "completed",
-      payment_method: safePaymentMethod,
-      payment_reference: safePaymentReference,
-    });
-  } catch (error) {
-    // Enhanced error logging to identify the problematic field
-    console.error("❌ Error creating MarketplaceTransaction:", {
-      error_message: error.message,
-      error_code: error.code,
-      error_detail: error.detail,
-      payment_reference: safePaymentReference,
-      payment_reference_length: safePaymentReference?.length,
-      payment_method: safePaymentMethod,
-      payment_method_length: safePaymentMethod?.length,
-      course_id,
-      student_id,
-    });
-    
-    // Check if it's a VARCHAR length error
-    if (error.message && error.message.includes("character varying")) {
-      throw new Error(
-        `Database column size error: ${error.message}. ` +
-        `Payment reference length: ${safePaymentReference?.length}, ` +
-        `Payment method length: ${safePaymentMethod?.length}. ` +
-        `Please run: node scripts/force-fix-payment-reference-column.js`
-      );
-    }
-    throw error;
-  }
-
-  // Create WPU commission record
-  await WspCommission.create({
-    transaction_id: transaction.id,
-    amount: wspCommission,
-    currency: course.currency || "NGN",
-    status: "collected", // Automatically collected when payment is successful
-    collected_at: new Date(),
   });
-
-  const newTotalEarnings = parseFloat(owner.total_earnings || 0) + coursePrice;
-  const cur = (course.currency || "NGN").toString().toUpperCase();
-  const updates = { total_earnings: newTotalEarnings };
-
-  if (cur === "USD") {
-    updates.wallet_balance_usd =
-      parseFloat(owner.wallet_balance_usd || 0) + tutorEarnings;
-  } else if (cur === "GBP") {
-    updates.wallet_balance_gbp =
-      parseFloat(owner.wallet_balance_gbp || 0) + tutorEarnings;
-  } else {
-    const nextPrimary =
-      parseFloat(owner.wallet_balance_primary || 0) + tutorEarnings;
-    updates.wallet_balance_primary = nextPrimary;
-    applyLegacyWalletMirror(updates, nextPrimary);
-  }
-
-  await owner.update(updates);
-
-  return {
-    transaction,
-    revenue: {
-      coursePrice,
-      wspCommission,
-      tutorEarnings,
-      commissionRate,
-    },
-  };
 }
 
 /**

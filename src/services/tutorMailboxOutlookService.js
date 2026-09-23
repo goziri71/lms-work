@@ -38,7 +38,7 @@ export function buildOutlookAuthUrl({ tutorId, tutorType }) {
   if (!clientId) {
     throw new ErrorClass("Microsoft mailbox OAuth not configured (MICROSOFT_MAILBOX_CLIENT_ID).", 500);
   }
-  const secret = process.env.JWT_SECRET || "your-secret";
+  const secret = process.env.JWT_SECRET;
   const state = jwt.sign(
     { purpose: "tutor_mailbox_outlook", tutorId, tutorType },
     secret,
@@ -57,7 +57,7 @@ export function buildOutlookAuthUrl({ tutorId, tutorType }) {
 
 export function verifyOutlookState(state) {
   try {
-    const secret = process.env.JWT_SECRET || "your-secret";
+    const secret = process.env.JWT_SECRET;
     const decoded = jwt.verify(state, secret);
     if (decoded.purpose !== "tutor_mailbox_outlook") throw new Error("bad");
     return { tutorId: decoded.tutorId, tutorType: decoded.tutorType };
