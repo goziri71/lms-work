@@ -18,6 +18,10 @@ import { getIPGeolocation } from "../../services/ipGeolocationService.js";
 import { EmailLog } from "../../models/email/emailLog.js";
 import { Config } from "../../config/config.js";
 import { joinFrontendUrl } from "../../utils/frontendUrl.js";
+import {
+  normalizeSignupIntent,
+  onboardingForIntent,
+} from "../../utils/signupIntent.js";
 
 /**
  * Sole Tutor Registration
@@ -38,6 +42,8 @@ export const registerSoleTutor = TryCatchFunction(async (req, res) => {
     country,
     currency,
     currency_override,
+    signup_intent,
+    intent,
   } = req.body;
 
   if (!email || !password || !fname || !lname) {
@@ -98,6 +104,10 @@ export const registerSoleTutor = TryCatchFunction(async (req, res) => {
   }
   if (!finalCurrency) finalCurrency = "NGN";
 
+  const intentValue = normalizeSignupIntent(signup_intent || intent, "education");
+  const onboarding = onboardingForIntent(intentValue);
+  const eventOnly = onboarding.skip_education_profile;
+
   // Create tutor (auto-approved)
   const tutor = await SoleTutor.create({
     email: email.toLowerCase().trim(),
@@ -106,24 +116,26 @@ export const registerSoleTutor = TryCatchFunction(async (req, res) => {
     lname: lname.trim(),
     mname: mname?.trim() || null,
     phone: phone?.trim() || null,
-    bio: bio?.trim() || null,
-    specialization: specialization?.trim() || null,
-    qualifications: qualifications?.trim() || null,
-    experience_years: experience_years || 0,
+    bio: eventOnly ? null : bio?.trim() || null,
+    specialization: eventOnly ? null : specialization?.trim() || null,
+    qualifications: eventOnly ? null : qualifications?.trim() || null,
+    experience_years: eventOnly ? 0 : experience_years || 0,
     address: address?.trim() || null,
     country: finalCountry,
     country_code: finalCountryCode,
     currency: finalCurrency,
     local_currency: finalCurrency,
     slug,
+    signup_intent: intentValue,
     status: "active",
     verification_status: "verified",
   });
 
   res.status(201).json({
     success: true,
-    message:
-      "Registration successful! Your account is pending approval. You will be notified once approved.",
+    message: eventOnly
+      ? "Registration successful. You can create an event now."
+      : "Registration successful! Your account is pending approval. You will be notified once approved.",
     data: {
       tutor: {
         id: tutor.id,
@@ -131,7 +143,9 @@ export const registerSoleTutor = TryCatchFunction(async (req, res) => {
         fname: tutor.fname,
         lname: tutor.lname,
         status: tutor.status,
+        signup_intent: intentValue,
       },
+      onboarding,
     },
   });
 });
@@ -156,6 +170,8 @@ export const registerOrganization = TryCatchFunction(async (req, res) => {
     contact_phone,
     currency,
     currency_override,
+    signup_intent,
+    intent,
   } = req.body;
 
   if (!name || !email || !password) {
@@ -230,14 +246,18 @@ export const registerOrganization = TryCatchFunction(async (req, res) => {
     contact_person: contact_person?.trim() || null,
     contact_email: contact_email?.trim() || null,
     contact_phone: contact_phone?.trim() || null,
+    signup_intent: normalizeSignupIntent(signup_intent || intent, "education"),
     status: "active",
     verification_status: "verified",
   });
 
+  const onboarding = onboardingForIntent(organization.signup_intent);
+
   res.status(201).json({
     success: true,
-    message:
-      "Registration successful! Your organization account is pending approval. You will be notified once approved.",
+    message: onboarding.skip_education_profile
+      ? "Registration successful. You can create an event now."
+      : "Registration successful! Your organization account is pending approval. You will be notified once approved.",
     data: {
       organization: {
         id: organization.id,
@@ -245,7 +265,9 @@ export const registerOrganization = TryCatchFunction(async (req, res) => {
         slug: organization.slug,
         email: organization.email,
         status: organization.status,
+        signup_intent: organization.signup_intent,
       },
+      onboarding,
     },
   });
 });
@@ -402,7 +424,9 @@ export const soleTutorLogin = TryCatchFunction(async (req, res) => {
         rating: tutor.rating,
         currency: tutor.currency || "NGN",
         local_currency: tutor.local_currency || tutor.currency || "NGN",
+        signup_intent: tutor.signup_intent || "education",
       },
+      onboarding: onboardingForIntent(tutor.signup_intent),
       subscription: subscriptionInfo,
       accessToken,
       userType: "sole_tutor",
@@ -566,7 +590,9 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
           organization.local_currency ||
           organization.currency ||
           getCurrencyFromCountry(organization.country || "USD"),
+        signup_intent: organization.signup_intent || "education",
       },
+      onboarding: onboardingForIntent(organization.signup_intent),
       subscription: subscriptionInfo,
       accessToken,
       userType: "organization",
@@ -869,7 +895,9 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
           rating: tutor.rating,
           currency: tutor.currency || "NGN",
           local_currency: tutor.local_currency || tutor.currency || "NGN",
+          signup_intent: tutor.signup_intent || "education",
         },
+        onboarding: onboardingForIntent(tutor.signup_intent),
         subscription: subscriptionInfo,
         accessToken,
         userType: "sole_tutor",
@@ -1011,7 +1039,9 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
             organization.local_currency ||
             organization.currency ||
             getCurrencyFromCountry(organization.country || "USD"),
+          signup_intent: organization.signup_intent || "education",
         },
+        onboarding: onboardingForIntent(organization.signup_intent),
         subscription: subscriptionInfo,
         accessToken,
         userType: "organization",

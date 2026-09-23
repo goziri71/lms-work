@@ -171,6 +171,12 @@ export const Organization = db.define(
       allowNull: true,
       comment: "Primary contact phone",
     },
+    signup_intent: {
+      type: DataTypes.ENUM("events", "education", "both"),
+      allowNull: false,
+      defaultValue: "education",
+      comment: "Why they signed up — event hosts skip education onboarding",
+    },
     transfer_pin_hash: {
       type: DataTypes.STRING(255),
       allowNull: true,

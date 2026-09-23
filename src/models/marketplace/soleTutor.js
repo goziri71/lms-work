@@ -177,6 +177,12 @@ export const SoleTutor = db.define(
       unique: true,
       comment: "URL-friendly slug for public tutor page (e.g. jane-doe)",
     },
+    signup_intent: {
+      type: DataTypes.ENUM("events", "education", "both"),
+      allowNull: false,
+      defaultValue: "education",
+      comment: "Why they signed up — event hosts skip education onboarding",
+    },
     transfer_pin_hash: {
       type: DataTypes.STRING(255),
       allowNull: true,

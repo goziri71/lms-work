@@ -12,6 +12,7 @@ import {
   getEventHost,
   isTierSalesOpen,
 } from "../../services/eventTicketService.js";
+import { recordEventPageView, actorFromReq } from "../../services/eventActivityService.js";
 
 export const browseEvents = TryCatchFunction(async (req, res) => {
   const {
@@ -112,6 +113,12 @@ export const getEventBySlug = TryCatchFunction(async (req, res) => {
   });
 
   const host = await getEventHost(event.owner_type, event.owner_id);
+
+  const viewer = actorFromReq(req);
+  recordEventPageView(event.id, {
+    ...viewer,
+    source: "public_page",
+  }).catch(() => {});
 
   let ticketsOwned = 0;
   let existingOrderId = null;

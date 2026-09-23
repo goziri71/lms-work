@@ -24,6 +24,7 @@ import {
 import { emailService } from "./emailService.js";
 import { joinFrontendUrl } from "../utils/frontendUrl.js";
 import { Config } from "../config/config.js";
+import { logEventActivity } from "./eventActivityService.js";
 
 export const RESERVATION_MINUTES = 15;
 const DEFAULT_EVENT_COMMISSION_RATE = 15;
@@ -667,6 +668,18 @@ export async function fulfillPaidOrder(
       );
       await transaction.commit();
 
+      logEventActivity({
+        eventId: order.event_id,
+        action: "order_pending_approval",
+        actorType: order.student_id ? "student" : "guest",
+        actorId: order.student_id,
+        orderId: order.id,
+        metadata: {
+          total_amount: parseFloat(order.total_amount),
+          payment_method: paymentMethod || order.payment_method,
+        },
+      }).catch(() => {});
+
       sendApplicationReceivedEmail(order, event).catch((err) =>
         console.error("Application email error:", err.message)
       );
@@ -704,6 +717,20 @@ export async function fulfillPaidOrder(
     await maybeMarkEventSoldOut(event, transaction);
 
     await transaction.commit();
+
+    logEventActivity({
+      eventId: order.event_id,
+      action: "order_paid",
+      actorType: order.student_id ? "student" : "guest",
+      actorId: order.student_id,
+      orderId: order.id,
+      metadata: {
+        total_amount: parseFloat(order.total_amount),
+        tutor_earnings: parseFloat(order.tutor_earnings || 0),
+        platform_fee: parseFloat(order.platform_fee || 0),
+        payment_method: paymentMethod || order.payment_method,
+      },
+    }).catch(() => {});
 
     sendTicketConfirmationEmail(order, event, tickets).catch((err) =>
       console.error("Ticket email error:", err.message)
@@ -778,6 +805,18 @@ export async function approveEventOrder(
     const tickets = await issueTicketsForOrder(order, names, transaction);
     await maybeMarkEventSoldOut(event, transaction);
     await transaction.commit();
+
+    logEventActivity({
+      eventId: order.event_id,
+      action: "order_approved",
+      actorType: "organization",
+      actorId: approvedBy || null,
+      orderId: order.id,
+      metadata: {
+        total_amount: parseFloat(order.total_amount),
+        tutor_earnings: parseFloat(order.tutor_earnings || 0),
+      },
+    }).catch(() => {});
 
     sendTicketConfirmationEmail(order, event, tickets).catch((err) =>
       console.error("Ticket email error:", err.message)
@@ -854,6 +893,18 @@ export async function rejectEventOrder(orderId, { reason } = {}) {
 
     const event = await TicketedEvent.findByPk(order.event_id, { transaction });
     await transaction.commit();
+
+    logEventActivity({
+      eventId: order.event_id,
+      action: "order_rejected",
+      actorType: "system",
+      orderId: order.id,
+      metadata: {
+        reason: reason || null,
+        refund_status: refundStatus,
+        total_amount: parseFloat(order.total_amount),
+      },
+    }).catch(() => {});
 
     if (refundStatus === "pending_gateway") {
       try {

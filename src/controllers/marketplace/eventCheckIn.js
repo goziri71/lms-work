@@ -7,6 +7,7 @@ import { EventTicketTier } from "../../models/marketplace/eventTicketTier.js";
 import { EventTicketOrder } from "../../models/marketplace/eventTicketOrder.js";
 import { getTutorInfo } from "./tutorLearnerManagement.js";
 import { assertEventOwnedByTutor } from "../../services/eventTicketService.js";
+import { logEventActivity, actorFromReq } from "../../services/eventActivityService.js";
 
 function normalizeTicketCode(raw) {
   if (raw == null) return "";
@@ -226,6 +227,15 @@ export const checkInTicket = TryCatchFunction(async (req, res) => {
     checked_in_by: checkerId,
   });
 
+  logEventActivity({
+    eventId,
+    action: "ticket_checked_in",
+    ...actorFromReq(req),
+    orderId: ticket.order_id,
+    ticketId: ticket.id,
+    metadata: { ticket_code: ticket.ticket_code },
+  }).catch(() => {});
+
   const formatted = formatLookupTicket(ticket);
   formatted.status = "used";
   formatted.checked_in_at = ticket.checked_in_at;
@@ -421,6 +431,15 @@ export const syncOfflineCheckIns = TryCatchFunction(async (req, res) => {
       ticket_code: ticket.ticket_code,
       checked_in_at: ticket.checked_in_at,
     });
+
+    logEventActivity({
+      eventId,
+      action: "ticket_checked_in",
+      ...actorFromReq(req),
+      orderId: ticket.order_id,
+      ticketId: ticket.id,
+      metadata: { ticket_code: ticket.ticket_code, source: "offline_sync" },
+    }).catch(() => {});
   }
 
   res.status(200).json({

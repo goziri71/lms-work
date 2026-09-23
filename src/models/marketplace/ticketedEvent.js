@@ -135,6 +135,12 @@ export const TicketedEvent = db.define(
       type: DataTypes.INTEGER,
       allowNull: true,
     },
+    view_count: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+      comment: "Public event page views",
+    },
   },
   {
     tableName: "ticketed_events",

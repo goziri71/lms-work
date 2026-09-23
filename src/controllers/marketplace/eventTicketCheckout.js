@@ -15,6 +15,7 @@ import {
   generateAccessToken,
   RESERVATION_MINUTES,
 } from "../../services/eventTicketService.js";
+import { logEventActivity, actorFromReq } from "../../services/eventActivityService.js";
 
 function normalizeEmail(email) {
   return String(email).trim().toLowerCase();
@@ -125,6 +126,20 @@ export const createEventOrder = TryCatchFunction(async (req, res) => {
     await transaction.rollback();
     throw err;
   }
+
+  const actor = actorFromReq(req);
+  logEventActivity({
+    eventId,
+    action: "order_created",
+    ...actor,
+    orderId: order.id,
+    metadata: {
+      total_amount: parseFloat(order.total_amount),
+      ticket_count: order.ticket_count,
+      payment_method: payMethod,
+      requires_approval: !!event.requires_approval,
+    },
+  }).catch(() => {});
 
   if (isFree) {
     const { order: resultOrder, tickets, awaitingApproval } =

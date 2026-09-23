@@ -19,6 +19,7 @@ import {
   approveEventOrder,
   rejectEventOrder,
 } from "../../services/eventTicketService.js";
+import { logEventActivity, actorFromReq } from "../../services/eventActivityService.js";
 
 const coverUploader = multer({
   storage: multer.memoryStorage(),
@@ -206,6 +207,14 @@ export const createEvent = TryCatchFunction(async (req, res) => {
     requires_approval: !!requires_approval,
   });
 
+  const actor = actorFromReq(req);
+  logEventActivity({
+    eventId: event.id,
+    action: "event_created",
+    ...actor,
+    metadata: { title: event.title, requires_approval: !!event.requires_approval },
+  }).catch(() => {});
+
   res.status(201).json({
     success: true,
     message: "Event created",
@@ -336,6 +345,13 @@ export const updateEvent = TryCatchFunction(async (req, res) => {
 
   await event.save();
 
+  logEventActivity({
+    eventId: event.id,
+    action: "event_updated",
+    ...actorFromReq(req),
+    metadata: { fields: Object.keys(req.body || {}) },
+  }).catch(() => {});
+
   res.status(200).json({
     success: true,
     message: "Event updated",
@@ -361,6 +377,11 @@ export const publishEvent = TryCatchFunction(async (req, res) => {
   }
 
   await event.update({ status: "published", sales_open: true });
+  logEventActivity({
+    eventId: event.id,
+    action: "published",
+    ...actorFromReq(req),
+  }).catch(() => {});
 
   res.status(200).json({
     success: true,
@@ -376,6 +397,11 @@ export const unpublishEvent = TryCatchFunction(async (req, res) => {
   await assertEventOwnedByTutor(event, tutorId, tutorType);
 
   await event.update({ status: "draft", sales_open: false });
+  logEventActivity({
+    eventId: event.id,
+    action: "unpublished",
+    ...actorFromReq(req),
+  }).catch(() => {});
 
   res.status(200).json({
     success: true,
@@ -392,6 +418,11 @@ export const closeEventSales = TryCatchFunction(async (req, res) => {
   await assertEventOwnedByTutor(event, tutorId, tutorType);
 
   await event.update({ sales_open: false });
+  logEventActivity({
+    eventId: event.id,
+    action: "sales_closed",
+    ...actorFromReq(req),
+  }).catch(() => {});
 
   res.status(200).json({
     success: true,
@@ -412,6 +443,11 @@ export const openEventSales = TryCatchFunction(async (req, res) => {
   }
 
   await event.update({ sales_open: true });
+  logEventActivity({
+    eventId: event.id,
+    action: "sales_opened",
+    ...actorFromReq(req),
+  }).catch(() => {});
 
   res.status(200).json({
     success: true,
@@ -427,6 +463,11 @@ export const cancelEvent = TryCatchFunction(async (req, res) => {
   await assertEventOwnedByTutor(event, tutorId, tutorType);
 
   await event.update({ status: "cancelled", sales_open: false });
+  logEventActivity({
+    eventId: event.id,
+    action: "cancelled",
+    ...actorFromReq(req),
+  }).catch(() => {});
 
   res.status(200).json({
     success: true,
@@ -498,6 +539,19 @@ export const createTier = TryCatchFunction(async (req, res) => {
     is_hidden: !!is_hidden,
     ...discount,
   });
+
+  logEventActivity({
+    eventId: eventId,
+    action: "tier_created",
+    ...actorFromReq(req),
+    metadata: {
+      tier_id: tier.id,
+      name: tier.name,
+      price: parseFloat(tier.price),
+      discount_type: tier.discount_type,
+      discount_value: parseFloat(tier.discount_value || 0),
+    },
+  }).catch(() => {});
 
   res.status(201).json({
     success: true,
@@ -607,6 +661,19 @@ export const updateTier = TryCatchFunction(async (req, res) => {
 
   await tier.save();
 
+  logEventActivity({
+    eventId: event.id,
+    action: "tier_updated",
+    ...actorFromReq(req),
+    metadata: {
+      tier_id: tier.id,
+      name: tier.name,
+      price: parseFloat(tier.price),
+      discount_type: tier.discount_type,
+      discount_value: parseFloat(tier.discount_value || 0),
+    },
+  }).catch(() => {});
+
   res.status(200).json({
     success: true,
     message: "Tier updated",
@@ -677,7 +744,25 @@ export const getEventSales = TryCatchFunction(async (req, res) => {
         currency: tiers[0]?.currency || "NGN",
         free_rsvp_count: freeRsvp,
         paid_order_count: paidCount,
-        commission_status: "pending_config",
+        platform_fees: paidOrders
+          .reduce((s, o) => s + parseFloat(o.platform_fee || 0), 0)
+          .toFixed(2),
+        creator_earnings: paidOrders
+          .reduce((s, o) => s + parseFloat(o.tutor_earnings || 0), 0)
+          .toFixed(2),
+        discounts: paidOrders
+          .reduce(
+            (s, o) =>
+              s +
+              (Array.isArray(o.line_items)
+                ? o.line_items.reduce(
+                    (a, li) => a + parseFloat(li.discount_amount || 0),
+                    0
+                  )
+                : 0),
+            0
+          )
+          .toFixed(2),
       },
       by_tier: byTier,
     },

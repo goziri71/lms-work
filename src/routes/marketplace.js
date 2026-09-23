@@ -215,6 +215,11 @@ import {
   rejectEventTicketOrder,
 } from "../controllers/marketplace/tutorEventManagement.js";
 import {
+  getEventForensics,
+  listEventActivity,
+  getEventOrderForensics,
+} from "../controllers/marketplace/eventForensics.js";
+import {
   checkInLookup,
   checkInTicket,
   checkInStats,
@@ -1425,6 +1430,8 @@ router.post(
 router.post("/tutor/events", tutorAuthorize, createEvent);
 router.get("/tutor/events", tutorAuthorize, listMyEvents);
 router.get("/tutor/events/:id/sales", tutorAuthorize, getEventSales);
+router.get("/tutor/events/:id/forensics", tutorAuthorize, getEventForensics);
+router.get("/tutor/events/:id/activity", tutorAuthorize, listEventActivity);
 router.get(
   "/tutor/events/:id/attendees/export",
   tutorAuthorize,
@@ -1432,6 +1439,11 @@ router.get(
 );
 router.get("/tutor/events/:id/attendees", tutorAuthorize, listAttendees);
 router.get("/tutor/events/:id/orders", tutorAuthorize, listEventOrders);
+router.get(
+  "/tutor/events/:id/orders/:orderId",
+  tutorAuthorize,
+  getEventOrderForensics,
+);
 router.post(
   "/tutor/events/:id/orders/:orderId/approve",
   tutorAuthorize,

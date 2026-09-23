@@ -10,6 +10,7 @@ node scripts/migrate-create-event-ticket-tables.js
 node scripts/migrate-event-ticket-video-benefits-sales.js
 node scripts/migrate-event-ticket-approval.js
 node scripts/migrate-event-ticket-discount.js
+node scripts/migrate-event-forensics.js
 ```
 
 ---
@@ -263,6 +264,9 @@ Cannot set `quantity_total` below sold + reserved.
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/tutor/events/:id/sales` | Revenue + tier breakdown |
+| GET | `/tutor/events/:id/forensics` | World-class dashboard: funnel, money, door, by-tier, by-day, recent audit |
+| GET | `/tutor/events/:id/activity` | Full audit trail (`?action=&include_views=true`) |
+| GET | `/tutor/events/:id/orders/:orderId` | One order: prices, fees, tickets, timeline |
 | GET | `/tutor/events/:id/orders` | Orders list |
 | GET | `/tutor/events/:id/attendees` | Ticket holders |
 | GET | `/tutor/events/:id/attendees/export` | CSV (ticket_code, name, phone, status) — printable / Excel at the door |
@@ -326,6 +330,25 @@ Use `data.found` / `data.customer` — do **not** treat every `200` as a valid t
 | GET | `/tutor/events/:id/check-in/stats` | Checked-in counts |
 
 Ticket codes are case-insensitive on check-in (stored uppercase).
+
+### Forensics (creator dashboard)
+
+`GET /tutor/events/:id/forensics`
+
+Use this as the event “control room”:
+
+| Block | What it shows |
+|-------|----------------|
+| `funnel` | Page views → checkout started → pending / approval / paid / rejected |
+| `money` | List price, discounts, collected, platform fee, creator earnings, refunds |
+| `door` | Issued vs checked in vs remaining (no-shows after event end) |
+| `by_tier` / `by_day` | Package and daily breakdown |
+| `recent_activity` | Last 25 audit rows (excludes raw page views) |
+
+`GET /tutor/events/:id/activity?action=order_paid` — full trail.  
+`GET /tutor/events/:id/orders/:orderId` — one buyer: line items, fees, tickets, timeline.
+
+---
 
 ### Offline / bad-network check-in
 
@@ -605,6 +628,7 @@ Each ticket includes:
 - [ ] Publish / unpublish / open sales / close sales  
 - [ ] **Approval queue** — list orders with `?status=pending_approval`, approve / reject  
 - [ ] Sales dashboard + attendees + CSV  
+- [ ] **Forensics** — `/forensics` funnel + money + door + `/activity` audit + order drill-down  
 - [ ] Check-in scanner (code or QR)  
 - [ ] **Offline pack** — download list before doors; search locally if network dies  
 - [ ] **Sync queue** — push offline marks via `/check-in/sync` when back online  
@@ -652,7 +676,10 @@ GET    /tutor/events/:eventId/tiers
 PUT    /tutor/events/:eventId/tiers/:tierId
 DELETE /tutor/events/:eventId/tiers/:tierId
 GET    /tutor/events/:id/sales
+GET    /tutor/events/:id/forensics
+GET    /tutor/events/:id/activity
 GET    /tutor/events/:id/orders
+GET    /tutor/events/:id/orders/:orderId
 POST   /tutor/events/:id/orders/:orderId/approve
 POST   /tutor/events/:id/orders/:orderId/reject
 GET    /tutor/events/:id/attendees

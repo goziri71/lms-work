@@ -99,6 +99,7 @@ import {
   EventTicketTier,
   EventTicketOrder,
   EventTicket,
+  EventActivityLog,
 } from "./marketplace/index.js";
 
 export const setupAssociations = () => {
@@ -1529,5 +1530,15 @@ export const setupAssociations = () => {
   EventTicket.belongsTo(EventTicketTier, {
     foreignKey: "tier_id",
     as: "tier",
+  });
+
+  TicketedEvent.hasMany(EventActivityLog, {
+    foreignKey: "event_id",
+    as: "activity_logs",
+    onDelete: "CASCADE",
+  });
+  EventActivityLog.belongsTo(TicketedEvent, {
+    foreignKey: "event_id",
+    as: "event",
   });
 };

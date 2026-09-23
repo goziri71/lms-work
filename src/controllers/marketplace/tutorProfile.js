@@ -4,6 +4,10 @@ import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { authService } from "../../service/authservice.js";
 import { getCurrencyFromCountry } from "../../services/currencyService.js";
+import {
+  normalizeSignupIntent,
+  onboardingForIntent,
+} from "../../utils/signupIntent.js";
 
 /**
  * Get tutor profile
@@ -44,6 +48,7 @@ export const getProfile = TryCatchFunction(async (req, res) => {
     profileData.timezone = tutor.timezone;
     profileData.profile_image = tutor.profile_image;
     profileData.slug = tutor.slug ?? null;
+    profileData.signup_intent = tutor.signup_intent || "education";
   } else if (userType === "organization") {
     profileData.name = tutor.name;
     profileData.description = tutor.description;
@@ -57,6 +62,7 @@ export const getProfile = TryCatchFunction(async (req, res) => {
     profileData.contact_person = tutor.contact_person;
     profileData.contact_email = tutor.contact_email;
     profileData.contact_phone = tutor.contact_phone;
+    profileData.signup_intent = tutor.signup_intent || "education";
   }
 
   res.status(200).json({
@@ -64,6 +70,7 @@ export const getProfile = TryCatchFunction(async (req, res) => {
     message: "Profile retrieved successfully",
     data: {
       profile: profileData,
+      onboarding: onboardingForIntent(profileData.signup_intent),
     },
   });
 });
@@ -110,6 +117,12 @@ export const updateProfile = TryCatchFunction(async (req, res) => {
     if (timezone !== undefined) updateData.timezone = timezone?.trim() || "UTC";
     if (profile_image !== undefined)
       updateData.profile_image = profile_image || null;
+    if (req.body.signup_intent !== undefined || req.body.intent !== undefined) {
+      updateData.signup_intent = normalizeSignupIntent(
+        req.body.signup_intent || req.body.intent,
+        tutor.signup_intent || "education"
+      );
+    }
 
     const hasExplicitCurrency =
       req.body.currency !== undefined &&
@@ -176,6 +189,12 @@ export const updateProfile = TryCatchFunction(async (req, res) => {
       updateData.contact_person = contact_person?.trim() || null;
     if (contact_email !== undefined)
       updateData.contact_email = contact_email?.trim() || null;
+    if (req.body.signup_intent !== undefined || req.body.intent !== undefined) {
+      updateData.signup_intent = normalizeSignupIntent(
+        req.body.signup_intent || req.body.intent,
+        tutor.signup_intent || "education"
+      );
+    }
     if (contact_phone !== undefined)
       updateData.contact_phone = contact_phone?.trim() || null;
 
