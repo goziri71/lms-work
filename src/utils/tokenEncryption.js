@@ -44,3 +44,18 @@ export function decryptToken(encrypted) {
     return "";
   }
 }
+
+/** True if the stored value looks like our AES-GCM blob (not a raw OAuth token). */
+export function looksEncryptedToken(stored) {
+  if (!stored) return false;
+  const s = String(stored);
+  if (s.startsWith("ya29.") || s.startsWith("1//") || s.startsWith("eyJ")) {
+    return false;
+  }
+  try {
+    const buf = Buffer.from(s, "base64");
+    return buf.length >= IV_LEN + TAG_LEN + 8;
+  } catch {
+    return false;
+  }
+}

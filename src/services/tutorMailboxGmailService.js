@@ -143,12 +143,28 @@ export async function exchangeGmailMailboxCode(code, codeVerifier) {
   }
 }
 
+function reconnectMailboxError(mailbox, decryptFailed) {
+  if (decryptFailed) {
+    return new ErrorClass(
+      "Mailbox tokens could not be read. Disconnect and reconnect Gmail in Settings.",
+      401
+    );
+  }
+  if (!mailbox?.access_token && !mailbox?.refresh_token) {
+    return new ErrorClass(
+      "Mailbox is not connected. Connect Gmail in Settings first.",
+      401
+    );
+  }
+  return new ErrorClass("Gmail session expired; reconnect your mailbox.", 401);
+}
+
 async function ensureAccessToken(mailbox) {
-  const { access_token, refresh_token } = getDecryptedTokens(mailbox);
-  if (!access_token) throw new ErrorClass("Mailbox token missing", 401);
+  const { access_token, refresh_token, decrypt_failed } = getDecryptedTokens(mailbox);
 
   const bufferMs = 120 * 1000;
   const expired =
+    !access_token ||
     !mailbox.token_expires_at ||
     new Date(mailbox.token_expires_at).getTime() < Date.now() + bufferMs;
 
@@ -159,7 +175,7 @@ async function ensureAccessToken(mailbox) {
   }
 
   if (!refresh_token) {
-    throw new ErrorClass("Gmail session expired; reconnect your mailbox.", 401);
+    throw reconnectMailboxError(mailbox, decrypt_failed);
   }
 
   const oauth2 = getOAuth2Client();

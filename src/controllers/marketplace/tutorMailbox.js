@@ -8,7 +8,10 @@ import { getTutorInfo } from "./tutorLearnerManagement.js";
 import { TutorMailbox } from "../../models/marketplace/tutorMailbox.js";
 import { MailThread } from "../../models/marketplace/mailThread.js";
 import { MailMessage } from "../../models/marketplace/mailMessage.js";
-import { storeEncryptedTokens } from "../../services/tutorMailboxTokenHelper.js";
+import {
+  storeEncryptedTokens,
+  mailboxNeedsReconnect,
+} from "../../services/tutorMailboxTokenHelper.js";
 import {
   buildGmailMailboxAuthorizationUrl,
   verifyMailboxGmailState,
@@ -179,15 +182,20 @@ export const listMailboxes = TryCatchFunction(async (req, res) => {
   const { tutorId, tutorType } = getTutorInfo(req);
   const rows = await TutorMailbox.findAll({
     where: { tutor_id: tutorId, tutor_type: tutorType, is_active: true },
-    attributes: [
-      "id",
-      "provider",
-      "email_address",
-      "last_sync_at",
-      "connected_at",
-    ],
   });
-  res.json({ success: true, data: { mailboxes: rows } });
+  res.json({
+    success: true,
+    data: {
+      mailboxes: rows.map((m) => ({
+        id: m.id,
+        provider: m.provider,
+        email_address: m.email_address,
+        last_sync_at: m.last_sync_at,
+        connected_at: m.connected_at,
+        needs_reconnect: mailboxNeedsReconnect(m),
+      })),
+    },
+  });
 });
 
 export const disconnectMailbox = TryCatchFunction(async (req, res) => {

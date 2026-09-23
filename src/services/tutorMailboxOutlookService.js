@@ -91,8 +91,36 @@ export async function exchangeOutlookCode(code) {
 }
 
 async function graphRequest(mailbox, method, path, options = {}) {
-  const { access_token, refresh_token } = getDecryptedTokens(mailbox);
-  if (!access_token) throw new ErrorClass("Outlook token missing", 401);
+  const { access_token, refresh_token, decrypt_failed } = getDecryptedTokens(mailbox);
+  if (!access_token && refresh_token) {
+    const { clientId, clientSecret, redirectUri } = getOutlookConfig();
+    const body = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: "refresh_token",
+      refresh_token,
+      redirect_uri: redirectUri,
+    });
+    const { data } = await axios.post(`${MS_AUTH}/token`, body.toString(), {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    });
+    await storeEncryptedTokens(mailbox, {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token || refresh_token,
+      expires_in: data.expires_in,
+      scope: data.scope || mailbox.scope,
+    });
+    await mailbox.reload();
+    return graphRequest(mailbox, method, path, options);
+  }
+  if (!access_token) {
+    throw new ErrorClass(
+      decrypt_failed
+        ? "Mailbox tokens could not be read. Disconnect and reconnect Outlook in Settings."
+        : "Mailbox is not connected. Connect Outlook in Settings first.",
+      401
+    );
+  }
 
   const tryReq = async (token) =>
     axios({
