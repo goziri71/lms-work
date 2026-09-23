@@ -81,6 +81,14 @@ export function buildQrPayload(ticket) {
   return Buffer.from(JSON.stringify({ ...payload, s: sig })).toString("base64url");
 }
 
+/** Phone-camera-friendly URL — encode THIS as the QR, not the base64 blob */
+export function buildQrUrl(ticket) {
+  const code = String(ticket.ticket_code || "")
+    .trim()
+    .toUpperCase();
+  return joinFrontendUrl(process.env.FRONTEND_URL, `t/${code}`);
+}
+
 export async function getEventHost(ownerType, ownerId) {
   if (ownerType === "sole_tutor") {
     const t = await SoleTutor.findByPk(ownerId, {

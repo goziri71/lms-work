@@ -265,7 +265,9 @@ Cannot set `quantity_total` below sold + reserved.
 | GET | `/tutor/events/:id/sales` | Revenue + tier breakdown |
 | GET | `/tutor/events/:id/orders` | Orders list |
 | GET | `/tutor/events/:id/attendees` | Ticket holders |
-| GET | `/tutor/events/:id/attendees/export` | CSV download |
+| GET | `/tutor/events/:id/attendees/export` | CSV (ticket_code, name, phone, status) — printable / Excel at the door |
+| GET | `/tutor/events/:id/check-in/offline-pack` | JSON snapshot to cache on device before doors open |
+| POST | `/tutor/events/:id/check-in/sync` | Push offline marks when network returns |
 | POST | `/tutor/events/:id/check-in/lookup` | Preview ticket + customer `{ "ticket_code": "YDHSJ3" }` |
 | POST | `/tutor/events/:id/check-in` | Mark used `{ "ticket_code": "YDHSJ3" }` |
 
@@ -324,6 +326,67 @@ Use `data.found` / `data.customer` — do **not** treat every `200` as a valid t
 | GET | `/tutor/events/:id/check-in/stats` | Checked-in counts |
 
 Ticket codes are case-insensitive on check-in (stored uppercase).
+
+### Offline / bad-network check-in
+
+Download **before doors open** (or whenever signal is good). Check people in on the device. Sync when the network returns.
+
+**1. Cache the list (preferred for the app)**
+
+`GET /tutor/events/:id/check-in/offline-pack`
+
+Store `data.attendees` locally (IndexedDB / SQLite). Search by `ticket_code`, name, email, or phone.
+
+```json
+{
+  "downloaded_at": "2026-09-23T14:00:00.000Z",
+  "attendee_count": 120,
+  "already_checked_in": 3,
+  "attendees": [
+    {
+      "ticket_id": 1,
+      "ticket_code": "YDHSJ3",
+      "status": "valid",
+      "holder_name": "Ada Okafor",
+      "holder_email": "ada@example.com",
+      "tier_name": "Premium",
+      "checked_in_at": null,
+      "buyer_name": "Ada Okafor",
+      "buyer_email": "ada@example.com",
+      "buyer_phone": "+234..."
+    }
+  ]
+}
+```
+
+**2. Or download CSV**
+
+`GET /tutor/events/:id/attendees/export` — open in Sheets / print. Columns: `ticket_code,tier,holder_name,holder_email,buyer_phone,status,checked_in_at`.
+
+**3. Offline mark (device only)**
+
+If `status === "valid"`, mark local record `status: "used"` and set `checked_in_at` (ISO). Queue `{ ticket_code, checked_in_at }` for sync. Do **not** check in `used` or missing codes.
+
+**4. Sync when online**
+
+`POST /tutor/events/:id/check-in/sync`
+
+```json
+{
+  "check_ins": [
+    { "ticket_code": "YDHSJ3", "checked_in_at": "2026-09-23T15:04:00.000Z" }
+  ]
+}
+```
+
+| Result | Meaning |
+|--------|---------|
+| `applied` | Server marked used |
+| `already_checked_in` | Already used (treat as success / idempotent) |
+| `not_found` | Sold after the download — refresh pack |
+| `rejected` | Cancelled or bad payload |
+
+Max **500** items per request. After sync, call `offline-pack` again if you can.
 
 ---
 
@@ -482,9 +545,12 @@ Requires student JWT.
 
 Each ticket includes:
 
-- `ticket_code` — e.g. `YDHSJ3` (show large; use for QR / check-in)
-- `qr_payload` — encode as QR for door scan
+- `ticket_code` — e.g. `YDHSJ3` (show large; use for typed check-in)
+- **`qr_url`** — encode **this URL** as the QR (e.g. `https://app.thenomada.com/t/YDHSJ3`). Phone cameras open it instead of dumping base64.
+- `qr_payload` — legacy blob; **do not** put this in the QR
 - `holder_name`, `status` (`valid` \| `used` \| `cancelled`)
+
+**QR / scan page (frontend):** route `/t/:ticketCode` should call `GET /tickets/scan/:ticketCode` and show event name, holder, package, status (valid / already used). Door app scanner can still POST the scanned URL to `/tutor/events/:id/check-in/lookup`.
 
 **Suggested frontend routes**
 
@@ -540,6 +606,8 @@ Each ticket includes:
 - [ ] **Approval queue** — list orders with `?status=pending_approval`, approve / reject  
 - [ ] Sales dashboard + attendees + CSV  
 - [ ] Check-in scanner (code or QR)  
+- [ ] **Offline pack** — download list before doors; search locally if network dies  
+- [ ] **Sync queue** — push offline marks via `/check-in/sync` when back online  
 
 **Public / buyer**
 
@@ -589,6 +657,8 @@ POST   /tutor/events/:id/orders/:orderId/approve
 POST   /tutor/events/:id/orders/:orderId/reject
 GET    /tutor/events/:id/attendees
 GET    /tutor/events/:id/attendees/export
+GET    /tutor/events/:id/check-in/offline-pack
+POST   /tutor/events/:id/check-in/sync
 POST   /tutor/events/:id/check-in/lookup
 POST   /tutor/events/:id/check-in
 GET    /tutor/events/:id/check-in/stats
@@ -605,6 +675,7 @@ POST   /events/orders/:orderId/confirm-payment
 POST   /events/orders/:orderId/pay-with-wallet
 GET    /events/orders/:orderId/status
 POST   /events/orders/:orderId/cancel
+GET    /tickets/scan/:ticketCode
 GET    /tickets/order/:accessToken
 GET    /tickets/order/:accessToken/calendar.ics
 POST   /tickets/order/:accessToken/resend-email

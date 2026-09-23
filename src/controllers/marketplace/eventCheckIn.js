@@ -13,14 +13,50 @@ function normalizeTicketCode(raw) {
   return String(raw).trim().toUpperCase().replace(/\s+/g, "");
 }
 
-/** Accept plain code or QR JSON/base64 payload that embeds `c` / ticket_code */
+/** Pull code from URL like https://app.thenomada.com/t/YDHSJ3 or ?c=YDHSJ3 */
+function ticketCodeFromUrl(raw) {
+  const text = String(raw || "").trim();
+  if (!/^https?:\/\//i.test(text)) return "";
+  try {
+    const url = new URL(text);
+    const q =
+      url.searchParams.get("c") ||
+      url.searchParams.get("code") ||
+      url.searchParams.get("ticket_code");
+    if (q) return normalizeTicketCode(q);
+
+    const parts = url.pathname.split("/").filter(Boolean);
+    const tIndex = parts.findIndex((p) => p.toLowerCase() === "t");
+    if (tIndex >= 0 && parts[tIndex + 1]) {
+      return normalizeTicketCode(parts[tIndex + 1]);
+    }
+    const scanIndex = parts.findIndex((p) => p.toLowerCase() === "scan");
+    if (scanIndex >= 0 && parts[scanIndex + 1]) {
+      return normalizeTicketCode(parts[scanIndex + 1]);
+    }
+    const last = parts[parts.length - 1];
+    if (last && /^[A-Z0-9]{4,12}$/i.test(last)) {
+      return normalizeTicketCode(last);
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+/** Accept plain code, ticket URL, or legacy QR JSON/base64 payload */
 function extractTicketCode(body = {}) {
   const direct =
     body.ticket_code || body.code || body.ticketCode || body.qr_code || null;
-  if (direct) return normalizeTicketCode(direct);
+  if (direct) {
+    return ticketCodeFromUrl(direct) || normalizeTicketCode(direct);
+  }
 
-  const payload = body.qr_payload || body.payload || null;
+  const payload = body.qr_payload || body.payload || body.qr_url || null;
   if (!payload || typeof payload !== "string") return "";
+
+  const fromUrl = ticketCodeFromUrl(payload);
+  if (fromUrl) return fromUrl;
 
   try {
     const json = JSON.parse(
@@ -227,6 +263,175 @@ export const checkInStats = TryCatchFunction(async (req, res) => {
       tickets_sold: ticketsSold,
       checked_in: checkedIn,
       remaining: ticketsSold - checkedIn,
+    },
+  });
+});
+
+const TICKET_INCLUDES = [
+  { model: EventTicketTier, as: "tier", attributes: ["id", "name"] },
+  {
+    model: EventTicketOrder,
+    as: "order",
+    attributes: [
+      "id",
+      "buyer_name",
+      "buyer_email",
+      "buyer_phone",
+      "status",
+      "paid_at",
+      "ticket_count",
+      "total_amount",
+      "currency",
+    ],
+  },
+];
+
+function mapOfflineAttendee(ticket) {
+  const formatted = formatLookupTicket(ticket);
+  return {
+    ticket_id: ticket.id,
+    ticket_code: ticket.ticket_code,
+    status: ticket.status,
+    holder_name: ticket.holder_name,
+    holder_email: ticket.holder_email,
+    tier_name: ticket.tier?.name || null,
+    checked_in_at: ticket.checked_in_at || null,
+    buyer_name: formatted.buyer.name,
+    buyer_email: formatted.buyer.email,
+    buyer_phone: formatted.buyer.phone,
+  };
+}
+
+/**
+ * Snapshot for door staff — cache on device before the event.
+ * GET /tutor/events/:id/check-in/offline-pack
+ */
+export const getOfflineCheckInPack = TryCatchFunction(async (req, res) => {
+  const { tutorId, tutorType } = getTutorInfo(req);
+  const event = await TicketedEvent.findByPk(req.params.id);
+  if (!event) throw new ErrorClass("Event not found", 404);
+  await assertEventOwnedByTutor(event, tutorId, tutorType);
+
+  const tickets = await EventTicket.findAll({
+    where: { event_id: event.id, status: { [Op.ne]: "cancelled" } },
+    include: TICKET_INCLUDES,
+    order: [["created_at", "ASC"]],
+  });
+
+  const downloadedAt = new Date();
+  const attendees = tickets.map(mapOfflineAttendee);
+
+  res.status(200).json({
+    success: true,
+    message: "Offline check-in pack ready",
+    data: {
+      event: {
+        id: event.id,
+        title: event.title,
+        starts_at: event.starts_at,
+        ends_at: event.ends_at,
+        timezone: event.timezone,
+      },
+      downloaded_at: downloadedAt.toISOString(),
+      attendee_count: attendees.length,
+      already_checked_in: attendees.filter((a) => a.status === "used").length,
+      attendees,
+    },
+  });
+});
+
+/**
+ * Apply check-ins recorded while offline.
+ * POST /tutor/events/:id/check-in/sync
+ * Body: { check_ins: [{ ticket_code, checked_in_at? }] }
+ */
+export const syncOfflineCheckIns = TryCatchFunction(async (req, res) => {
+  const { tutorId, tutorType } = getTutorInfo(req);
+  const checkerId = req.user.id;
+  const eventId = parseInt(req.params.id, 10);
+  const event = await TicketedEvent.findByPk(eventId);
+  if (!event) throw new ErrorClass("Event not found", 404);
+  await assertEventOwnedByTutor(event, tutorId, tutorType);
+
+  const raw = req.body?.check_ins || req.body?.checkIns || [];
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new ErrorClass("check_ins must be a non-empty array", 400);
+  }
+  if (raw.length > 500) {
+    throw new ErrorClass("Maximum 500 check-ins per sync", 400);
+  }
+
+  const results = {
+    applied: [],
+    already_checked_in: [],
+    not_found: [],
+    rejected: [],
+  };
+
+  for (const item of raw) {
+    const ticketCode = normalizeTicketCode(
+      item?.ticket_code || item?.code || item?.ticketCode
+    );
+    if (!ticketCode) {
+      results.rejected.push({
+        ticket_code: null,
+        reason: "ticket_code is required",
+      });
+      continue;
+    }
+
+    const ticket = await EventTicket.findOne({
+      where: {
+        event_id: eventId,
+        ticket_code: { [Op.iLike]: ticketCode },
+      },
+    });
+
+    if (!ticket) {
+      results.not_found.push({ ticket_code: ticketCode });
+      continue;
+    }
+
+    if (ticket.status === "cancelled") {
+      results.rejected.push({
+        ticket_code: ticket.ticket_code,
+        reason: "cancelled",
+      });
+      continue;
+    }
+
+    if (ticket.status === "used") {
+      results.already_checked_in.push({
+        ticket_code: ticket.ticket_code,
+        checked_in_at: ticket.checked_in_at,
+      });
+      continue;
+    }
+
+    const offlineAt = item.checked_in_at ? new Date(item.checked_in_at) : new Date();
+    const checkedInAt = Number.isNaN(offlineAt.getTime()) ? new Date() : offlineAt;
+
+    await ticket.update({
+      status: "used",
+      checked_in_at: checkedInAt,
+      checked_in_by: checkerId,
+    });
+
+    results.applied.push({
+      ticket_code: ticket.ticket_code,
+      checked_in_at: ticket.checked_in_at,
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Offline check-ins synced",
+    data: {
+      applied_count: results.applied.length,
+      already_checked_in_count: results.already_checked_in.length,
+      not_found_count: results.not_found.length,
+      rejected_count: results.rejected.length,
+      ...results,
     },
   });
 });

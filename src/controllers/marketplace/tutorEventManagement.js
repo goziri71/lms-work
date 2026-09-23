@@ -737,15 +737,33 @@ export const exportAttendeesCsv = TryCatchFunction(async (req, res) => {
 
   const tickets = await EventTicket.findAll({
     where: { event_id: event.id, status: { [Op.ne]: "cancelled" } },
-    include: [{ model: EventTicketTier, as: "tier", attributes: ["name"] }],
+    include: [
+      { model: EventTicketTier, as: "tier", attributes: ["name"] },
+      {
+        model: EventTicketOrder,
+        as: "order",
+        attributes: ["buyer_name", "buyer_email", "buyer_phone"],
+      },
+    ],
     order: [["created_at", "ASC"]],
   });
 
-  const header = "ticket_code,tier,holder_name,holder_email,status,checked_in_at\n";
+  const csvEscape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const header =
+    "ticket_code,tier,holder_name,holder_email,buyer_phone,status,checked_in_at\n";
   const rows = tickets
-    .map(
-      (t) =>
-        `"${t.ticket_code}","${t.tier?.name || ""}","${t.holder_name}","${t.holder_email}","${t.status}","${t.checked_in_at || ""}"`
+    .map((t) =>
+      [
+        t.ticket_code,
+        t.tier?.name || "",
+        t.holder_name,
+        t.holder_email,
+        t.order?.buyer_phone || "",
+        t.status,
+        t.checked_in_at || "",
+      ]
+        .map(csvEscape)
+        .join(",")
     )
     .join("\n");
 

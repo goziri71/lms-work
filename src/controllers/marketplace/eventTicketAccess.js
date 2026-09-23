@@ -8,9 +8,61 @@ import { EventTicketTier } from "../../models/marketplace/eventTicketTier.js";
 import {
   formatEventPublic,
   buildQrPayload,
+  buildQrUrl,
   sendTicketConfirmationEmail,
 } from "../../services/eventTicketService.js";
 import { joinFrontendUrl } from "../../utils/frontendUrl.js";
+
+/**
+ * Public ticket preview when a phone camera opens the QR URL.
+ * GET /tickets/scan/:ticketCode
+ */
+export const getTicketByScanCode = TryCatchFunction(async (req, res) => {
+  const ticketCode = String(req.params.ticketCode || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
+  if (!ticketCode) throw new ErrorClass("ticket_code is required", 400);
+
+  const ticket = await EventTicket.findOne({
+    where: { ticket_code: { [Op.iLike]: ticketCode } },
+    include: [{ model: EventTicketTier, as: "tier", attributes: ["name"] }],
+  });
+
+  if (!ticket || ticket.status === "cancelled") {
+    throw new ErrorClass("Ticket not found", 404);
+  }
+
+  const event = await TicketedEvent.findByPk(ticket.event_id);
+  if (!event) throw new ErrorClass("Event not found", 404);
+
+  res.status(200).json({
+    success: true,
+    message: ticket.status === "used" ? "Already checked in" : "Ticket found",
+    data: {
+      found: true,
+      already_checked_in: ticket.status === "used",
+      ticket: {
+        ticket_code: ticket.ticket_code,
+        status: ticket.status,
+        holder_name: ticket.holder_name,
+        tier_name: ticket.tier?.name || null,
+        checked_in_at: ticket.checked_in_at || null,
+      },
+      event: {
+        id: event.id,
+        title: event.title,
+        starts_at: event.starts_at,
+        ends_at: event.ends_at,
+        timezone: event.timezone,
+        format: event.format,
+        venue_name: event.venue_name || null,
+        cover_image_url: event.cover_image_url || null,
+      },
+    },
+  });
+});
+
 async function loadOrderByAccessToken(accessToken) {
   const order = await EventTicketOrder.findOne({
     where: { access_token: accessToken, status: "paid" },
@@ -53,6 +105,7 @@ export const getTicketsByAccessToken = TryCatchFunction(async (req, res) => {
         status: t.status,
         tier_name: t.tier?.name,
         holder_name: t.holder_name,
+        qr_url: buildQrUrl(t),
         qr_payload: buildQrPayload(t),
       })),
       tickets_url: ticketsUrl,

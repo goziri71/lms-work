@@ -186,6 +186,7 @@ import {
 } from "../controllers/marketplace/eventTicketCheckout.js";
 import {
   getTicketsByAccessToken,
+  getTicketByScanCode,
   downloadEventCalendarIcs,
   resendTicketEmail,
   getMyTickets,
@@ -217,6 +218,8 @@ import {
   checkInLookup,
   checkInTicket,
   checkInStats,
+  getOfflineCheckInPack,
+  syncOfflineCheckIns,
 } from "../controllers/marketplace/eventCheckIn.js";
 import {
   getFeaturedProducts,
@@ -503,6 +506,7 @@ router.post(
 );
 
 // Ticket access (magic link + student)
+router.get("/tickets/scan/:ticketCode", getTicketByScanCode);
 router.get("/tickets/order/:accessToken", getTicketsByAccessToken);
 router.get(
   "/tickets/order/:accessToken/calendar.ics",
@@ -1437,6 +1441,16 @@ router.post(
   "/tutor/events/:id/orders/:orderId/reject",
   tutorAuthorize,
   rejectEventTicketOrder,
+);
+router.get(
+  "/tutor/events/:id/check-in/offline-pack",
+  tutorAuthorize,
+  getOfflineCheckInPack,
+);
+router.post(
+  "/tutor/events/:id/check-in/sync",
+  tutorAuthorize,
+  syncOfflineCheckIns,
 );
 router.post("/tutor/events/:id/check-in/lookup", tutorAuthorize, checkInLookup);
 router.post("/tutor/events/:id/check-in", tutorAuthorize, checkInTicket);
