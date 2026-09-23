@@ -15,6 +15,7 @@ import {
   formatTierPublic,
   tierAvailable,
   normalizeTierBenefits,
+  normalizeDiscountFields,
   approveEventOrder,
   rejectEventOrder,
 } from "../../services/eventTicketService.js";
@@ -453,6 +454,10 @@ export const createTier = TryCatchFunction(async (req, res) => {
     sales_end,
     sort_order,
     is_hidden,
+    discount_type,
+    discount_value,
+    discount_starts_at,
+    discount_ends_at,
   } = req.body;
 
   if (!name || quantity_total == null) {
@@ -468,6 +473,16 @@ export const createTier = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("price must be a non-negative number set by you", 400);
   }
 
+  const discount = normalizeDiscountFields(
+    {
+      discount_type,
+      discount_value,
+      discount_starts_at,
+      discount_ends_at,
+    },
+    tierPrice
+  );
+
   const tier = await EventTicketTier.create({
     event_id: eventId,
     name,
@@ -481,6 +496,7 @@ export const createTier = TryCatchFunction(async (req, res) => {
     sales_end,
     sort_order: sort_order ?? 0,
     is_hidden: !!is_hidden,
+    ...discount,
   });
 
   res.status(201).json({
@@ -555,6 +571,38 @@ export const updateTier = TryCatchFunction(async (req, res) => {
       throw new ErrorClass("price must be a non-negative number set by you", 400);
     }
     tier.price = tierPrice;
+  }
+
+  const discountTouched =
+    req.body.discount_type !== undefined ||
+    req.body.discount_value !== undefined ||
+    req.body.discount_starts_at !== undefined ||
+    req.body.discount_ends_at !== undefined;
+
+  if (discountTouched || req.body.price !== undefined) {
+    const nextPrice = parseFloat(tier.price);
+    const discount = normalizeDiscountFields(
+      {
+        discount_type:
+          req.body.discount_type !== undefined
+            ? req.body.discount_type
+            : tier.discount_type,
+        discount_value:
+          req.body.discount_value !== undefined
+            ? req.body.discount_value
+            : tier.discount_value,
+        discount_starts_at:
+          req.body.discount_starts_at !== undefined
+            ? req.body.discount_starts_at
+            : tier.discount_starts_at,
+        discount_ends_at:
+          req.body.discount_ends_at !== undefined
+            ? req.body.discount_ends_at
+            : tier.discount_ends_at,
+      },
+      nextPrice
+    );
+    Object.assign(tier, discount);
   }
 
   await tier.save();

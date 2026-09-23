@@ -9,6 +9,7 @@ Migrations (already applied on production DB):
 node scripts/migrate-create-event-ticket-tables.js
 node scripts/migrate-event-ticket-video-benefits-sales.js
 node scripts/migrate-event-ticket-approval.js
+node scripts/migrate-event-ticket-discount.js
 ```
 
 ---
@@ -18,6 +19,7 @@ node scripts/migrate-event-ticket-approval.js
 | Rule | Detail |
 |------|--------|
 | Creator sets price | Each **package/tier** has its own `price` — **not** a fixed platform price. `0` = free RSVP. |
+| Paid-ticket discount | Optional `discount_type`: `none` \| `percent` \| `fixed`. Applied at checkout. Free tickets cannot have a discount. |
 | Event + packages | Create the **event** (ticket), then add **packages** (Premium, Gold, etc.) under it. |
 | Benefits | Each package has `benefits: string[]` (e.g. `["VIP seat", "Merch"]`). |
 | Ticket code | Every sold/RSVP ticket gets a short code like `YDHSJ3`. |
@@ -184,7 +186,11 @@ Packages live **under** an event. Creator chooses each package price.
   "sales_start": null,
   "sales_end": null,
   "sort_order": 0,
-  "is_hidden": false
+  "is_hidden": false,
+  "discount_type": "percent",
+  "discount_value": 20,
+  "discount_starts_at": null,
+  "discount_ends_at": null
 }
 ```
 
@@ -202,7 +208,10 @@ Packages live **under** an event. Creator chooses each package price.
 | Field | Notes |
 |-------|--------|
 | `name` | Required |
-| `price` | **Creator-set**, ≥ 0. Not fixed by platform. `0` = free |
+| `price` | **Creator-set list price**, ≥ 0. Not fixed by platform. `0` = free |
+| `discount_type` | `none` (default) \| `percent` \| `fixed`. Paid tickets only |
+| `discount_value` | Percent `0–100`, or fixed amount in the tier currency (must be ≤ price) |
+| `discount_starts_at` / `discount_ends_at` | Optional window. Outside the window, list price applies |
 | `quantity_total` | Required — how many tickets in this package |
 | `benefits` | Array of strings (max 50). Also accepts newline-separated string |
 | `max_per_order` | Default `4` |
@@ -227,7 +236,16 @@ Cannot set `quantity_total` below sold + reserved.
   "name": "Premium",
   "description": "Best seats",
   "benefits": ["Front row seating", "Welcome drink"],
-  "price": "1000.00",
+  "price": "800.00",
+  "list_price": "1000.00",
+  "discount": {
+    "type": "percent",
+    "value": 20,
+    "amount": "200.00",
+    "active": true,
+    "starts_at": null,
+    "ends_at": null
+  },
   "currency": "NGN",
   "quantity_total": 100,
   "quantity_available": 87,
@@ -489,7 +507,7 @@ Each ticket includes:
 ## 8. Suggested buyer UI flow
 
 1. Open public event page (`GET /events/slug/:slug`)  
-2. Show image, video, venue, date, packages + benefits + prices  
+2. Show image, video, venue, date, packages + benefits + prices (use `list_price` + `price` when `discount.active`)  
 3. If `sales_status === "closed"` → disable purchase  
 4. Select package + qty → checkout (email/name)  
 5. Free → show ticket codes immediately  
@@ -517,7 +535,7 @@ Each ticket includes:
 
 - [ ] Event list (filter by status / sales open)  
 - [ ] Create / edit event (incl. video URL + cover upload)  
-- [ ] Package manager (price, benefits list, quantity)  
+- [ ] Package manager (price, optional percent/fixed discount + window, benefits, quantity)  
 - [ ] Publish / unpublish / open sales / close sales  
 - [ ] **Approval queue** — list orders with `?status=pending_approval`, approve / reject  
 - [ ] Sales dashboard + attendees + CSV  

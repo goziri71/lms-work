@@ -168,18 +168,142 @@ export function isTierSalesOpen(tier, now = new Date()) {
   return tierAvailable(tier) > 0;
 }
 
+export function normalizeDiscountFields(body = {}, listPrice) {
+  const rawType = body.discount_type;
+  const type =
+    rawType == null || rawType === ""
+      ? "none"
+      : String(rawType).toLowerCase();
+
+  if (!["none", "percent", "fixed"].includes(type)) {
+    throw new ErrorClass(
+      "discount_type must be none, percent, or fixed",
+      400
+    );
+  }
+
+  const value =
+    body.discount_value === undefined ||
+    body.discount_value === null ||
+    body.discount_value === ""
+      ? 0
+      : parseFloat(body.discount_value);
+
+  if (Number.isNaN(value) || value < 0) {
+    throw new ErrorClass("discount_value must be a non-negative number", 400);
+  }
+
+  if (type === "none") {
+    return {
+      discount_type: "none",
+      discount_value: 0,
+      discount_starts_at: body.discount_starts_at ?? null,
+      discount_ends_at: body.discount_ends_at ?? null,
+    };
+  }
+
+  if (!(listPrice > 0)) {
+    throw new ErrorClass("Discounts can only be set on paid tickets", 400);
+  }
+
+  if (type === "percent" && value > 100) {
+    throw new ErrorClass("percent discount cannot exceed 100", 400);
+  }
+
+  if (type === "fixed" && value > listPrice) {
+    throw new ErrorClass(
+      "fixed discount cannot be greater than the ticket price",
+      400
+    );
+  }
+
+  return {
+    discount_type: type,
+    discount_value: value,
+    discount_starts_at:
+      body.discount_starts_at !== undefined ? body.discount_starts_at : null,
+    discount_ends_at:
+      body.discount_ends_at !== undefined ? body.discount_ends_at : null,
+  };
+}
+
+export function isDiscountActive(tier, now = new Date()) {
+  const type = tier.discount_type || "none";
+  const value = parseFloat(tier.discount_value || 0);
+  const listPrice = parseFloat(tier.price || 0);
+  if (type === "none" || value <= 0 || listPrice <= 0) return false;
+  if (tier.discount_starts_at && new Date(tier.discount_starts_at) > now) {
+    return false;
+  }
+  if (tier.discount_ends_at && new Date(tier.discount_ends_at) < now) {
+    return false;
+  }
+  return true;
+}
+
+export function getTierPricing(tier, now = new Date()) {
+  const listPrice = Math.round(parseFloat(tier.price || 0) * 100) / 100;
+  const currency = tier.currency || "NGN";
+
+  if (listPrice <= 0 || !isDiscountActive(tier, now)) {
+    return {
+      list_price: listPrice,
+      unit_price: listPrice,
+      discount_active: false,
+      discount_type: tier.discount_type || "none",
+      discount_value: parseFloat(tier.discount_value || 0),
+      discount_amount: 0,
+      currency,
+    };
+  }
+
+  const type = tier.discount_type;
+  const value = parseFloat(tier.discount_value || 0);
+  let discountAmount = 0;
+  if (type === "percent") {
+    discountAmount = (listPrice * value) / 100;
+  } else if (type === "fixed") {
+    discountAmount = value;
+  }
+  discountAmount = Math.min(
+    listPrice,
+    Math.round(discountAmount * 100) / 100
+  );
+  const unitPrice = Math.round((listPrice - discountAmount) * 100) / 100;
+
+  return {
+    list_price: listPrice,
+    unit_price: unitPrice,
+    discount_active: true,
+    discount_type: type,
+    discount_value: value,
+    discount_amount: discountAmount,
+    currency,
+  };
+}
+
 export function formatTierPublic(tier) {
   const available = tierAvailable(tier);
   const benefits = Array.isArray(tier.benefits)
     ? tier.benefits
     : normalizeTierBenefits(tier.benefits);
+  const pricing = getTierPricing(tier);
   return {
     id: tier.id,
     name: tier.name,
     description: tier.description,
     benefits,
-    // Creator-set price (not platform-fixed); 0 = free
-    price: parseFloat(tier.price).toFixed(2),
+    // Creator-set list price (not platform-fixed); 0 = free
+    price: pricing.unit_price.toFixed(2),
+    list_price: pricing.list_price.toFixed(2),
+    discount: {
+      type: pricing.discount_type,
+      value: pricing.discount_value,
+      amount: pricing.discount_amount.toFixed(2),
+      active: pricing.discount_active,
+      starts_at: tier.discount_starts_at || null,
+      ends_at: tier.discount_ends_at || null,
+    },
     currency: tier.currency,
     quantity_total: tier.quantity_total,
     quantity_available: Math.max(0, available),
@@ -241,7 +365,8 @@ export async function validateOrderItems(eventId, items) {
       throw new ErrorClass(`Not enough tickets available for "${tier.name}"`, 409);
     }
 
-    const unitPrice = parseFloat(tier.price);
+    const pricing = getTierPricing(tier, now);
+    const unitPrice = pricing.unit_price;
     const subtotal = Math.round(unitPrice * qty * 100) / 100;
     currency = tier.currency || currency;
     totalTickets += qty;
@@ -250,7 +375,12 @@ export async function validateOrderItems(eventId, items) {
       tier_id: tier.id,
       tier_name: tier.name,
       quantity: qty,
+      list_price: pricing.list_price.toFixed(2),
       unit_price: unitPrice.toFixed(2),
+      discount_active: pricing.discount_active,
+      discount_type: pricing.discount_type,
+      discount_value: pricing.discount_value,
+      discount_amount: (pricing.discount_amount * qty).toFixed(2),
       subtotal: subtotal.toFixed(2),
     });
   }

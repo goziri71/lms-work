@@ -33,7 +33,27 @@ export const EventTicketTier = db.define(
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
       defaultValue: 0,
-      comment: "Creator-defined price (not a fixed platform price); 0 = free RSVP",
+      comment: "Creator-defined list price (not a fixed platform price); 0 = free RSVP",
+    },
+    discount_type: {
+      type: DataTypes.ENUM("none", "percent", "fixed"),
+      allowNull: false,
+      defaultValue: "none",
+      comment: "Discount on paid tickets only: percent or fixed amount off list price",
+    },
+    discount_value: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+      comment: "Percent 0-100, or fixed amount in tier currency",
+    },
+    discount_starts_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    discount_ends_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
     },
     currency: {
       type: DataTypes.STRING(10),
