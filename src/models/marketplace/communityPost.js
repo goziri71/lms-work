@@ -53,7 +53,12 @@ export const CommunityPost = db.define(
     image_url: {
       type: DataTypes.TEXT,
       allowNull: true,
-      comment: "Post image URL",
+      comment: "Post image URL (full-size web variant, max 1600px)",
+    },
+    image_thumbnail_url: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: "Small (max 400px) variant for feed/list rendering, so a feed page never has to download full-size images",
     },
     status: {
       type: DataTypes.ENUM("draft", "published", "scheduled", "pinned", "archived", "deleted"),

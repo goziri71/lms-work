@@ -17,7 +17,7 @@ import { OrganizationUser } from "../../models/marketplace/organizationUser.js";
 import { supabase } from "../../utils/supabase.js";
 import { invalidateCache } from "../../middlewares/cacheMiddleware.js";
 import {
-  optimizeImageForWeb,
+  generateImageVariants,
   extractEmbeddedBase64Images,
 } from "../../utils/imageOptimizer.js";
 import multer from "multer";
@@ -402,6 +402,7 @@ export const createPost = TryCatchFunction(async (req, res) => {
 
   // Upload image if provided
   let imageUrl = null;
+  let imageThumbnailUrl = null;
   if (req.file) {
     const bucket = process.env.COMMUNITIES_BUCKET || "communities";
 
@@ -447,38 +448,40 @@ export const createPost = TryCatchFunction(async (req, res) => {
       console.warn("Could not verify bucket existence:", error.message);
     }
 
-    const optimized = await optimizeImageForWeb(req.file.buffer, req.file.mimetype);
-    const fileExt =
-      optimized.extension || req.file.originalname.split(".").pop();
-    // Object path inside bucket: {communityId}/posts/... (no leading "communities/" to avoid .../public/communities/communities/...)
-    const fileName = `${communityId}/posts/${userId}_${Date.now()}.${fileExt}`;
+    const { thumbnail, full } = await generateImageVariants(req.file.buffer, req.file.mimetype);
+    const baseName = `${communityId}/posts/${userId}_${Date.now()}`;
 
-    const { data, error } = await supabase.storage
-      .from(bucket)
-      .upload(fileName, optimized.buffer, {
-        contentType: optimized.mimetype,
+    const uploadVariant = async (variant, suffix) => {
+      const ext = variant.extension || req.file.originalname.split(".").pop();
+      const fileName = `${baseName}${suffix}.${ext}`;
+      const { error } = await supabase.storage.from(bucket).upload(fileName, variant.buffer, {
+        contentType: variant.mimetype,
         upsert: false,
       });
-
-    if (error) {
-      if (
-        error.message?.includes("Bucket not found") ||
-        error.message?.includes("not found")
-      ) {
-        throw new ErrorClass(
-          `Storage bucket "${bucket}" does not exist. Please create a bucket named "${bucket}" in your Supabase Storage settings.`,
-          500
-        );
+      if (error) {
+        if (
+          error.message?.includes("Bucket not found") ||
+          error.message?.includes("not found")
+        ) {
+          throw new ErrorClass(
+            `Storage bucket "${bucket}" does not exist. Please create a bucket named "${bucket}" in your Supabase Storage settings.`,
+            500
+          );
+        }
+        throw new ErrorClass(`Image upload failed: ${error.message}`, 500);
       }
-      throw new ErrorClass(`Image upload failed: ${error.message}`, 500);
-    }
+      return supabase.storage.from(bucket).getPublicUrl(fileName).data.publicUrl;
+    };
 
-    const { data: urlData } = supabase.storage
-      .from(bucket)
-      .getPublicUrl(fileName);
-    imageUrl = urlData.publicUrl;
+    // Upload both variants in parallel — a feed can then render the small
+    // thumbnail while the full-size image is only fetched when a post is
+    // actually opened.
+    [imageUrl, imageThumbnailUrl] = await Promise.all([
+      uploadVariant(full, ""),
+      uploadVariant(thumbnail, "_thumb"),
+    ]);
 
-    console.log(`✅ Image uploaded successfully: ${imageUrl}`);
+    console.log(`✅ Image uploaded successfully: ${imageUrl} (thumbnail: ${imageThumbnailUrl})`);
   }
 
   // Determine author ID - for tutors, use their ID; for students, use student ID
@@ -525,6 +528,7 @@ export const createPost = TryCatchFunction(async (req, res) => {
     category: category || null,
     tags: tags ? (Array.isArray(tags) ? tags : JSON.parse(tags)) : null,
     image_url: imageUrl || null,
+    image_thumbnail_url: imageThumbnailUrl || null,
     status: postStatus,
     scheduled_at: scheduledDate,
     is_featured: featured,
@@ -672,6 +676,7 @@ export const createPost = TryCatchFunction(async (req, res) => {
     data: {
       ...postData,
       image_url: postData.image_url || imageUrl || null, // Explicitly include image_url
+      image_thumbnail_url: postData.image_thumbnail_url || imageThumbnailUrl || null,
       author: {
         id: author.id,
         name: authorName,
@@ -925,11 +930,14 @@ export const updatePost = TryCatchFunction(async (req, res) => {
 
   // Handle image upload if provided
   if (req.file) {
-    // Delete old image if exists (object key = path after bucket name in URL)
-    if (post.image_url) {
+    const bucket = process.env.COMMUNITIES_BUCKET || "communities";
+
+    // Delete old image variants if they exist (object key = path after
+    // bucket name in URL)
+    const deleteOldVariant = async (url) => {
+      if (!url) return;
       try {
-        const bucket = process.env.COMMUNITIES_BUCKET || "communities";
-        const urlParts = post.image_url.split("/");
+        const urlParts = url.split("/");
         const bucketIdx = urlParts.indexOf(bucket);
         const objectKey =
           bucketIdx !== -1 ? urlParts.slice(bucketIdx + 1).join("/") : null;
@@ -937,31 +945,33 @@ export const updatePost = TryCatchFunction(async (req, res) => {
       } catch (error) {
         console.error("Error deleting old image:", error);
       }
-    }
+    };
+    await Promise.all([
+      deleteOldVariant(post.image_url),
+      deleteOldVariant(post.image_thumbnail_url),
+    ]);
 
-    // Upload new image
-    const optimized = await optimizeImageForWeb(req.file.buffer, req.file.mimetype);
-    const fileExt =
-      optimized.extension || req.file.originalname.split(".").pop();
-    // Object path inside bucket: {communityId}/posts/... (no leading "communities/" to avoid .../public/communities/communities/...)
-    const fileName = `${communityId}/posts/${userId}_${Date.now()}.${fileExt}`;
-    const bucket = process.env.COMMUNITIES_BUCKET || "communities";
+    // Upload new image (both a full-size and a small feed/list thumbnail)
+    const { thumbnail, full } = await generateImageVariants(req.file.buffer, req.file.mimetype);
+    const baseName = `${communityId}/posts/${userId}_${Date.now()}`;
 
-    const { data, error } = await supabase.storage
-      .from(bucket)
-      .upload(fileName, optimized.buffer, {
-        contentType: optimized.mimetype,
+    const uploadVariant = async (variant, suffix) => {
+      const ext = variant.extension || req.file.originalname.split(".").pop();
+      const fileName = `${baseName}${suffix}.${ext}`;
+      const { error } = await supabase.storage.from(bucket).upload(fileName, variant.buffer, {
+        contentType: variant.mimetype,
         upsert: false,
       });
+      if (error) {
+        throw new ErrorClass(`Image upload failed: ${error.message}`, 500);
+      }
+      return supabase.storage.from(bucket).getPublicUrl(fileName).data.publicUrl;
+    };
 
-    if (error) {
-      throw new ErrorClass(`Image upload failed: ${error.message}`, 500);
-    }
-
-    const { data: urlData } = supabase.storage
-      .from(bucket)
-      .getPublicUrl(fileName);
-    post.image_url = urlData.publicUrl;
+    [post.image_url, post.image_thumbnail_url] = await Promise.all([
+      uploadVariant(full, ""),
+      uploadVariant(thumbnail, "_thumb"),
+    ]);
   }
 
   if (title !== undefined) post.title = title;

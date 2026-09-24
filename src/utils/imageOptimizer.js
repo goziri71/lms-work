@@ -99,3 +99,33 @@ export async function optimizeImageForWeb(buffer, mimetype, opts = {}) {
     return { buffer, mimetype, extension: null };
   }
 }
+
+/**
+ * Generate both a small feed/list thumbnail and a full-size web variant from
+ * one uploaded image. A feed rendering N posts should never have to
+ * download N full-resolution images just to show small cards — that's the
+ * gap a single "optimized" size still leaves. Animated images (GIF/animated
+ * WebP/PNG) fall back to a single passthrough "variant" for both sizes,
+ * same reasoning as optimizeImageForWeb.
+ *
+ * @param {Buffer} buffer
+ * @param {string} mimetype
+ * @returns {Promise<{
+ *   thumbnail: { buffer: Buffer, mimetype: string, extension: string },
+ *   full: { buffer: Buffer, mimetype: string, extension: string },
+ * }>}
+ */
+export async function generateImageVariants(buffer, mimetype) {
+  const full = await optimizeImageForWeb(buffer, mimetype, { maxWidth: 1600, quality: 82 });
+
+  // Animated images pass through unchanged from optimizeImageForWeb (same
+  // buffer as the original) — don't re-derive a "thumbnail" from an
+  // animated source, just reuse the same passthrough for both.
+  const isAnimatedPassthrough = full.buffer === buffer;
+  if (isAnimatedPassthrough) {
+    return { thumbnail: full, full };
+  }
+
+  const thumbnail = await optimizeImageForWeb(buffer, mimetype, { maxWidth: 400, quality: 75 });
+  return { thumbnail, full };
+}
