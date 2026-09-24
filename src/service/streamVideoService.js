@@ -1,6 +1,25 @@
 import { StreamClient } from "@stream-io/node-sdk";
 import { Config } from "../config/config.js";
 
+/**
+ * Stream identity for a user. Students, staff, sole_tutors, and
+ * organizations are separate DB tables with independent auto-increment ids,
+ * so a raw numeric id alone is NOT a unique identity across user types
+ * (student #5 and sole_tutor #5 are different people). Every call site that
+ * hands a user id to the Stream SDK (token generation, call creation,
+ * membership) must go through this so two different people never collide
+ * as the same Stream user.
+ * @param {string} userType - e.g. "student", "staff", "sole_tutor", "organization"
+ * @param {string|number} userId
+ * @returns {string}
+ */
+export function formatStreamUserId(userType, userId) {
+  if (!userType || userId == null) {
+    throw new Error("formatStreamUserId requires both userType and userId");
+  }
+  return `${userType}_${userId}`;
+}
+
 class StreamVideoService {
   constructor() {
     this.client = null;

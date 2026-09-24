@@ -1,5 +1,6 @@
 import express from "express";
 import { authLimiter } from "../middlewares/rateLimiter.js";
+import { cacheMiddleware } from "../middlewares/cacheMiddleware.js";
 import {
   registerSoleTutor,
   registerOrganization,
@@ -382,6 +383,7 @@ import {
   startAudioSession,
   endAudioSession,
   getJoinToken as getCommunityAudioJoinToken,
+  getTutorJoinToken as getCommunityAudioTutorJoinToken,
   cancelAudioSession,
 } from "../controllers/marketplace/communityAudioSessions.js";
 import {
@@ -628,7 +630,7 @@ router.post("/logout", tutorAuthorize, tutorLogout);
 
 // Get all tutors/organizations (for filtering marketplace courses)
 // Public endpoint - accessible to all (students can use for filtering)
-router.get("/tutors", getAllTutors);
+router.get("/tutors", cacheMiddleware(60), getAllTutors);
 
 // Get all programs (for filtering marketplace courses)
 // Public endpoint - accessible to all (students can use for filtering)
@@ -649,7 +651,7 @@ router.post("/courses/purchase", authorize, purchaseMarketplaceCourse);
 
 // Browse all marketplace courses (Student only - shows available courses to purchase)
 // This must come last because it's less specific than /courses/my-courses
-router.get("/courses", authorize, browseMarketplaceCourses);
+router.get("/courses", authorize, cacheMiddleware(60), browseMarketplaceCourses);
 
 // E-Book Browsing & Purchase (Student)
 // IMPORTANT: More specific routes must come before parameterized routes
@@ -1194,6 +1196,11 @@ router.post(
   "/communities/:id/audio-sessions/:sessionId/join-token",
   authorize,
   getCommunityAudioJoinToken,
+);
+router.post(
+  "/tutor/communities/:id/audio-sessions/:sessionId/join-token",
+  tutorAuthorize,
+  getCommunityAudioTutorJoinToken,
 );
 router.delete(
   "/tutor/communities/:id/audio-sessions/:sessionId",

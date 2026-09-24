@@ -10,6 +10,7 @@ const authService = new AuthService();
 import { CoachingSchedulingMessage } from "../models/marketplace/coachingSchedulingMessage.js";
 import { CoachingSession } from "../models/marketplace/coachingSession.js";
 import { CoachingSessionPurchase } from "../models/marketplace/coachingSessionPurchase.js";
+import { CoachingParticipant } from "../models/marketplace/coachingParticipant.js";
 import { Students } from "../models/auth/student.js";
 import { SoleTutor } from "../models/marketplace/soleTutor.js";
 import { Organization } from "../models/marketplace/organization.js";
@@ -371,15 +372,27 @@ async function verifySessionAccess(sessionId, userId, userType) {
     );
   }
 
-  // Student access (must have purchased)
+  // Student access: purchased (paid sessions) or invited (free sessions —
+  // mirrors the same two checks coachingSession.js's getStudentJoinToken
+  // uses to decide who may join the call itself).
   if (userType === "student") {
-    const purchase = await CoachingSessionPurchase.findOne({
+    if (session.pricing_type === "paid") {
+      const purchase = await CoachingSessionPurchase.findOne({
+        where: {
+          session_id: sessionId,
+          student_id: userId,
+        },
+      });
+      return !!purchase;
+    }
+
+    const participant = await CoachingParticipant.findOne({
       where: {
         session_id: sessionId,
         student_id: userId,
       },
     });
-    return !!purchase;
+    return !!participant;
   }
 
   return false;

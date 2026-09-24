@@ -1,9 +1,26 @@
 import crypto from "crypto";
 import { VideoCall } from "../../models/video/videoCall.js";
 import { VideoCallParticipant } from "../../models/video/videoCallParticipant.js";
-import { streamVideoService } from "../../service/streamVideoService.js";
+import {
+  streamVideoService,
+  formatStreamUserId,
+} from "../../service/streamVideoService.js";
 import { db } from "../../database/database.js";
 import { Config } from "../../config/config.js";
+
+/**
+ * Whether `userId`/`userType` is the staff member who created `call`.
+ * `created_by` on video_calls is always a staff id (only staff can create
+ * calls — see createCall below), so ownership must also check userType: a
+ * student whose numeric id happens to equal that staff id is NOT the
+ * creator — students and staff have independent id sequences. Used both as
+ * the "host" check and, for calls with no course link, as the entire
+ * access-control decision (there is currently no invite mechanism for
+ * course-less calls, so only the creator gets access to one).
+ */
+function isCallCreator(call, userId, userType) {
+  return userType === "staff" && call.created_by === userId;
+}
 
 /**
  * Create a new video call
@@ -68,7 +85,7 @@ export async function createCall(req, res) {
 
     // Initialize call in Stream
     await streamVideoService.getOrCreateCall(streamCallType, streamCallId, {
-      createdBy: String(userId),
+      createdBy: formatStreamUserId("staff", userId),
       record,
       startsAt,
     });
@@ -145,6 +162,13 @@ export async function getCall(req, res) {
           message: "You do not have access to this call",
         });
       }
+    } else if (!isCallCreator(call, userId, userType)) {
+      // No course link means there's no enrollment to check access against —
+      // only the staff member who created the call may view/join it.
+      return res.status(403).json({
+        success: false,
+        message: "You do not have access to this call",
+      });
     }
 
     res.json({
@@ -222,11 +246,16 @@ export async function generateToken(req, res) {
           message: "You do not have access to this call",
         });
       }
+    } else if (!isCallCreator(call, userId, userType)) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have access to this call",
+      });
     }
 
     // Determine role
     let role = "participant";
-    if (call.created_by === userId) {
+    if (userType === "staff" && call.created_by === userId) {
       role = "host";
     } else if (userType === "staff") {
       role = "cohost";
@@ -234,14 +263,17 @@ export async function generateToken(req, res) {
       role = req.body.role || "participant";
     }
 
+    const streamUserId = formatStreamUserId(userType, userId);
+
     // Generate token (1 hour TTL)
-    const token = streamVideoService.generateUserToken(userId, 3600);
+    const token = streamVideoService.generateUserToken(streamUserId, 3600);
 
     // Record participant
     const [participant] = await VideoCallParticipant.findOrCreate({
       where: {
         call_id: call.id,
         user_id: userId,
+        user_type: userType,
       },
       defaults: {
         call_id: call.id,
@@ -258,7 +290,7 @@ export async function generateToken(req, res) {
         token,
         streamCallId: call.stream_call_id,
         callType: call.call_type,
-        userId: String(userId),
+        userId: streamUserId,
         role,
       },
     });
@@ -391,6 +423,7 @@ export async function endCall(req, res) {
   try {
     const { id } = req.params;
     const userId = req.user?.id;
+    const userType = req.user?.userType;
 
     const call = await VideoCall.findByPk(id);
 
@@ -401,7 +434,7 @@ export async function endCall(req, res) {
       });
     }
 
-    if (call.created_by !== userId) {
+    if (!isCallCreator(call, userId, userType)) {
       return res.status(403).json({
         success: false,
         message: "Only the host can end the call",
@@ -437,6 +470,7 @@ export async function deleteCall(req, res) {
   try {
     const { id } = req.params;
     const userId = req.user?.id;
+    const userType = req.user?.userType;
 
     const call = await VideoCall.findByPk(id);
 
@@ -447,7 +481,7 @@ export async function deleteCall(req, res) {
       });
     }
 
-    if (call.created_by !== userId) {
+    if (!isCallCreator(call, userId, userType)) {
       return res.status(403).json({
         success: false,
         message: "Only the host can delete the call",

@@ -13,8 +13,15 @@ import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { TutorWalletTransaction } from "../../models/marketplace/tutorWalletTransaction.js";
 import { WspCommission } from "../../models/marketplace/wspCommission.js";
-import { getWalletBalance } from "../../services/walletBalanceService.js";
-import { streamVideoService } from "../../service/streamVideoService.js";
+import {
+  getWalletBalance,
+  calculateWalletBalanceFromFunding,
+} from "../../services/walletBalanceService.js";
+import { Transaction } from "sequelize";
+import {
+  streamVideoService,
+  formatStreamUserId,
+} from "../../service/streamVideoService.js";
 import { checkAndDeductHours } from "./coachingHours.js";
 import { Config } from "../../config/config.js";
 import { db } from "../../database/database.js";
@@ -96,22 +103,10 @@ export const processBookingPayment = TryCatchFunction(async (req, res) => {
     }
   }
 
-  // Check wallet balance
-  const { balance: walletBalance } = await getWalletBalance(studentId, true);
-
-  if (walletBalance < priceInStudentCurrency) {
-    let requiredDisplay;
-    if (bookingCurrency !== studentCurrency) {
-      requiredDisplay = `${priceInStudentCurrency.toFixed(2)} ${studentCurrency} (${finalPrice} ${bookingCurrency})`;
-    } else {
-      requiredDisplay = `${priceInStudentCurrency.toFixed(2)} ${studentCurrency}`;
-    }
-
-    throw new ErrorClass(
-      `Insufficient wallet balance. Required: ${requiredDisplay}, Available: ${walletBalance.toFixed(2)} ${studentCurrency}. Please fund your wallet first.`,
-      400
-    );
-  }
+  // Pre-check outside the transaction so we can fail fast with a clear
+  // error before taking a row lock; the authoritative check happens again
+  // under the lock below.
+  await getWalletBalance(studentId, true);
 
   const commissionRate = 15.0;
   const wspCommission = (priceInStudentCurrency * commissionRate) / 100;
@@ -121,10 +116,43 @@ export const processBookingPayment = TryCatchFunction(async (req, res) => {
   const durationHours = agreedDuration / 60;
 
   const dbTransaction = await db.transaction();
+  let newBalance;
 
   try {
+    // Lock the student's row for the duration of the transaction so two
+    // concurrent payment confirmations for the same student can't both
+    // read the same starting balance and both debit (driving the wallet
+    // negative).
+    const lockedStudent = await Students.findByPk(studentId, {
+      transaction: dbTransaction,
+      lock: Transaction.LOCK.UPDATE,
+    });
+    if (!lockedStudent) {
+      throw new ErrorClass("Student not found", 404);
+    }
+
+    const walletBalance = await calculateWalletBalanceFromFunding(
+      studentId,
+      lockedStudent.currency,
+      dbTransaction
+    );
+
+    if (walletBalance < priceInStudentCurrency) {
+      let requiredDisplay;
+      if (bookingCurrency !== studentCurrency) {
+        requiredDisplay = `${priceInStudentCurrency.toFixed(2)} ${studentCurrency} (${finalPrice} ${bookingCurrency})`;
+      } else {
+        requiredDisplay = `${priceInStudentCurrency.toFixed(2)} ${studentCurrency}`;
+      }
+
+      throw new ErrorClass(
+        `Insufficient wallet balance. Required: ${requiredDisplay}, Available: ${walletBalance.toFixed(2)} ${studentCurrency}. Please fund your wallet first.`,
+        400
+      );
+    }
+
     // 1. Debit student wallet
-    const newBalance = walletBalance - priceInStudentCurrency;
+    newBalance = walletBalance - priceInStudentCurrency;
 
     await Funding.create(
       {
@@ -142,7 +170,7 @@ export const processBookingPayment = TryCatchFunction(async (req, res) => {
       { transaction: dbTransaction }
     );
 
-    await student.update(
+    await lockedStudent.update(
       { wallet_balance: newBalance },
       { transaction: dbTransaction }
     );
@@ -175,7 +203,7 @@ export const processBookingPayment = TryCatchFunction(async (req, res) => {
     if (Config.streamApiKey && Config.streamSecret) {
       try {
         await streamVideoService.getOrCreateCall("default", streamCallId, {
-          createdBy: String(booking.tutor_id),
+          createdBy: formatStreamUserId(booking.tutor_type, booking.tutor_id),
           record: false,
           startsAt: agreedStartTime.toISOString(),
         });
@@ -259,10 +287,12 @@ export const processBookingPayment = TryCatchFunction(async (req, res) => {
     if (booking.tutor_type === "sole_tutor") {
       tutor = await SoleTutor.findByPk(booking.tutor_id, {
         transaction: dbTransaction,
+        lock: Transaction.LOCK.UPDATE,
       });
     } else {
       tutor = await Organization.findByPk(booking.tutor_id, {
         transaction: dbTransaction,
+        lock: Transaction.LOCK.UPDATE,
       });
     }
 

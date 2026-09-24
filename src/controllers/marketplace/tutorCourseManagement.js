@@ -8,6 +8,7 @@ import { Staff } from "../../models/auth/staff.js";
 import { Op, Sequelize } from "sequelize";
 import { Sequelize as SequelizeLib } from "sequelize";
 import { db } from "../../database/database.js";
+import { invalidateCache } from "../../middlewares/cacheMiddleware.js";
 import multer from "multer";
 import { supabase } from "../../utils/supabase.js";
 import { generateCourseSlug } from "../../utils/productSlugHelper.js";
@@ -597,6 +598,8 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     // Commit transaction
     await transaction.commit();
 
+    invalidateCache("cache:/api/marketplace/courses*");
+
     res.status(201).json({
       success: true,
       message: "Course created successfully",
@@ -889,6 +892,8 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
 
   await course.update(updateData);
 
+  invalidateCache("cache:/api/marketplace/courses*");
+
   res.status(200).json({
     success: true,
     message: "Course updated successfully",
@@ -956,6 +961,8 @@ export const deleteCourse = TryCatchFunction(async (req, res) => {
 
   await course.destroy({ force: true });
 
+  invalidateCache("cache:/api/marketplace/courses*");
+
   res.status(200).json({
     success: true,
     message: "Course deleted successfully",
@@ -1008,6 +1015,8 @@ export const updateCourseStatus = TryCatchFunction(async (req, res) => {
   }
 
   await course.update(updatePayload);
+
+  invalidateCache("cache:/api/marketplace/courses*");
 
   res.status(200).json({
     success: true,

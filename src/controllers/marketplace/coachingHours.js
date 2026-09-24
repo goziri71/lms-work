@@ -135,34 +135,43 @@ export const purchaseHours = TryCatchFunction(async (req, res) => {
   const pricePerHour = parseFloat(settings.price_per_hour);
   const totalAmount = pricePerHour * hours;
 
-  // Get tutor wallet balance
-  let tutor;
-  if (tutorType === "sole_tutor") {
-    tutor = await SoleTutor.findByPk(tutorId);
-  } else {
-    tutor = await Organization.findByPk(tutorId);
-  }
-
-  if (!tutor) {
-    throw new ErrorClass("Tutor not found", 404);
-  }
-
   const payCur = (settings.currency || "NGN").toString().toUpperCase();
   let walletField = "wallet_balance_primary";
   if (payCur === "USD") walletField = "wallet_balance_usd";
   else if (payCur === "GBP") walletField = "wallet_balance_gbp";
-  const walletBalance = parseFloat(tutor[walletField] || 0);
-
-  if (walletBalance < totalAmount) {
-    throw new ErrorClass(
-      `Insufficient wallet balance. Required: ${totalAmount} ${settings.currency}, Available: ${walletBalance} ${settings.currency}`,
-      400
-    );
-  }
 
   const transaction = await db.transaction();
 
   try {
+    // Lock the tutor row for the duration of the transaction so two
+    // concurrent purchases can't both read the same starting wallet
+    // balance and both debit (driving the wallet negative).
+    let tutor;
+    if (tutorType === "sole_tutor") {
+      tutor = await SoleTutor.findByPk(tutorId, {
+        transaction,
+        lock: Sequelize.Transaction.LOCK.UPDATE,
+      });
+    } else {
+      tutor = await Organization.findByPk(tutorId, {
+        transaction,
+        lock: Sequelize.Transaction.LOCK.UPDATE,
+      });
+    }
+
+    if (!tutor) {
+      throw new ErrorClass("Tutor not found", 404);
+    }
+
+    const walletBalance = parseFloat(tutor[walletField] || 0);
+
+    if (walletBalance < totalAmount) {
+      throw new ErrorClass(
+        `Insufficient wallet balance. Required: ${totalAmount} ${settings.currency}, Available: ${walletBalance} ${settings.currency}`,
+        400
+      );
+    }
+
     const newBalance = walletBalance - totalAmount;
     const chUpd = { [walletField]: newBalance };
     if (walletField === "wallet_balance_primary") {
@@ -177,6 +186,7 @@ export const purchaseHours = TryCatchFunction(async (req, res) => {
         tutor_type: tutorType,
       },
       transaction,
+      lock: Sequelize.Transaction.LOCK.UPDATE,
     });
 
     if (!balance) {
@@ -327,13 +337,17 @@ export async function checkAndDeductHours(tutorId, tutorType, hours, transaction
     return { allowed: true, unlimited: true };
   }
 
-  // Get balance
+  // Get balance. Locked FOR UPDATE (when running inside a transaction) so
+  // two concurrent deductions for the same tutor can't both read the same
+  // starting balance and both pass the sufficiency check below — otherwise
+  // a tutor could double-book more coaching hours than they actually have.
   let balance = await CoachingHoursBalance.findOne({
     where: {
       tutor_id: tutorId,
       tutor_type: tutorType,
     },
     transaction,
+    lock: transaction ? Sequelize.Transaction.LOCK.UPDATE : undefined,
   });
 
   if (!balance) {
@@ -401,13 +415,14 @@ export async function refundHours(tutorId, tutorType, hours, transaction = null)
     return; // No refund needed for unlimited
   }
 
-  // Get balance
+  // Get balance (locked FOR UPDATE when inside a transaction, same reason as checkAndDeductHours)
   let balance = await CoachingHoursBalance.findOne({
     where: {
       tutor_id: tutorId,
       tutor_type: tutorType,
     },
     transaction,
+    lock: transaction ? Sequelize.Transaction.LOCK.UPDATE : undefined,
   });
 
   if (!balance) {

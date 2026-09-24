@@ -11,9 +11,9 @@ import { Op } from "sequelize";
 /**
  * Start an exam attempt - selects random questions from bank if needed
  */
-export async function startExamAttempt(examId, studentId) {
+export async function startExamAttempt(examId, studentId, transaction = null) {
   try {
-    const exam = await Exam.findByPk(examId);
+    const exam = await Exam.findByPk(examId, { transaction });
     if (!exam) throw new Error("Exam not found");
     if (exam.visibility !== "published") throw new Error("Exam not available");
 
@@ -24,6 +24,7 @@ export async function startExamAttempt(examId, studentId) {
         student_id: studentId,
         status: "in_progress",
       },
+      transaction,
     });
 
     if (existingAttempt) {
@@ -31,16 +32,19 @@ export async function startExamAttempt(examId, studentId) {
     }
 
     // Create new attempt
-    const attempt = await ExamAttempt.create({
-      exam_id: examId,
-      student_id: studentId,
-      started_at: new Date(),
-      status: "in_progress",
-    });
+    const attempt = await ExamAttempt.create(
+      {
+        exam_id: examId,
+        student_id: studentId,
+        started_at: new Date(),
+        status: "in_progress",
+      },
+      { transaction }
+    );
 
     // If random selection mode, pick questions now
     if (exam.selection_mode === "random") {
-      await selectRandomQuestionsForAttempt(exam, attempt);
+      await selectRandomQuestionsForAttempt(exam, attempt, transaction);
     }
 
     return { attempt, isNew: true };
@@ -53,7 +57,7 @@ export async function startExamAttempt(examId, studentId) {
 /**
  * Select random questions from the bank for this specific attempt
  */
-async function selectRandomQuestionsForAttempt(exam, attempt) {
+async function selectRandomQuestionsForAttempt(exam, attempt, transaction = null) {
   try {
     const { objective_count = 0, theory_count = 0, course_id } = exam;
     const selectedQuestions = [];
@@ -67,6 +71,7 @@ async function selectRandomQuestionsForAttempt(exam, attempt) {
           status: "approved",
         },
         order: [["id", "ASC"]],
+        transaction,
       });
 
       const shuffled = shuffleArray(objectiveQuestions);
@@ -83,6 +88,7 @@ async function selectRandomQuestionsForAttempt(exam, attempt) {
           status: "approved",
         },
         order: [["id", "ASC"]],
+        transaction,
       });
 
       const shuffled = shuffleArray(theoryQuestions);
@@ -97,12 +103,15 @@ async function selectRandomQuestionsForAttempt(exam, attempt) {
 
     // Create exam_items for this attempt
     for (let i = 0; i < finalOrder.length; i++) {
-      await ExamItem.create({
-        exam_id: exam.id,
-        attempt_id: attempt.id,
-        question_bank_id: finalOrder[i].id,
-        order: i + 1,
-      });
+      await ExamItem.create(
+        {
+          exam_id: exam.id,
+          attempt_id: attempt.id,
+          question_bank_id: finalOrder[i].id,
+          order: i + 1,
+        },
+        { transaction }
+      );
     }
 
     console.log(

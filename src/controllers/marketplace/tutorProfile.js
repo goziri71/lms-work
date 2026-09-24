@@ -3,6 +3,7 @@ import { ErrorClass } from "../../utils/errorClass/index.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { authService } from "../../service/authservice.js";
+import { invalidateCache } from "../../middlewares/cacheMiddleware.js";
 import { getCurrencyFromCountry } from "../../services/currencyService.js";
 import {
   normalizeSignupIntent,
@@ -221,6 +222,8 @@ export const updateProfile = TryCatchFunction(async (req, res) => {
   }
 
   await tutor.update(updateData);
+
+  invalidateCache("cache:/api/marketplace/tutors*");
 
   // Reload tutor to get updated data
   await tutor.reload();

@@ -12,6 +12,7 @@ import {
 } from "../../models/exams/index.js";
 import { CourseReg } from "../../models/course_reg.js";
 import { Semester } from "../../models/auth/semester.js";
+import { db } from "../../database/database.js";
 import {
   startExamAttempt,
   getAttemptQuestions,
@@ -203,30 +204,59 @@ export const startExam = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Exam has ended", 403);
   }
 
-  // Check attempt limit (default: max 3 attempts per exam)
+  // Check attempt limit (default: max 3 attempts per exam). The count-check
+  // and the eventual attempt creation are serialized per (examId, studentId)
+  // via a Postgres advisory lock, so two simultaneous "start exam" requests
+  // (double-click, two tabs, a retried request) can't both read the same
+  // attempt count before either insert commits and exceed MAX_ATTEMPTS.
   const MAX_ATTEMPTS = exam.max_attempts || 3;
-  const existingAttempts = await ExamAttempt.count({
-    where: {
-      exam_id: examId,
-      student_id: studentId,
-    },
-  });
+  const lockTransaction = await db.transaction();
+  let inProgressAttempt;
+  let existingAttempts;
+  let attempt;
 
-  if (existingAttempts >= MAX_ATTEMPTS) {
-    throw new ErrorClass(
-      `Maximum attempt limit reached (${MAX_ATTEMPTS} attempts allowed)`,
-      403
-    );
+  try {
+    await db.query("SELECT pg_advisory_xact_lock(:examId, :studentId)", {
+      replacements: { examId, studentId },
+      transaction: lockTransaction,
+    });
+
+    existingAttempts = await ExamAttempt.count({
+      where: {
+        exam_id: examId,
+        student_id: studentId,
+      },
+      transaction: lockTransaction,
+    });
+
+    if (existingAttempts >= MAX_ATTEMPTS) {
+      throw new ErrorClass(
+        `Maximum attempt limit reached (${MAX_ATTEMPTS} attempts allowed)`,
+        403
+      );
+    }
+
+    // Check for existing in-progress attempt
+    inProgressAttempt = await ExamAttempt.findOne({
+      where: {
+        exam_id: examId,
+        student_id: studentId,
+        status: "in_progress",
+      },
+      transaction: lockTransaction,
+    });
+
+    if (!inProgressAttempt) {
+      // Start new attempt (handles random selection if needed) inside the
+      // same locked transaction, so the count check above stays valid.
+      ({ attempt } = await startExamAttempt(examId, studentId, lockTransaction));
+    }
+
+    await lockTransaction.commit();
+  } catch (error) {
+    await lockTransaction.rollback();
+    throw error;
   }
-
-  // Check for existing in-progress attempt
-  const inProgressAttempt = await ExamAttempt.findOne({
-    where: {
-      exam_id: examId,
-      student_id: studentId,
-      status: "in_progress",
-    },
-  });
 
   if (inProgressAttempt) {
     // Return existing attempt instead of creating new one
@@ -267,9 +297,6 @@ export const startExam = TryCatchFunction(async (req, res) => {
       },
     });
   }
-
-  // Start new attempt (handles random selection if needed)
-  const { attempt, isNew } = await startExamAttempt(examId, studentId);
 
   // Store exam start IP for security tracking
   const startIP =

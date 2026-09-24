@@ -9,7 +9,10 @@ import { Community } from "../../models/marketplace/community.js";
 import { CommunityMember } from "../../models/marketplace/communityMember.js";
 import { CommunityAudioSession } from "../../models/marketplace/communityAudioSession.js";
 import { TutorSubscription } from "../../models/marketplace/tutorSubscription.js";
-import { streamVideoService } from "../../service/streamVideoService.js";
+import {
+  streamVideoService,
+  formatStreamUserId,
+} from "../../service/streamVideoService.js";
 import { Config } from "../../config/config.js";
 import { Op } from "sequelize";
 
@@ -115,7 +118,7 @@ export const createAudioSession = TryCatchFunction(async (req, res) => {
   // Create Stream.io audio call (audio-only)
   const callId = `community-audio-${communityId}-${Date.now()}`;
   const streamCall = await streamVideoService.getOrCreateCall("default", callId, {
-    createdBy: String(tutorId),
+    createdBy: formatStreamUserId(tutorType, tutorId),
     record: false,
     startsAt: scheduled_start_time || new Date().toISOString(),
     audioOnly: true, // Audio-only call
@@ -384,8 +387,13 @@ export const getJoinToken = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Session is not available", 400);
   }
 
+  if (!Config.streamApiKey || !Config.streamSecret) {
+    throw new ErrorClass("Video calls are currently disabled", 503);
+  }
+
   // Get Stream.io token
-  const token = streamVideoService.generateUserToken(String(studentId));
+  const streamUserId = formatStreamUserId("student", studentId);
+  const token = streamVideoService.generateUserToken(streamUserId);
 
   res.json({
     status: true,
@@ -395,6 +403,51 @@ export const getJoinToken = TryCatchFunction(async (req, res) => {
       token,
       call_id: session.stream_call_id,
       view_link: session.view_link,
+      userId: streamUserId,
+    },
+  });
+});
+
+/**
+ * Get join token for audio session (tutor — the session creator)
+ * POST /api/marketplace/tutor/communities/:id/audio-sessions/:sessionId/join-token
+ */
+export const getTutorJoinToken = TryCatchFunction(async (req, res) => {
+  const { id: communityId, sessionId } = req.params;
+  const { tutorId, tutorType } = getTutorInfo(req);
+
+  const session = await CommunityAudioSession.findOne({
+    where: {
+      id: sessionId,
+      community_id: communityId,
+      created_by: tutorId,
+    },
+  });
+
+  if (!session) {
+    throw new ErrorClass("Audio session not found", 404);
+  }
+
+  if (session.status !== "active" && session.status !== "scheduled") {
+    throw new ErrorClass("Session is not available", 400);
+  }
+
+  if (!Config.streamApiKey || !Config.streamSecret) {
+    throw new ErrorClass("Video calls are currently disabled", 503);
+  }
+
+  const streamUserId = formatStreamUserId(tutorType, tutorId);
+  const token = streamVideoService.generateUserToken(streamUserId);
+
+  res.json({
+    status: true,
+    code: 200,
+    message: "Join token generated successfully",
+    data: {
+      token,
+      call_id: session.stream_call_id,
+      view_link: session.view_link,
+      userId: streamUserId,
     },
   });
 });

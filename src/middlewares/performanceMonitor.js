@@ -25,19 +25,29 @@ const stats = {
  */
 export const performanceMonitor = (req, res, next) => {
   const startTime = Date.now();
-  const endpoint = `${req.method} ${req.route?.path || req.path}`;
-
-  // Increment request counters
-  stats.requests.total++;
-  stats.requests.byEndpoint[endpoint] =
-    (stats.requests.byEndpoint[endpoint] || 0) + 1;
-  stats.requests.byMethod[req.method] =
-    (stats.requests.byMethod[req.method] || 0) + 1;
 
   // Capture original end method
   const originalEnd = res.end;
 
   res.end = function (...args) {
+    // req.route is only populated once Express has matched a route handler,
+    // which happens after this middleware runs but before res.end is
+    // called — reading it here (instead of up front) keys stats by the
+    // parameterized route pattern (e.g. "/courses/:id") rather than the raw
+    // path with real ids, which are unbounded (one distinct key per id ever
+    // requested). Unmatched requests (404s, bad paths) fall into a single
+    // shared bucket instead of one key per garbage path.
+    const endpoint = req.route?.path
+      ? `${req.method} ${req.baseUrl || ""}${req.route.path}`
+      : `${req.method} (unmatched)`;
+
+    // Increment request counters
+    stats.requests.total++;
+    stats.requests.byEndpoint[endpoint] =
+      (stats.requests.byEndpoint[endpoint] || 0) + 1;
+    stats.requests.byMethod[req.method] =
+      (stats.requests.byMethod[req.method] || 0) + 1;
+
     const duration = Date.now() - startTime;
     const statusCode = res.statusCode;
 

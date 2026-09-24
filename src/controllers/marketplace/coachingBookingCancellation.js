@@ -9,11 +9,12 @@ import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { TutorWalletTransaction } from "../../models/marketplace/tutorWalletTransaction.js";
 import { WspCommission } from "../../models/marketplace/wspCommission.js";
-import { getWalletBalance } from "../../services/walletBalanceService.js";
+import { calculateWalletBalanceFromFunding } from "../../services/walletBalanceService.js";
 import { refundHours } from "./coachingHours.js";
 import { streamVideoService } from "../../service/streamVideoService.js";
 import { db } from "../../database/database.js";
 import { applyLegacyWalletMirror } from "../../utils/tutorWallet.js";
+import { Transaction } from "sequelize";
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
@@ -81,13 +82,15 @@ async function processCancellation(booking, cancelledBy) {
     if (purchase) {
       const student = await Students.findByPk(booking.student_id, {
         transaction: dbTransaction,
+        lock: Transaction.LOCK.UPDATE,
       });
 
       if (student) {
         const pricePaid = parseFloat(purchase.price_paid);
-        const { balance: currentBalance } = await getWalletBalance(
+        const currentBalance = await calculateWalletBalanceFromFunding(
           booking.student_id,
-          true
+          student.currency,
+          dbTransaction
         );
         const newBalance = currentBalance + pricePaid;
         const txRef = `REFUND-COACHING-BOOKING-${booking.id}-${Date.now()}`;
@@ -122,10 +125,12 @@ async function processCancellation(booking, cancelledBy) {
         if (booking.tutor_type === "sole_tutor") {
           tutor = await SoleTutor.findByPk(booking.tutor_id, {
             transaction: dbTransaction,
+            lock: Transaction.LOCK.UPDATE,
           });
         } else {
           tutor = await Organization.findByPk(booking.tutor_id, {
             transaction: dbTransaction,
+            lock: Transaction.LOCK.UPDATE,
           });
         }
 

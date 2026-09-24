@@ -5,9 +5,37 @@
 
 import { cacheHelper } from "../config/redis.js";
 
-// In-memory IP tracking (fallback if Redis unavailable)
+// In-memory IP tracking (fallback if Redis unavailable). This is populated
+// on every authenticated request for every distinct user ever seen, so it
+// must be bounded — otherwise it grows for the lifetime of the process,
+// one entry per user, and is never freed.
+const MAX_IN_MEMORY_SESSIONS = 5000;
+
+class BoundedSessionMap {
+  constructor(maxSize) {
+    this.maxSize = maxSize;
+    this.map = new Map();
+  }
+
+  get(key) {
+    return this.map.get(key);
+  }
+
+  set(key, value) {
+    // Re-inserting moves the key to the end (Map preserves insertion order),
+    // giving simple LRU behavior: the least-recently-set key is evicted
+    // first once we're over capacity.
+    this.map.delete(key);
+    this.map.set(key, value);
+    if (this.map.size > this.maxSize) {
+      const oldestKey = this.map.keys().next().value;
+      this.map.delete(oldestKey);
+    }
+  }
+}
+
 const ipTracker = {
-  userSessions: {}, // userId -> [{ ip, timestamp, userAgent }]
+  userSessions: new BoundedSessionMap(MAX_IN_MEMORY_SESSIONS), // sessionKey -> [{ ip, timestamp, userAgent }]
 };
 
 /**
@@ -56,7 +84,7 @@ export const trackLoginIP = async (req, res, next) => {
     await cacheHelper.set(sessionKey, sessions, 30 * 24 * 60 * 60);
 
     // Also store in memory as backup
-    ipTracker.userSessions[sessionKey] = sessions;
+    ipTracker.userSessions.set(sessionKey, sessions);
 
     // Attach to request for logging
     req.ipInfo = {
@@ -83,7 +111,7 @@ export const getUserIPHistory = async (userId, userType) => {
 
     // Fallback to memory
     if (!sessions) {
-      sessions = ipTracker.userSessions[sessionKey] || [];
+      sessions = ipTracker.userSessions.get(sessionKey) || [];
     }
 
     return {

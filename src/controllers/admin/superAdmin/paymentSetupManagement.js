@@ -76,7 +76,7 @@ export const createPaymentSetup = TryCatchFunction(async (req, res) => {
   }
 
   // Validate amount is positive
-  const amountNum = parseInt(amount);
+  const amountNum = parseFloat(amount);
   if (isNaN(amountNum) || amountNum < 0) {
     throw new ErrorClass("amount must be a positive number", 400);
   }
@@ -153,7 +153,7 @@ export const updatePaymentSetup = TryCatchFunction(async (req, res) => {
   }
 
   if (amount !== undefined) {
-    const amountNum = parseInt(amount);
+    const amountNum = parseFloat(amount);
     if (isNaN(amountNum) || amountNum < 0) {
       throw new ErrorClass("amount must be a positive number", 400);
     }

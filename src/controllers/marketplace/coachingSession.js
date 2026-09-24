@@ -6,7 +6,10 @@ import { CoachingSession } from "../../models/marketplace/coachingSession.js";
 import { CoachingParticipant } from "../../models/marketplace/coachingParticipant.js";
 import { CoachingSettings } from "../../models/marketplace/coachingSettings.js";
 import { Students } from "../../models/auth/student.js";
-import { streamVideoService } from "../../service/streamVideoService.js";
+import {
+  streamVideoService,
+  formatStreamUserId,
+} from "../../service/streamVideoService.js";
 import { Config } from "../../config/config.js";
 import { emailService } from "../../services/emailService.js";
 import { checkAndDeductHours, refundHours } from "./coachingHours.js";
@@ -230,31 +233,41 @@ export const createSession = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Coaching settings not configured", 500);
   }
 
-  // Check and deduct hours (if not unlimited)
-  try {
-    hoursCheck = await checkAndDeductHours(tutorId, tutorType, durationHours);
-  } catch (error) {
-    if (
-      error.name === "SequelizeDatabaseError" &&
-      (error.message.includes("does not exist") ||
-        (error.message.includes("relation") &&
-          error.message.includes("does not exist")))
-    ) {
-      throw new ErrorClass(
-        "Coaching tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js",
-        500
-      );
-    }
-    throw error;
-  }
-
-  if (!hoursCheck.allowed) {
-    throw new ErrorClass(hoursCheck.reason, 400);
-  }
-
   const transaction = await db.transaction();
 
   try {
+    // Check and deduct hours (if not unlimited) inside the same transaction
+    // as everything else below, so a concurrent session creation for this
+    // tutor can't read the same starting balance twice (row lock is taken
+    // inside checkAndDeductHours via the CoachingHoursBalance row), and any
+    // later failure in this transaction automatically rolls the deduction
+    // back instead of needing a manual compensating refund.
+    try {
+      hoursCheck = await checkAndDeductHours(
+        tutorId,
+        tutorType,
+        durationHours,
+        transaction
+      );
+    } catch (error) {
+      if (
+        error.name === "SequelizeDatabaseError" &&
+        (error.message.includes("does not exist") ||
+          (error.message.includes("relation") &&
+            error.message.includes("does not exist")))
+      ) {
+        throw new ErrorClass(
+          "Coaching tables not found. Please run the migration script: node scripts/migrate-create-coaching-subscription-tables.js",
+          500
+        );
+      }
+      throw error;
+    }
+
+    if (!hoursCheck.allowed) {
+      throw new ErrorClass(hoursCheck.reason, 400);
+    }
+
     // Generate Stream.io call ID
     const callUuid = crypto.randomUUID();
     const streamCallId = `coaching_${tutorId}_${callUuid}`;
@@ -269,7 +282,7 @@ export const createSession = TryCatchFunction(async (req, res) => {
 
     try {
       await streamVideoService.getOrCreateCall("default", streamCallId, {
-        createdBy: String(tutorId),
+        createdBy: formatStreamUserId(tutorType, tutorId),
         record: false,
         startsAt: startTime.toISOString(),
       });
@@ -474,15 +487,10 @@ export const createSession = TryCatchFunction(async (req, res) => {
     console.error("Stack:", error.stack);
     console.error("═══════════════════════════════════════════════════");
 
-    // Refund hours if session creation failed and hours were deducted
-    if (hoursCheck && hoursCheck.allowed && !hoursCheck.unlimited && typeof durationHours !== 'undefined') {
-      try {
-        await refundHours(tutorId, tutorType, durationHours);
-      } catch (refundError) {
-        console.error("Failed to refund hours after session creation error:", refundError);
-      }
-    }
-    
+    // No manual hours refund needed here: checkAndDeductHours now runs
+    // inside this same transaction, so the rollback above already reverts
+    // the deduction along with everything else.
+
     // Handle specific database errors
     if (error.name === "SequelizeDatabaseError") {
       throw new ErrorClass(
@@ -1023,7 +1031,8 @@ export const getJoinToken = TryCatchFunction(async (req, res) => {
   }
 
   // Generate token (1 hour TTL)
-  const token = streamVideoService.generateUserToken(tutorId, 3600);
+  const streamUserId = formatStreamUserId(tutorType, tutorId);
+  const token = streamVideoService.generateUserToken(streamUserId, 3600);
 
   res.json({
     success: true,
@@ -1031,7 +1040,7 @@ export const getJoinToken = TryCatchFunction(async (req, res) => {
       apiKey: Config.streamApiKey,
       token,
       streamCallId: session.stream_call_id,
-      userId: String(tutorId),
+      userId: streamUserId,
       role: "host",
     },
   });
@@ -1090,7 +1099,8 @@ export const getStudentJoinToken = TryCatchFunction(async (req, res) => {
   }
 
   // Generate token (1 hour TTL)
-  const token = streamVideoService.generateUserToken(studentId, 3600);
+  const streamUserId = formatStreamUserId("student", studentId);
+  const token = streamVideoService.generateUserToken(streamUserId, 3600);
 
   res.json({
     success: true,
@@ -1098,7 +1108,7 @@ export const getStudentJoinToken = TryCatchFunction(async (req, res) => {
       apiKey: Config.streamApiKey,
       token,
       streamCallId: session.stream_call_id,
-      userId: String(studentId),
+      userId: streamUserId,
       role: "participant",
     },
   });

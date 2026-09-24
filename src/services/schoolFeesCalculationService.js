@@ -36,7 +36,7 @@ export async function calculateSchoolFeesForStudent(
 
   // Calculate total from Payment Setup items
   const paymentSetupTotal = paymentSetupItems.reduce((sum, item) => {
-    return sum + (parseInt(item.amount) || 0);
+    return sum + (parseFloat(item.amount) || 0);
   }, 0);
 
   // Step 2: Check if School Fees Configuration exists for this student (override)
@@ -122,7 +122,7 @@ export async function calculateSchoolFeesForStudent(
   const items = paymentSetupItems.map((item) => ({
     id: item.id,
     item: item.item,
-    amount: parseInt(item.amount) || 0,
+    amount: parseFloat(item.amount) || 0,
     description: item.description || "",
   }));
 

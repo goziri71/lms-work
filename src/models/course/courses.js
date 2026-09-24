@@ -181,5 +181,12 @@ export const Courses = db.define(
     freezeTableName: true, // Prevent pluralization
     paranoid: true, // Enable soft deletes using deleted_at
     deletedAt: "deleted_at", // Specify the column name for soft deletes
+    indexes: [
+      { name: "idx_courses_owner", fields: ["owner_type", "owner_id"] },
+      {
+        name: "idx_courses_marketplace_status",
+        fields: ["is_marketplace", "marketplace_status"],
+      },
+    ],
   }
 );

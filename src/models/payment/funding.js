@@ -55,6 +55,12 @@ export const Funding = db.define(
     tableName: "funding",
     freezeTableName: true,
     timestamps: false,
+    indexes: [
+      {
+        name: "idx_funding_student_type_currency",
+        fields: ["student_id", "type", "currency"],
+      },
+    ],
   }
 );
 

@@ -112,14 +112,15 @@ export async function checkAndProgressStudentLevel(studentId, currentAcademicYea
 
     // Student has both semesters - progress to next level
     const newLevel = (currentLevel + 1).toString();
-    
+    const previousLevel = student.level;
+
     await student.update({ level: newLevel });
 
     return {
       progressed: true,
-      previousLevel: student.level,
+      previousLevel,
       newLevel: newLevel,
-      reason: `Progressed from level ${student.level} to ${newLevel} - completed both semesters of ${previousAcademicYear}`,
+      reason: `Progressed from level ${previousLevel} to ${newLevel} - completed both semesters of ${previousAcademicYear}`,
     };
   } catch (error) {
     console.error(`Error checking/progressing student level for student ${studentId}:`, error);

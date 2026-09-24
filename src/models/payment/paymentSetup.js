@@ -14,7 +14,7 @@ export const PaymentSetup = db.define(
       allowNull: false,
     },
     amount: {
-      type: DataTypes.INTEGER,
+      type: DataTypes.DECIMAL(12, 2),
       allowNull: false,
     },
     description: {

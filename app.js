@@ -47,10 +47,47 @@ import {
   scheduleBackgroundJob,
   scheduleBackgroundInterval,
 } from "./src/utils/backgroundJobRunner.js";
+import { Config } from "./src/config/config.js";
+
+// CORS allow-list: the known first-party frontends, plus anything listed in
+// ADDITIONAL_CORS_ORIGINS (comma-separated) for staging/marketing domains
+// that also call this API. Requests with no Origin header (mobile apps,
+// server-to-server calls, curl, Postman) are always allowed through, since
+// those aren't the same-origin browsers CORS protects against — this only
+// restricts which *browser* origins may call the API with credentials-style
+// access.
+const allowedOrigins = new Set(
+  [
+    Config.frontendUrl,
+    Config.adminFrontendUrl,
+    ...(process.env.ADDITIONAL_CORS_ORIGINS || "").split(","),
+  ]
+    .map((o) => (o || "").trim().replace(/\/+$/, ""))
+    .filter(Boolean),
+);
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  return allowedOrigins.has(origin.replace(/\/+$/, ""));
+}
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (isAllowedOrigin(origin)) return callback(null, true);
+    callback(new Error("Not allowed by CORS"));
+  },
+};
 
 const app = express();
 const server = http.createServer(app);
-const io = new SocketIOServer(server, { cors: { origin: "*" } });
+const io = new SocketIOServer(server, {
+  cors: {
+    origin(origin, callback) {
+      if (isAllowedOrigin(origin)) return callback(null, true);
+      callback(new Error("Not allowed by CORS"));
+    },
+  },
+});
 const PORT = process.env.PORT || 3000;
 
 // Socket.io keeps room/connection state in-process by default. Under a
@@ -103,12 +140,19 @@ if (process.env.REDIS_URL) {
 const isPrimaryInstance = (process.env.NODE_APP_INSTANCE ?? "0") === "0";
 
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(helmet());
 app.use(compression());
-// Increase body size limit to handle large unit content (50MB)
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+// Body size limit: some endpoints embed base64 images directly in JSON
+// (rich-text lesson/unit content, bulk question uploads), so this can't be
+// cut down to a couple of MB without risking breaking those — but 50MB
+// applied to every endpoint (including login, password reset, etc.) let any
+// client force this process to buffer and JSON-parse a 50MB body per
+// request, which blocks the event loop. 20MB keeps comfortable headroom for
+// the legitimate large-payload endpoints while meaningfully shrinking that
+// worst case.
+app.use(express.json({ limit: "20mb" }));
+app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 
 // Performance monitoring
 app.use(performanceMonitor);
@@ -504,6 +548,24 @@ connectDB().then(async (success) => {
         "⚠️ Could not setup event ticket reservation cleanup:",
         error.message
       );
+    }
+
+    // Active coaching session tracker: auto-ends sessions whose scheduled
+    // time is up, sends 10/5-min warnings, and warns on low coaching-hours
+    // balance. Was previously defined but never scheduled — sessions could
+    // stay "active" (and billing hours) forever if a tutor forgot to end one.
+    try {
+      const { trackActiveSessions } = await import(
+        "./src/services/coachingTimeTracker.js"
+      );
+      scheduleBackgroundInterval(
+        "coaching-session-tracker",
+        trackActiveSessions,
+        60 * 1000
+      );
+      console.log("⏰ Coaching session tracker started (every 1 min, serialized)");
+    } catch (error) {
+      console.warn("⚠️ Could not setup coaching session tracker:", error.message);
     }
 
     // Product popularity score update job (runs daily)
