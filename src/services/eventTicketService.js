@@ -165,6 +165,118 @@ export function formatEventPublic(event, { includeOnlineUrl = false } = {}) {
   return out;
 }
 
+export function summarizeVisibleTiers(tiers = []) {
+  const visible = tiers.filter((t) => !t.is_hidden);
+  const prices = visible.map((t) => parseFloat(t.price));
+  const ticketsSold = visible.reduce((s, t) => s + (t.quantity_sold || 0), 0);
+  const ticketsRemaining = visible.reduce(
+    (s, t) =>
+      s +
+      Math.max(0, (t.quantity_total || 0) - (t.quantity_sold || 0) - (t.quantity_reserved || 0)),
+    0
+  );
+  const earlyBirdEnds = visible
+    .map((t) => {
+      if (!isDiscountActive(t)) return null;
+      return t.discount_ends_at || t.sales_end || null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(a) - new Date(b))[0] || null;
+
+  return {
+    min_price: prices.length ? Math.min(...prices).toFixed(2) : "0.00",
+    currency: visible[0]?.currency || "NGN",
+    is_free_available: visible.some(
+      (t) => parseFloat(t.price) === 0 && isTierSalesOpen(t)
+    ),
+    tickets_sold: ticketsSold,
+    tickets_remaining: ticketsRemaining,
+    early_bird_ends_at: earlyBirdEnds,
+  };
+}
+
+/** Compact card for directory, related strip, host storefront */
+export function formatEventDiscoveryCard(event, tiers = []) {
+  const stats = summarizeVisibleTiers(tiers);
+  return {
+    id: event.id,
+    slug: event.slug,
+    title: event.title,
+    format: event.format,
+    starts_at: event.starts_at,
+    ends_at: event.ends_at,
+    timezone: event.timezone,
+    cover_image_url: event.cover_image_url,
+    venue_name: event.venue_name,
+    city: event.city,
+    country: event.country,
+    category: event.category || null,
+    status: event.status,
+    ...stats,
+  };
+}
+
+export async function loadTiersByEventIds(eventIds) {
+  const ids = [...new Set(eventIds.filter(Boolean))];
+  if (!ids.length) return new Map();
+  const tiers = await EventTicketTier.findAll({
+    where: { event_id: { [Op.in]: ids }, is_hidden: false },
+  });
+  const map = new Map();
+  for (const tier of tiers) {
+    if (!map.has(tier.event_id)) map.set(tier.event_id, []);
+    map.get(tier.event_id).push(tier);
+  }
+  return map;
+}
+
+export async function formatEventsAsDiscoveryCards(events) {
+  const tierMap = await loadTiersByEventIds(events.map((e) => e.id));
+  return events.map((event) =>
+    formatEventDiscoveryCard(event, tierMap.get(event.id) || [])
+  );
+}
+
+function relatedScore(current, candidate) {
+  let score = 0;
+  const city = String(current.city || "")
+    .trim()
+    .toLowerCase();
+  const category = String(current.category || "")
+    .trim()
+    .toLowerCase();
+  if (city && String(candidate.city || "").trim().toLowerCase() === city) {
+    score += 2;
+  }
+  if (
+    category &&
+    String(candidate.category || "").trim().toLowerCase() === category
+  ) {
+    score += 1;
+  }
+  return score;
+}
+
+/** Other upcoming events: same city, then same category, then soonest */
+export async function listRelatedEvents(current, { limit = 6 } = {}) {
+  const cap = Math.min(Math.max(parseInt(limit, 10) || 6, 1), 12);
+  const candidates = await TicketedEvent.findAll({
+    where: {
+      id: { [Op.ne]: current.id },
+      status: { [Op.in]: ["published", "sold_out"] },
+      ends_at: { [Op.gte]: new Date() },
+    },
+    order: [["starts_at", "ASC"]],
+    limit: 40,
+  });
+  const ranked = [...candidates].sort((a, b) => {
+    const diff = relatedScore(current, b) - relatedScore(current, a);
+    if (diff !== 0) return diff;
+    return new Date(a.starts_at) - new Date(b.starts_at);
+  });
+  return formatEventsAsDiscoveryCards(ranked.slice(0, cap));
+}
+
 export function tierAvailable(tier) {
   return (
     tier.quantity_total -
@@ -1028,7 +1140,9 @@ export async function sendTicketConfirmationEmail(order, event, tickets) {
     <p>Hi ${order.buyer_name},</p>
     <p>Your order is confirmed. Event starts: ${new Date(event.starts_at).toLocaleString()} (${event.timezone})</p>
     <ul>${ticketList}</ul>
+    <p>We'll email you a reminder the day before, and again when it's about to start, so you don't miss it.</p>
     <p><a href="${ticketsUrl}">View tickets & QR codes</a></p>
+    <p style="font-size:12px;color:#6b7280">Nomada Events</p>
   `;
 
   await emailService.sendEmail({
@@ -1036,7 +1150,7 @@ export async function sendTicketConfirmationEmail(order, event, tickets) {
     name: order.buyer_name,
     subject: `Tickets confirmed: ${event.title}`,
     htmlBody: html,
-    useTutorLearnerBranding: true,
+    useEventBranding: true,
   });
 }
 
@@ -1046,6 +1160,7 @@ export async function sendApplicationReceivedEmail(order, event) {
     <p>Hi ${order.buyer_name},</p>
     <p>Your ticket request is awaiting the organizer's approval. We'll email you when it's approved or declined.</p>
     <p>Event starts: ${new Date(event.starts_at).toLocaleString()} (${event.timezone})</p>
+    <p style="font-size:12px;color:#6b7280">Nomada Events</p>
   `;
 
   await emailService.sendEmail({
@@ -1053,7 +1168,7 @@ export async function sendApplicationReceivedEmail(order, event) {
     name: order.buyer_name,
     subject: `Application received: ${event.title}`,
     htmlBody: html,
-    useTutorLearnerBranding: true,
+    useEventBranding: true,
   });
 }
 
@@ -1072,6 +1187,7 @@ export async function sendApplicationRejectedEmail(order, event, reason) {
     <p>Unfortunately your ticket request was not approved.</p>
     ${reasonLine}
     ${refundNote}
+    <p style="font-size:12px;color:#6b7280">Nomada Events</p>
   `;
 
   await emailService.sendEmail({
@@ -1079,7 +1195,7 @@ export async function sendApplicationRejectedEmail(order, event, reason) {
     name: order.buyer_name,
     subject: `Application not approved: ${event.title}`,
     htmlBody: html,
-    useTutorLearnerBranding: true,
+    useEventBranding: true,
   });
 }
 

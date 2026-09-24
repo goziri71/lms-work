@@ -11,6 +11,7 @@ node scripts/migrate-event-ticket-video-benefits-sales.js
 node scripts/migrate-event-ticket-approval.js
 node scripts/migrate-event-ticket-discount.js
 node scripts/migrate-event-forensics.js
+node scripts/migrate-event-ticket-reminders.js
 ```
 
 ---
@@ -28,6 +29,7 @@ node scripts/migrate-event-forensics.js
 | Instant vs approval | `requires_approval: false` (default) = ticket allocated immediately. `true` = buyer applies/pays, creator must **approve** before tickets are issued. |
 | Creator revenue | On ticket allocation (`status: paid`), creator wallet is credited (net of commission, same rate as other products). Free = no credit. Approval events credit **on approve**, not while pending. |
 | Buyers | Guest checkout (email + name) or logged-in student (wallet or Flutterwave). |
+| Reminders | Paid buyers get email **~24h before** and **~3h before** start (plus the confirmation email). |
 | Formats | `online` \| `in_person` \| `hybrid` |
 
 ---
@@ -415,11 +417,14 @@ Max **500** items per request. After sync, call `offline-pack` again if you can.
 
 ## 4. Public discovery & event page
 
+**FE implement now:** [EVENT_DISCOVERY_AND_RELATED_FRONTEND.md](./EVENT_DISCOVERY_AND_RELATED_FRONTEND.md)  
+(directory, related events on buy/checkout/success, sold counts, early-bird countdown).
+
 | Method | Path | Auth |
 |--------|------|------|
-| GET | `/events?page=1&limit=20&format=in_person&category=&search=` | Public |
-| GET | `/events/slug/:slug` | Optional student JWT |
-| GET | `/public/tutor/:slug/events` | Public storefront events |
+| GET | `/events?page=1&limit=20&city=&format=&category=&search=&exclude=&exclude_slug=` | Public |
+| GET | `/events/slug/:slug` | Optional student JWT — includes `other_events`, `tickets_sold` |
+| GET | `/public/tutor/:slug/events` | Public storefront events (same card shape) |
 
 **Important:** Event detail is `GET /events/slug/:slug` — not `/events/:id`.
 
@@ -598,10 +603,11 @@ Each ticket includes:
 1. Open public event page (`GET /events/slug/:slug`)  
 2. Show image, video, venue, date, packages + benefits + prices (use `list_price` + `price` when `discount.active`)  
 3. If `sales_status === "closed"` → disable purchase  
-4. Select package + qty → checkout (email/name)  
-5. Free → show ticket codes immediately  
-6. Paid → Flutterwave → confirm → show ticket codes  
-7. Email + magic link to `/tickets/order/:accessToken`  
+4. Show **`other_events`** strip (date + time + city + price)  
+5. Select package + qty → checkout (email/name) — keep the related strip visible  
+6. Free → show ticket codes immediately  
+7. Paid → Flutterwave → confirm → show ticket codes + related events again  
+8. Email + magic link to `/tickets/order/:accessToken`  
 
 ---
 

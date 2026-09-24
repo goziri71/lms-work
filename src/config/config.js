@@ -91,6 +91,8 @@ export const Config = {
     fromName: process.env.EMAIL_FROM_NAME || "Pinnacle",
     /** Tutor ↔ learner marketplace emails (coaching, community to learner, tutor message to learner) */
     fromNameTutorLearner: process.env.EMAIL_FROM_NAME_TUTOR_LEARNER || "The Nomada",
+    /** Ticket confirmation + event reminder emails */
+    fromNameEvents: process.env.EMAIL_FROM_NAME_EVENTS || "Nomada Events",
     enabled: process.env.EMAIL_ENABLED === "true" || true,
   },
 

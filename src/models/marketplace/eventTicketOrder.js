@@ -120,6 +120,16 @@ export const EventTicketOrder = db.define(
       type: DataTypes.DATE,
       allowNull: true,
     },
+    reminder_24h_sent_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "When the 24-hour-before reminder email was sent",
+    },
+    reminder_soon_sent_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "When the starting-soon (3h) reminder email was sent",
+    },
   },
   {
     tableName: "event_ticket_orders",

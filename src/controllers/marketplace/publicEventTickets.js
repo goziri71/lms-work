@@ -9,10 +9,20 @@ import { Organization } from "../../models/marketplace/organization.js";
 import {
   formatEventPublic,
   formatTierPublic,
+  formatEventsAsDiscoveryCards,
   getEventHost,
-  isTierSalesOpen,
+  listRelatedEvents,
+  summarizeVisibleTiers,
 } from "../../services/eventTicketService.js";
 import { recordEventPageView, actorFromReq } from "../../services/eventActivityService.js";
+
+function parseExcludeIds(raw) {
+  if (raw == null || raw === "") return [];
+  return String(raw)
+    .split(",")
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => Number.isInteger(n) && n > 0);
+}
 
 export const browseEvents = TryCatchFunction(async (req, res) => {
   const {
@@ -20,10 +30,13 @@ export const browseEvents = TryCatchFunction(async (req, res) => {
     limit = 20,
     format,
     category,
+    city,
     search,
     from,
     to,
     include_past,
+    exclude,
+    exclude_slug,
   } = req.query;
 
   const where = { status: { [Op.in]: ["published", "sold_out"] } };
@@ -37,12 +50,33 @@ export const browseEvents = TryCatchFunction(async (req, res) => {
     if (from) where.starts_at[Op.gte] = new Date(from);
     if (to) where.starts_at[Op.lte] = new Date(to);
   }
-  if (search) {
-    where[Op.or] = [
-      { title: { [Op.iLike]: `%${search}%` } },
-      { slug: { [Op.iLike]: `%${search}%` } },
-    ];
+
+  const and = [];
+  if (search && String(search).trim()) {
+    const q = `%${String(search).trim()}%`;
+    and.push({
+      [Op.or]: [
+        { title: { [Op.iLike]: q } },
+        { slug: { [Op.iLike]: q } },
+        { city: { [Op.iLike]: q } },
+        { venue_name: { [Op.iLike]: q } },
+        { description: { [Op.iLike]: q } },
+      ],
+    });
   }
+  if (city && String(city).trim()) {
+    and.push({ city: { [Op.iLike]: `%${String(city).trim()}%` } });
+  }
+  const excludeIds = parseExcludeIds(exclude);
+  if (excludeIds.length) {
+    and.push({ id: { [Op.notIn]: excludeIds } });
+  }
+  if (exclude_slug && String(exclude_slug).trim()) {
+    and.push({
+      slug: { [Op.ne]: String(exclude_slug).trim().toLowerCase() },
+    });
+  }
+  if (and.length) where[Op.and] = and;
 
   const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
   const { count, rows } = await TicketedEvent.findAndCountAll({
@@ -52,36 +86,7 @@ export const browseEvents = TryCatchFunction(async (req, res) => {
     order: [["starts_at", "ASC"]],
   });
 
-  const items = await Promise.all(
-    rows.map(async (event) => {
-      const tiers = await EventTicketTier.findAll({
-        where: { event_id: event.id, is_hidden: false },
-      });
-      const prices = tiers.map((t) => parseFloat(t.price));
-      const minPrice = prices.length ? Math.min(...prices) : 0;
-      const remaining = tiers.reduce(
-        (s, t) => s + Math.max(0, t.quantity_total - t.quantity_sold - t.quantity_reserved),
-        0
-      );
-      return {
-        id: event.id,
-        slug: event.slug,
-        title: event.title,
-        format: event.format,
-        starts_at: event.starts_at,
-        timezone: event.timezone,
-        cover_image_url: event.cover_image_url,
-        venue_name: event.venue_name,
-        city: event.city,
-        country: event.country,
-        min_price: minPrice.toFixed(2),
-        currency: tiers[0]?.currency || "NGN",
-        is_free_available: tiers.some((t) => parseFloat(t.price) === 0 && isTierSalesOpen(t)),
-        tickets_remaining: remaining,
-        status: event.status,
-      };
-    })
-  );
+  const items = await formatEventsAsDiscoveryCards(rows);
 
   res.status(200).json({
     success: true,
@@ -120,6 +125,9 @@ export const getEventBySlug = TryCatchFunction(async (req, res) => {
     source: "public_page",
   }).catch(() => {});
 
+  const stats = summarizeVisibleTiers(tiers);
+  const otherEvents = await listRelatedEvents(event, { limit: 6 });
+
   let ticketsOwned = 0;
   let existingOrderId = null;
   if (req.user?.userType === "student" && req.user?.id) {
@@ -137,9 +145,15 @@ export const getEventBySlug = TryCatchFunction(async (req, res) => {
   res.status(200).json({
     success: true,
     data: {
-      event: formatEventPublic(event),
+      event: {
+        ...formatEventPublic(event),
+        tickets_sold: stats.tickets_sold,
+        tickets_remaining: stats.tickets_remaining,
+        early_bird_ends_at: stats.early_bird_ends_at,
+      },
       tiers: tiers.map(formatTierPublic),
       host,
+      other_events: otherEvents,
       user_context: {
         is_logged_in: !!req.user,
         existing_order_id: existingOrderId,
@@ -186,24 +200,7 @@ export const getTutorPublicEvents = TryCatchFunction(async (req, res) => {
     limit: 50,
   });
 
-  const items = await Promise.all(
-    events.map(async (event) => {
-      const tiers = await EventTicketTier.findAll({
-        where: { event_id: event.id, is_hidden: false },
-      });
-      const prices = tiers.map((t) => parseFloat(t.price));
-      return {
-        id: event.id,
-        slug: event.slug,
-        title: event.title,
-        format: event.format,
-        starts_at: event.starts_at,
-        cover_image_url: event.cover_image_url,
-        min_price: prices.length ? Math.min(...prices).toFixed(2) : "0.00",
-        currency: tiers[0]?.currency || "NGN",
-      };
-    })
-  );
+  const items = await formatEventsAsDiscoveryCards(events);
 
   res.status(200).json({
     success: true,

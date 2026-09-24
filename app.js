@@ -528,10 +528,13 @@ connectDB().then(async (success) => {
       );
     }
 
-    // Expire stale pending event ticket orders (first run delayed 10 min)
+    // Expire stale pending event ticket orders + send start reminders
     try {
       const { expireStalePendingOrders } = await import(
         "./src/services/eventTicketService.js"
+      );
+      const { sendDueEventReminders } = await import(
+        "./src/services/eventReminderService.js"
       );
       setTimeout(() => {
         scheduleBackgroundInterval(
@@ -539,8 +542,13 @@ connectDB().then(async (success) => {
           expireStalePendingOrders,
           15 * 60 * 1000
         );
+        scheduleBackgroundInterval(
+          "event-ticket-reminders",
+          sendDueEventReminders,
+          15 * 60 * 1000
+        );
         console.log(
-          "⏰ Event ticket reservation cleanup started (every 15 min, serialized)"
+          "⏰ Event ticket cleanup + reminders started (every 15 min, serialized)"
         );
       }, 10 * 60 * 1000);
     } catch (error) {

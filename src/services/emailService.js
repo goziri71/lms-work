@@ -30,6 +30,7 @@ class EmailService {
     this.fromName = Config.email.fromName;
     this.fromNameTutorLearner =
       Config.email.fromNameTutorLearner || "The Nomada";
+    this.fromNameEvents = Config.email.fromNameEvents || "Nomada Events";
     this.enabled = Config.email.enabled && hasEmailConfig;
   }
 
@@ -41,6 +42,7 @@ class EmailService {
    * @param {string} options.subject - Email subject
    * @param {string} options.htmlBody - HTML body content
    * @param {boolean} [options.useTutorLearnerBranding] - If true, “from” name is The Nomada (tutor↔learner marketplace); otherwise Pinnacle
+   * @param {boolean} [options.useEventBranding] - If true, “from” name is Nomada Events
    * @returns {Promise<Object>} - Result of email send
    */
   async sendEmail({
@@ -49,6 +51,7 @@ class EmailService {
     subject,
     htmlBody,
     useTutorLearnerBranding = false,
+    useEventBranding = false,
   }) {
     try {
       // Check if email client is initialized
@@ -78,9 +81,11 @@ class EmailService {
         throw new Error("From address not configured");
       }
 
-      const fromDisplayName = useTutorLearnerBranding
-        ? this.fromNameTutorLearner
-        : this.fromName;
+      const fromDisplayName = useEventBranding
+        ? this.fromNameEvents
+        : useTutorLearnerBranding
+          ? this.fromNameTutorLearner
+          : this.fromName;
 
       const mailOptions = {
         from: {
