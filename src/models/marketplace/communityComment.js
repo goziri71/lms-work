@@ -80,6 +80,12 @@ export const CommunityComment = db.define(
       {
         fields: ["created_at"],
       },
+      {
+        // Matches getComments' exact query shape: WHERE post_id = ? AND
+        // status = 'published' ORDER BY created_at ASC.
+        name: "idx_community_comments_post_status_created",
+        fields: ["post_id", "status", "created_at"],
+      },
     ],
   }
 );

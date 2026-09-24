@@ -129,6 +129,16 @@ export const CommunityPost = db.define(
       {
         fields: ["created_at"],
       },
+      {
+        // Matches getPosts' default feed query: WHERE community_id = ? AND
+        // status IN (...) ORDER BY is_featured DESC, created_at DESC.
+        name: "idx_community_posts_feed",
+        fields: [
+          "community_id",
+          { attribute: "is_featured", order: "DESC" },
+          { attribute: "created_at", order: "DESC" },
+        ],
+      },
     ],
   }
 );

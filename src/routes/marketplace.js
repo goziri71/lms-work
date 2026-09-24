@@ -1129,8 +1129,8 @@ router.post(
   uploadPostImageMiddleware,
   createPost,
 );
-router.get("/communities/:id/posts", optionalAuthorize, getPosts);
-router.get("/communities/:id/posts/:postId", optionalAuthorize, getPost);
+router.get("/communities/:id/posts", optionalAuthorize, cacheMiddleware(30), getPosts);
+router.get("/communities/:id/posts/:postId", optionalAuthorize, cacheMiddleware(30), getPost);
 router.put(
   "/communities/:id/posts/:postId",
   authorize,
@@ -1146,6 +1146,7 @@ router.post(
 router.get(
   "/communities/:id/posts/:postId/comments",
   optionalAuthorize,
+  cacheMiddleware(30),
   getComments,
 );
 router.post(

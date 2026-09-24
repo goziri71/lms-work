@@ -11,130 +11,204 @@ import { CommunityPost } from "../../models/marketplace/communityPost.js";
 import { CommunityComment } from "../../models/marketplace/communityComment.js";
 import { CommunityFile } from "../../models/marketplace/communityFile.js";
 import { Students } from "../../models/auth/student.js";
+import { SoleTutor } from "../../models/marketplace/soleTutor.js";
+import { Organization } from "../../models/marketplace/organization.js";
+import { OrganizationUser } from "../../models/marketplace/organizationUser.js";
 import { supabase } from "../../utils/supabase.js";
+import { invalidateCache } from "../../middlewares/cacheMiddleware.js";
+import {
+  optimizeImageForWeb,
+  extractEmbeddedBase64Images,
+} from "../../utils/imageOptimizer.js";
 import multer from "multer";
-import { Op } from "sequelize";
+import { Op, fn, literal, where as sequelizeWhere } from "sequelize";
 
-// Helper function to get author info (handles both tutors and students)
-async function getAuthorInfo(authorId, community, authorType = null) {
-  // If we know the author type, use it directly
-  if (authorType === "student") {
-    const student = await Students.findByPk(authorId, {
-      attributes: ["id", "fname", "lname", "mname", "email"],
-    });
-    if (student) {
-      return {
-        id: student.id,
-        name:
-          `${student.fname || ""} ${student.mname || ""} ${
-            student.lname || ""
-          }`.trim() || student.email,
-        email: student.email,
-        type: "student",
-      };
-    }
-  }
+function formatStudentAuthor(student) {
+  return {
+    id: student.id,
+    name:
+      `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim() ||
+      student.email,
+    email: student.email,
+    type: "student",
+  };
+}
 
-  if (authorType === "sole_tutor") {
-    const { SoleTutor } = await import("../../models/marketplace/soleTutor.js");
-    const tutor = await SoleTutor.findByPk(authorId, {
-      attributes: ["id", "fname", "lname", "email"],
-    });
-    if (tutor) {
-      return {
-        id: tutor.id,
-        name: `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || tutor.email,
-        email: tutor.email,
-        type: "tutor",
-      };
-    }
-  }
+function formatTutorAuthor(tutor) {
+  return {
+    id: tutor.id,
+    name: `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || tutor.email,
+    email: tutor.email,
+    type: "tutor",
+  };
+}
 
-  if (authorType === "organization" || authorType === "organization_user") {
-    const { Organization } = await import("../../models/marketplace/organization.js");
-    if (authorType === "organization") {
-      const org = await Organization.findByPk(authorId, {
-        attributes: ["id", "name", "email"],
-      });
-      if (org) {
-        return {
-          id: org.id,
-          name: org.name || org.email,
-          email: org.email,
-          type: "tutor",
-        };
-      }
+function formatOrgAuthor(org) {
+  return {
+    id: org.id,
+    name: org.name || org.email,
+    email: org.email,
+    type: "tutor",
+  };
+}
+
+function formatOrgUserAuthor(orgUser) {
+  return {
+    id: orgUser.id,
+    name:
+      orgUser.organization?.name ||
+      `${orgUser.fname || ""} ${orgUser.lname || ""}`.trim() ||
+      orgUser.email,
+    email: orgUser.email,
+    type: "tutor",
+  };
+}
+
+const UNKNOWN_AUTHOR_TYPES = new Set([
+  "student",
+  "sole_tutor",
+  "organization",
+  "organization_user",
+]);
+
+/**
+ * Resolve author info for a batch of posts/comments in a handful of queries
+ * instead of one (or several) queries per row. Author is polymorphic across
+ * 4 separate tables (student/sole_tutor/organization/organization_user), so
+ * this groups refs by known type and does one batched findAll per type, plus
+ * a batched student lookup + a single community-owner lookup for legacy rows
+ * that don't have author_type set.
+ *
+ * @param {Array<{author_id: number, author_type: string|null}>} refs
+ * @param {object|null} community - { tutor_id, tutor_type }, used to resolve
+ *   legacy (author_type-less) rows authored by the community's own tutor.
+ * @returns {(authorId: number, authorType: string|null) => object} getter
+ */
+async function batchResolveAuthors(refs, community) {
+  const results = new Map(); // `${bucket}:${id}` -> formatted author
+  const idsByType = {
+    student: new Set(),
+    sole_tutor: new Set(),
+    organization: new Set(),
+    organization_user: new Set(),
+  };
+  const unknownIds = new Set();
+
+  const bucketFor = (authorType) =>
+    UNKNOWN_AUTHOR_TYPES.has(authorType) ? authorType : "unknown";
+
+  for (const { author_id, author_type } of refs) {
+    if (UNKNOWN_AUTHOR_TYPES.has(author_type)) {
+      idsByType[author_type].add(author_id);
     } else {
-      const { OrganizationUser } = await import("../../models/marketplace/organizationUser.js");
-      const orgUser = await OrganizationUser.findByPk(authorId, {
-        attributes: ["id", "organization_id", "fname", "lname", "email"],
-        include: [{ model: Organization, as: "organization", attributes: ["id", "name"], required: false }],
-      });
-      if (orgUser) {
-        return {
-          id: orgUser.id,
-          name: orgUser.organization?.name || `${orgUser.fname || ""} ${orgUser.lname || ""}`.trim() || orgUser.email,
-          email: orgUser.email,
-          type: "tutor",
-        };
-      }
+      unknownIds.add(author_id);
     }
   }
 
-  // If no authorType provided, check student FIRST (most comments are from students)
-  const student = await Students.findByPk(authorId, {
-    attributes: ["id", "fname", "lname", "mname", "email"],
-  });
-  if (student) {
-    return {
-      id: student.id,
-      name:
-        `${student.fname || ""} ${student.mname || ""} ${
-          student.lname || ""
-        }`.trim() || student.email,
-      email: student.email,
-      type: "student",
-    };
+  const queries = [];
+
+  if (idsByType.student.size) {
+    queries.push(
+      Students.findAll({
+        where: { id: { [Op.in]: [...idsByType.student] } },
+        attributes: ["id", "fname", "lname", "mname", "email"],
+      }).then((rows) =>
+        rows.forEach((r) => results.set(`student:${r.id}`, formatStudentAuthor(r)))
+      )
+    );
+  }
+  if (idsByType.sole_tutor.size) {
+    queries.push(
+      SoleTutor.findAll({
+        where: { id: { [Op.in]: [...idsByType.sole_tutor] } },
+        attributes: ["id", "fname", "lname", "email"],
+      }).then((rows) =>
+        rows.forEach((r) => results.set(`sole_tutor:${r.id}`, formatTutorAuthor(r)))
+      )
+    );
+  }
+  if (idsByType.organization.size) {
+    queries.push(
+      Organization.findAll({
+        where: { id: { [Op.in]: [...idsByType.organization] } },
+        attributes: ["id", "name", "email"],
+      }).then((rows) =>
+        rows.forEach((r) => results.set(`organization:${r.id}`, formatOrgAuthor(r)))
+      )
+    );
+  }
+  if (idsByType.organization_user.size) {
+    queries.push(
+      OrganizationUser.findAll({
+        where: { id: { [Op.in]: [...idsByType.organization_user] } },
+        attributes: ["id", "organization_id", "fname", "lname", "email"],
+        include: [
+          { model: Organization, as: "organization", attributes: ["id", "name"], required: false },
+        ],
+      }).then((rows) =>
+        rows.forEach((r) =>
+          results.set(`organization_user:${r.id}`, formatOrgUserAuthor(r))
+        )
+      )
+    );
   }
 
-  // Then check tutor only if not a student
-  if (community && Number(community.tutor_id) === Number(authorId)) {
+  // Legacy rows with no author_type: try students first (most common), then
+  // fall back to the community's own tutor if the id matches.
+  let unknownStudentQuery = Promise.resolve();
+  if (unknownIds.size) {
+    unknownStudentQuery = Students.findAll({
+      where: { id: { [Op.in]: [...unknownIds] } },
+      attributes: ["id", "fname", "lname", "mname", "email"],
+    }).then((rows) => {
+      rows.forEach((r) => {
+        results.set(`unknown:${r.id}`, formatStudentAuthor(r));
+        unknownIds.delete(r.id);
+      });
+    });
+  }
+  queries.push(unknownStudentQuery);
+
+  await Promise.all(queries);
+
+  // After students are resolved, anything left in unknownIds that matches
+  // the community's tutor gets one more single-row lookup.
+  if (unknownIds.size && community && unknownIds.has(Number(community.tutor_id))) {
+    const tutorId = Number(community.tutor_id);
     if (community.tutor_type === "sole_tutor") {
-      const { SoleTutor } = await import("../../models/marketplace/soleTutor.js");
-      const tutor = await SoleTutor.findByPk(authorId, {
+      const tutor = await SoleTutor.findByPk(tutorId, {
         attributes: ["id", "fname", "lname", "email"],
       });
-      if (tutor) {
-        return {
-          id: tutor.id,
-          name: `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || tutor.email,
-          email: tutor.email,
-          type: "tutor",
-        };
-      }
+      if (tutor) results.set(`unknown:${tutorId}`, formatTutorAuthor(tutor));
     } else if (community.tutor_type === "organization") {
-      const { Organization } = await import("../../models/marketplace/organization.js");
-      const org = await Organization.findByPk(authorId, {
+      const org = await Organization.findByPk(tutorId, {
         attributes: ["id", "name", "email"],
       });
-      if (org) {
-        return {
-          id: org.id,
-          name: org.name || org.email,
-          email: org.email,
-          type: "tutor",
-        };
-      }
+      if (org) results.set(`unknown:${tutorId}`, formatOrgAuthor(org));
     }
   }
 
-  // Fallback
-  return {
-    id: authorId,
-    name: "Unknown",
-    email: "",
-    type: "unknown",
+  return (authorId, authorType) => {
+    const key = `${bucketFor(authorType)}:${authorId}`;
+    return (
+      results.get(key) || {
+        id: authorId,
+        name: "Unknown",
+        email: "",
+        type: "unknown",
+      }
+    );
   };
+}
+
+// Single-row convenience wrapper for call sites that only need one author
+// (e.g. rendering a single post view).
+async function getAuthorInfo(authorId, community, authorType = null) {
+  const resolve = await batchResolveAuthors(
+    [{ author_id: authorId, author_type: authorType }],
+    community
+  );
+  return resolve(authorId, authorType);
 }
 
 // Configure multer for file uploads
@@ -178,14 +252,21 @@ export const uploadPostImageMiddleware = uploadPostImage.single("image");
  * Helper to check if user has access to community
  * Checks both student membership and tutor ownership
  */
-async function checkCommunityAccess(communityId, userId, userType, req = null) {
+async function checkCommunityAccess(
+  communityId,
+  userId,
+  userType,
+  req = null,
+  preloadedCommunity = null
+) {
   // First, check if user is the community owner (tutor)
   if (
     userType === "sole_tutor" ||
     userType === "organization" ||
     userType === "organization_user"
   ) {
-    const community = await Community.findByPk(communityId);
+    const community =
+      preloadedCommunity || (await Community.findByPk(communityId));
     if (!community) {
       throw new ErrorClass("Community not found", 404);
     }
@@ -208,9 +289,6 @@ async function checkCommunityAccess(communityId, userId, userType, req = null) {
         tutorId = req.user.organizationId;
       } else {
         // Fetch organization_id from database if not in req.tutor or req.user
-        const { OrganizationUser } = await import(
-          "../../models/marketplace/organizationUser.js"
-        );
         const orgUser = await OrganizationUser.findByPk(userId, {
           attributes: ["organization_id"],
         });
@@ -293,7 +371,7 @@ export const createPost = TryCatchFunction(async (req, res) => {
 
   const {
     title,
-    content,
+    content: rawContent,
     content_type = "text",
     category,
     tags,
@@ -302,9 +380,21 @@ export const createPost = TryCatchFunction(async (req, res) => {
     is_featured = false,
   } = req.body;
 
-  if (!content) {
+  if (!rawContent) {
     throw new ErrorClass("Post content is required", 400);
   }
+
+  // If the rich-text editor embedded images directly as base64, pull them
+  // out to storage and replace with URLs — otherwise every feed response
+  // that includes this post would ship megabytes of inline image data.
+  const content =
+    content_type === "rich_text"
+      ? await extractEmbeddedBase64Images(rawContent, {
+          supabase,
+          bucket: process.env.COMMUNITIES_BUCKET || "communities",
+          pathPrefix: `${communityId}/posts/embedded`,
+        })
+      : rawContent;
 
   // Parse mentions from content
   const { parseMentions } = await import("../../utils/mentionParser.js");
@@ -357,14 +447,16 @@ export const createPost = TryCatchFunction(async (req, res) => {
       console.warn("Could not verify bucket existence:", error.message);
     }
 
-    const fileExt = req.file.originalname.split(".").pop();
+    const optimized = await optimizeImageForWeb(req.file.buffer, req.file.mimetype);
+    const fileExt =
+      optimized.extension || req.file.originalname.split(".").pop();
     // Object path inside bucket: {communityId}/posts/... (no leading "communities/" to avoid .../public/communities/communities/...)
     const fileName = `${communityId}/posts/${userId}_${Date.now()}.${fileExt}`;
 
     const { data, error } = await supabase.storage
       .from(bucket)
-      .upload(fileName, req.file.buffer, {
-        contentType: req.file.mimetype,
+      .upload(fileName, optimized.buffer, {
+        contentType: optimized.mimetype,
         upsert: false,
       });
 
@@ -571,6 +663,8 @@ export const createPost = TryCatchFunction(async (req, res) => {
   // Ensure image_url is included in response
   const postData = post.toJSON();
 
+  invalidateCache(`cache:/api/marketplace/communities/${communityId}/posts*`);
+
   res.status(201).json({
     status: true,
     code: 201,
@@ -605,10 +699,17 @@ export const getPosts = TryCatchFunction(async (req, res) => {
   const userId = req.user?.id;
   const userType = req.user?.userType;
 
+  // Get community info once — reused for the access check below and for
+  // resolving legacy (author_type-less) post authors further down, instead
+  // of being fetched twice.
+  const community = await Community.findByPk(communityId, {
+    attributes: ["id", "tutor_id", "tutor_type"],
+  });
+
   // Check if user has access (optional auth for public browsing)
   if (userId) {
     try {
-      await checkCommunityAccess(communityId, userId, userType, req);
+      await checkCommunityAccess(communityId, userId, userType, req, community);
     } catch (error) {
       // If no access, still allow viewing published posts (public browsing)
     }
@@ -626,17 +727,26 @@ export const getPosts = TryCatchFunction(async (req, res) => {
       userType === "organization" ||
       userType === "organization_user");
 
+  // Collected separately from `where` and merged via Op.and at the end, so
+  // a search query can never clobber this restriction (a prior bug: both
+  // this and the search condition below wrote to where[Op.or], so a
+  // non-owner search silently dropped the published/scheduled-only filter
+  // and could return draft/archived/deleted posts).
+  const andConditions = [];
+
   if (status) {
     where.status = status;
   } else if (!isOwner) {
     // Non-owners only see published posts and scheduled posts that are ready
-    where[Op.or] = [
-      { status: "published" },
-      {
-        status: "scheduled",
-        scheduled_at: { [Op.lte]: new Date() },
-      },
-    ];
+    andConditions.push({
+      [Op.or]: [
+        { status: "published" },
+        {
+          status: "scheduled",
+          scheduled_at: { [Op.lte]: new Date() },
+        },
+      ],
+    });
   }
 
   // Featured filter
@@ -654,16 +764,17 @@ export const getPosts = TryCatchFunction(async (req, res) => {
   }
 
   if (search) {
-    where[Op.or] = [
-      { title: { [Op.iLike]: `%${search}%` } },
-      { content: { [Op.iLike]: `%${search}%` } },
-    ];
+    // Full-text search against the generated `search_vector` column
+    // (title + content, tsvector, GIN-indexed) instead of `ILIKE '%term%'`,
+    // which can't use an index at all and forces a full table scan.
+    andConditions.push(
+      sequelizeWhere(literal("search_vector"), Op.match, fn("plainto_tsquery", "english", search))
+    );
   }
 
-  // Get community info to check tutor
-  const community = await Community.findByPk(communityId, {
-    attributes: ["id", "tutor_id", "tutor_type"],
-  });
+  if (andConditions.length > 0) {
+    where[Op.and] = andConditions;
+  }
 
   const offset = (parseInt(page) - 1) * parseInt(limit);
   const { count, rows: posts } = await CommunityPost.findAndCountAll({
@@ -676,16 +787,16 @@ export const getPosts = TryCatchFunction(async (req, res) => {
     ],
   });
 
-  // Format posts with author names (handle both tutors and students)
-  const formattedPosts = await Promise.all(
-    posts.map(async (post) => {
-      const author = await getAuthorInfo(post.author_id, community, post.author_type || null);
-      return {
-        ...post.toJSON(),
-        author,
-      };
-    })
+  // Resolve all post authors in a handful of batched queries instead of one
+  // (or several) queries per post.
+  const resolveAuthor = await batchResolveAuthors(
+    posts.map((p) => ({ author_id: p.author_id, author_type: p.author_type || null })),
+    community
   );
+  const formattedPosts = posts.map((post) => ({
+    ...post.toJSON(),
+    author: resolveAuthor(post.author_id, post.author_type || null),
+  }));
 
   res.json({
     status: true,
@@ -712,10 +823,16 @@ export const getPost = TryCatchFunction(async (req, res) => {
   const userId = req.user?.id;
   const userType = req.user?.userType;
 
+  // Get community info once — reused for the access check and for
+  // resolving a legacy (author_type-less) post author.
+  const community = await Community.findByPk(communityId, {
+    attributes: ["id", "tutor_id", "tutor_type"],
+  });
+
   // Check access
   if (userId) {
     try {
-      await checkCommunityAccess(communityId, userId, userType, req);
+      await checkCommunityAccess(communityId, userId, userType, req, community);
     } catch (error) {
       // Allow viewing published posts even without active subscription
     }
@@ -733,13 +850,12 @@ export const getPost = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Post not found", 404);
   }
 
-  // Get community info to check tutor
-  const community = await Community.findByPk(communityId, {
-    attributes: ["id", "tutor_id", "tutor_type"],
+  // Increment views without making the viewer wait on that write — view
+  // counts don't need to be strictly synchronous with the read that
+  // triggered them.
+  post.increment("views").catch((err) => {
+    console.error("Failed to increment post views:", err.message);
   });
-
-  // Increment views
-  await post.increment("views");
 
   // Get author info (handles both tutors and students)
   const author = await getAuthorInfo(post.author_id, community, post.author_type || null);
@@ -824,15 +940,17 @@ export const updatePost = TryCatchFunction(async (req, res) => {
     }
 
     // Upload new image
-    const fileExt = req.file.originalname.split(".").pop();
+    const optimized = await optimizeImageForWeb(req.file.buffer, req.file.mimetype);
+    const fileExt =
+      optimized.extension || req.file.originalname.split(".").pop();
     // Object path inside bucket: {communityId}/posts/... (no leading "communities/" to avoid .../public/communities/communities/...)
     const fileName = `${communityId}/posts/${userId}_${Date.now()}.${fileExt}`;
     const bucket = process.env.COMMUNITIES_BUCKET || "communities";
 
     const { data, error } = await supabase.storage
       .from(bucket)
-      .upload(fileName, req.file.buffer, {
-        contentType: req.file.mimetype,
+      .upload(fileName, optimized.buffer, {
+        contentType: optimized.mimetype,
         upsert: false,
       });
 
@@ -847,7 +965,17 @@ export const updatePost = TryCatchFunction(async (req, res) => {
   }
 
   if (title !== undefined) post.title = title;
-  if (content !== undefined) post.content = content;
+  if (content !== undefined) {
+    const effectiveContentType = content_type !== undefined ? content_type : post.content_type;
+    post.content =
+      effectiveContentType === "rich_text"
+        ? await extractEmbeddedBase64Images(content, {
+            supabase,
+            bucket: process.env.COMMUNITIES_BUCKET || "communities",
+            pathPrefix: `${communityId}/posts/embedded`,
+          })
+        : content;
+  }
   if (content_type !== undefined) post.content_type = content_type;
   if (category !== undefined) post.category = category;
   if (tags !== undefined)
@@ -856,6 +984,8 @@ export const updatePost = TryCatchFunction(async (req, res) => {
   // (status already applied above when status !== undefined)
 
   await post.save();
+
+  invalidateCache(`cache:/api/marketplace/communities/${communityId}/posts*`);
 
   // Get community info to check tutor
   const community = await Community.findByPk(communityId, {
@@ -914,6 +1044,8 @@ export const deletePost = TryCatchFunction(async (req, res) => {
   // Decrement post count
   const community = await Community.findByPk(communityId);
   await community.decrement("post_count");
+
+  invalidateCache(`cache:/api/marketplace/communities/${communityId}/posts*`);
 
   res.json({
     status: true,
@@ -1091,6 +1223,8 @@ export const createComment = TryCatchFunction(async (req, res) => {
     authorName = "Unknown";
   }
 
+  invalidateCache(`cache:/api/marketplace/communities/${communityId}/posts*`);
+
   res.status(201).json({
     status: true,
     code: 201,
@@ -1116,10 +1250,16 @@ export const getComments = TryCatchFunction(async (req, res) => {
   const userId = req.user?.id;
   const userType = req.user?.userType;
 
+  // Get community info once — reused for the access check and for
+  // resolving legacy (author_type-less) comment authors.
+  const community = await Community.findByPk(communityId, {
+    attributes: ["id", "tutor_id", "tutor_type"],
+  });
+
   // Check access (optional)
   if (userId) {
     try {
-      await checkCommunityAccess(communityId, userId, userType, req);
+      await checkCommunityAccess(communityId, userId, userType, req, community);
     } catch (error) {
       // Allow viewing comments even without active subscription
     }
@@ -1131,12 +1271,8 @@ export const getComments = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Post not found", 404);
   }
 
-  // Get community info to check tutor
-  const community = await Community.findByPk(communityId, {
-    attributes: ["id", "tutor_id", "tutor_type"],
-  });
-
-  // Get all comments for this post (no pagination for threading)
+  // Get all comments for this post (no pagination for threading — pagination
+  // is applied to root comments only, after the tree is built below)
   const allComments = await CommunityComment.findAll({
     where: {
       post_id: postId,
@@ -1145,22 +1281,25 @@ export const getComments = TryCatchFunction(async (req, res) => {
     order: [["created_at", "ASC"]],
   });
 
+  // Resolve all comment authors in a handful of batched queries instead of
+  // one (or several) queries per comment — this is the dominant cost on
+  // heavily-commented posts.
+  const resolveAuthor = await batchResolveAuthors(
+    allComments.map((c) => ({ author_id: c.author_id, author_type: c.author_type || null })),
+    community
+  );
+
   // Build threaded structure
   const commentMap = new Map();
   const rootComments = [];
 
-  // First pass: create map of all comments with author info
-  await Promise.all(
-    allComments.map(async (comment) => {
-      const author = await getAuthorInfo(comment.author_id, community, comment.author_type || null);
-      const formatted = {
-        ...comment.toJSON(),
-        author,
-        replies: [],
-      };
-      commentMap.set(comment.id, formatted);
-    })
-  );
+  allComments.forEach((comment) => {
+    commentMap.set(comment.id, {
+      ...comment.toJSON(),
+      author: resolveAuthor(comment.author_id, comment.author_type || null),
+      replies: [],
+    });
+  });
 
   // Second pass: build tree structure
   allComments.forEach((comment) => {
