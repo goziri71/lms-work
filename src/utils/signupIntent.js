@@ -1,25 +1,41 @@
-export const SIGNUP_INTENTS = ["events", "education", "both"];
+export const SIGNUP_INTENTS = ["events", "both"];
+export const DEFAULT_SIGNUP_INTENT = "events";
 
-export function normalizeSignupIntent(raw, fallback = "education") {
+const EVENT_ALIASES = ["events", "event", "host", "organizer", "ticketing"];
+const BOTH_ALIASES = [
+  "both",
+  "all",
+  "everything",
+  // Legacy education-only is now events + education so events stay visible
+  "education",
+  "teach",
+  "tutor",
+  "course",
+  "lms",
+  "learning",
+];
+
+function mapIntent(raw) {
   const v = String(raw ?? "")
     .toLowerCase()
     .trim();
-  if (SIGNUP_INTENTS.includes(v)) return v;
-  if (["event", "host", "organizer", "ticketing"].includes(v)) return "events";
-  if (["teach", "tutor", "course", "lms", "learning"].includes(v)) {
-    return "education";
-  }
-  if (["all", "everything"].includes(v)) return "both";
-  return fallback;
+  if (EVENT_ALIASES.includes(v)) return "events";
+  if (BOTH_ALIASES.includes(v)) return "both";
+  return null;
+}
+
+export function normalizeSignupIntent(raw, fallback = DEFAULT_SIGNUP_INTENT) {
+  return mapIntent(raw) || mapIntent(fallback) || DEFAULT_SIGNUP_INTENT;
 }
 
 export function onboardingForIntent(intent) {
-  const signup_intent = normalizeSignupIntent(intent, "education");
+  const signup_intent = normalizeSignupIntent(intent);
+  const eventOnly = signup_intent === "events";
   return {
     signup_intent,
-    skip_education_profile: signup_intent === "events",
-    show_events: signup_intent === "events" || signup_intent === "both",
-    show_education: signup_intent === "education" || signup_intent === "both",
-    next_step: signup_intent === "events" ? "create_event" : "complete_profile",
+    skip_education_profile: eventOnly,
+    show_events: true,
+    show_education: !eventOnly,
+    next_step: eventOnly ? "create_event" : "complete_profile",
   };
 }

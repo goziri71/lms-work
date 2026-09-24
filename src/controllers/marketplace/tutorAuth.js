@@ -104,7 +104,7 @@ export const registerSoleTutor = TryCatchFunction(async (req, res) => {
   }
   if (!finalCurrency) finalCurrency = "NGN";
 
-  const intentValue = normalizeSignupIntent(signup_intent || intent, "education");
+  const intentValue = normalizeSignupIntent(signup_intent || intent);
   const onboarding = onboardingForIntent(intentValue);
   const eventOnly = onboarding.skip_education_profile;
 
@@ -246,7 +246,7 @@ export const registerOrganization = TryCatchFunction(async (req, res) => {
     contact_person: contact_person?.trim() || null,
     contact_email: contact_email?.trim() || null,
     contact_phone: contact_phone?.trim() || null,
-    signup_intent: normalizeSignupIntent(signup_intent || intent, "education"),
+    signup_intent: normalizeSignupIntent(signup_intent || intent),
     status: "active",
     verification_status: "verified",
   });
@@ -424,7 +424,7 @@ export const soleTutorLogin = TryCatchFunction(async (req, res) => {
         rating: tutor.rating,
         currency: tutor.currency || "NGN",
         local_currency: tutor.local_currency || tutor.currency || "NGN",
-        signup_intent: tutor.signup_intent || "education",
+        signup_intent: normalizeSignupIntent(tutor.signup_intent),
       },
       onboarding: onboardingForIntent(tutor.signup_intent),
       subscription: subscriptionInfo,
@@ -590,7 +590,7 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
           organization.local_currency ||
           organization.currency ||
           getCurrencyFromCountry(organization.country || "USD"),
-        signup_intent: organization.signup_intent || "education",
+        signup_intent: normalizeSignupIntent(organization.signup_intent),
       },
       onboarding: onboardingForIntent(organization.signup_intent),
       subscription: subscriptionInfo,
@@ -895,7 +895,7 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
           rating: tutor.rating,
           currency: tutor.currency || "NGN",
           local_currency: tutor.local_currency || tutor.currency || "NGN",
-          signup_intent: tutor.signup_intent || "education",
+          signup_intent: normalizeSignupIntent(tutor.signup_intent),
         },
         onboarding: onboardingForIntent(tutor.signup_intent),
         subscription: subscriptionInfo,
@@ -1039,7 +1039,7 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
             organization.local_currency ||
             organization.currency ||
             getCurrencyFromCountry(organization.country || "USD"),
-          signup_intent: organization.signup_intent || "education",
+          signup_intent: normalizeSignupIntent(organization.signup_intent),
         },
         onboarding: onboardingForIntent(organization.signup_intent),
         subscription: subscriptionInfo,

@@ -184,8 +184,8 @@ export const SoleTutor = db.define(
     signup_intent: {
       type: DataTypes.ENUM("events", "education", "both"),
       allowNull: false,
-      defaultValue: "education",
-      comment: "Why they signed up — event hosts skip education onboarding",
+      defaultValue: "events",
+      comment: "events | both — education-only is treated as both so events stay visible",
     },
     transfer_pin_hash: {
       type: DataTypes.STRING(255),

@@ -49,7 +49,7 @@ export const getProfile = TryCatchFunction(async (req, res) => {
     profileData.timezone = tutor.timezone;
     profileData.profile_image = tutor.profile_image;
     profileData.slug = tutor.slug ?? null;
-    profileData.signup_intent = tutor.signup_intent || "education";
+    profileData.signup_intent = normalizeSignupIntent(tutor.signup_intent);
   } else if (userType === "organization") {
     profileData.name = tutor.name;
     profileData.description = tutor.description;
@@ -63,7 +63,7 @@ export const getProfile = TryCatchFunction(async (req, res) => {
     profileData.contact_person = tutor.contact_person;
     profileData.contact_email = tutor.contact_email;
     profileData.contact_phone = tutor.contact_phone;
-    profileData.signup_intent = tutor.signup_intent || "education";
+    profileData.signup_intent = normalizeSignupIntent(tutor.signup_intent);
   }
 
   res.status(200).json({
@@ -121,7 +121,7 @@ export const updateProfile = TryCatchFunction(async (req, res) => {
     if (req.body.signup_intent !== undefined || req.body.intent !== undefined) {
       updateData.signup_intent = normalizeSignupIntent(
         req.body.signup_intent || req.body.intent,
-        tutor.signup_intent || "education"
+        tutor.signup_intent
       );
     }
 
@@ -193,7 +193,7 @@ export const updateProfile = TryCatchFunction(async (req, res) => {
     if (req.body.signup_intent !== undefined || req.body.intent !== undefined) {
       updateData.signup_intent = normalizeSignupIntent(
         req.body.signup_intent || req.body.intent,
-        tutor.signup_intent || "education"
+        tutor.signup_intent
       );
     }
     if (contact_phone !== undefined)
