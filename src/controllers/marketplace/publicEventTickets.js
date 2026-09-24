@@ -137,6 +137,7 @@ export const getEventBySlug = TryCatchFunction(async (req, res) => {
         student_id: req.user.id,
         status: "paid",
       },
+      attributes: ["id", "ticket_count"],
     });
     ticketsOwned = orders.reduce((s, o) => s + o.ticket_count, 0);
     if (orders.length) existingOrderId = orders[0].id;
