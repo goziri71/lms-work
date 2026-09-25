@@ -12,7 +12,10 @@ node scripts/migrate-event-ticket-approval.js
 node scripts/migrate-event-ticket-discount.js
 node scripts/migrate-event-forensics.js
 node scripts/migrate-event-ticket-reminders.js
+node scripts/migrate-event-ticket-coupons.js
 ```
+
+**Coupon codes:** [EVENT_TICKET_COUPONS_FRONTEND.md](./EVENT_TICKET_COUPONS_FRONTEND.md) (stacks with tier early-bird).
 
 ---
 
@@ -22,6 +25,7 @@ node scripts/migrate-event-ticket-reminders.js
 |------|--------|
 | Creator sets price | Each **package/tier** has its own `price` — **not** a fixed platform price. `0` = free RSVP. |
 | Paid-ticket discount | Optional `discount_type`: `none` \| `percent` \| `fixed`. Applied at checkout. Free tickets cannot have a discount. |
+| Coupon codes | Creator promo codes; **stack on top of** tier discount. See coupon guide. |
 | Event + packages | Create the **event** (ticket), then add **packages** (Premium, Gold, etc.) under it. |
 | Benefits | Each package has `benefits: string[]` (e.g. `["VIP seat", "Merch"]`). |
 | Ticket code | Every sold/RSVP ticket gets a short code like `YDHSJ3`. |
@@ -479,6 +483,7 @@ Optional header: `Idempotency-Key: <uuid>`
   "buyer_email": "buyer@example.com",
   "buyer_name": "Ada Okafor",
   "buyer_phone": "+2348012345678",
+  "coupon_code": "GOSPEL20",
   "payment_method": "flutterwave",
   "items": [
     { "tier_id": 3, "quantity": 2 }

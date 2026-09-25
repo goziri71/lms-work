@@ -15,6 +15,7 @@ import {
   generateAccessToken,
   RESERVATION_MINUTES,
 } from "../../services/eventTicketService.js";
+import { applyCouponToOrderPricing } from "../../services/eventCouponService.js";
 import { logEventActivity, actorFromReq } from "../../services/eventActivityService.js";
 
 function normalizeEmail(email) {
@@ -44,6 +45,7 @@ export const createEventOrder = TryCatchFunction(async (req, res) => {
     items,
     payment_method,
     holder_names,
+    coupon_code,
   } = req.body;
 
   if (!buyer_email || !buyer_name) {
@@ -63,8 +65,20 @@ export const createEventOrder = TryCatchFunction(async (req, res) => {
   const studentId =
     req.user?.userType === "student" ? parseInt(req.user.id, 10) : null;
 
-  const { lineItems, totalTickets, totalAmount, currency, tiersToReserve } =
-    await validateOrderItems(eventId, items);
+  const validated = await validateOrderItems(eventId, items);
+  let { lineItems, totalTickets, totalAmount, currency, tiersToReserve } =
+    validated;
+
+  const couponApplied = await applyCouponToOrderPricing({
+    eventId,
+    couponCode: coupon_code,
+    buyerEmail: normalizeEmail(buyer_email),
+    lineItems,
+  });
+  lineItems = couponApplied.lineItems;
+  totalAmount = couponApplied.totalAmount;
+  const coupon = couponApplied.coupon;
+  const couponDiscount = couponApplied.couponDiscount || 0;
 
   const isFree = totalAmount <= 0;
   const payMethod = payment_method || (isFree ? "free" : "flutterwave");
@@ -112,6 +126,9 @@ export const createEventOrder = TryCatchFunction(async (req, res) => {
         reservation_expires_at: paidApprovalExpires,
         access_token: generateAccessToken(),
         holder_names: Array.isArray(holder_names) ? holder_names : null,
+        coupon_id: coupon?.id || null,
+        coupon_code: coupon?.code || null,
+        coupon_discount_amount: couponDiscount,
       },
       { transaction }
     );
@@ -138,6 +155,8 @@ export const createEventOrder = TryCatchFunction(async (req, res) => {
       ticket_count: order.ticket_count,
       payment_method: payMethod,
       requires_approval: !!event.requires_approval,
+      coupon_code: coupon?.code || null,
+      coupon_discount: couponDiscount,
     },
   }).catch(() => {});
 
@@ -230,6 +249,10 @@ function formatOrder(order) {
     currency: order.currency,
     ticket_count: order.ticket_count,
     reservation_expires_at: order.reservation_expires_at,
+    coupon_code: order.coupon_code || null,
+    coupon_discount_amount: parseFloat(order.coupon_discount_amount || 0).toFixed(
+      2
+    ),
   };
 }
 

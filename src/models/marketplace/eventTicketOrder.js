@@ -130,6 +130,27 @@ export const EventTicketOrder = db.define(
       allowNull: true,
       comment: "When the starting-soon (3h) reminder email was sent",
     },
+    coupon_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: { model: "event_ticket_coupons", key: "id" },
+      onDelete: "SET NULL",
+    },
+    coupon_code: {
+      type: DataTypes.STRING(64),
+      allowNull: true,
+    },
+    coupon_discount_amount: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+    },
+    coupon_consumed: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: "True after coupon use_count was incremented for this order",
+    },
   },
   {
     tableName: "event_ticket_orders",

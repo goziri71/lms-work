@@ -99,6 +99,7 @@ import {
   EventTicketTier,
   EventTicketOrder,
   EventTicket,
+  EventTicketCoupon,
   EventActivityLog,
 } from "./marketplace/index.js";
 
@@ -1503,6 +1504,19 @@ export const setupAssociations = () => {
   EventTicketOrder.belongsTo(Students, {
     foreignKey: "student_id",
     as: "student",
+  });
+
+  TicketedEvent.hasMany(EventTicketCoupon, {
+    foreignKey: "event_id",
+    as: "coupons",
+  });
+  EventTicketCoupon.belongsTo(TicketedEvent, {
+    foreignKey: "event_id",
+    as: "event",
+  });
+  EventTicketOrder.belongsTo(EventTicketCoupon, {
+    foreignKey: "coupon_id",
+    as: "coupon",
   });
 
   TicketedEvent.hasMany(EventTicket, {

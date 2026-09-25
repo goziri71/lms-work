@@ -89,5 +89,6 @@ export { TicketedEvent } from "./ticketedEvent.js";
 export { EventTicketTier } from "./eventTicketTier.js";
 export { EventTicketOrder } from "./eventTicketOrder.js";
 export { EventTicket } from "./eventTicket.js";
+export { EventTicketCoupon } from "./eventTicketCoupon.js";
 export { EventActivityLog } from "./eventActivityLog.js";
 

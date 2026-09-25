@@ -28,6 +28,10 @@ import { emailService } from "./emailService.js";
 import { joinFrontendUrl } from "../utils/frontendUrl.js";
 import { Config } from "../config/config.js";
 import { logEventActivity } from "./eventActivityService.js";
+import {
+  consumeCouponForOrder,
+  releaseCouponForOrder,
+} from "./eventCouponService.js";
 
 export const RESERVATION_MINUTES = 15;
 const DEFAULT_EVENT_COMMISSION_RATE = 15;
@@ -781,6 +785,10 @@ export async function fulfillPaidOrder(
         },
         { transaction }
       );
+      await order.reload({ transaction });
+      if (order.coupon_id) {
+        await consumeCouponForOrder(order, transaction);
+      }
       await transaction.commit();
 
       logEventActivity({
@@ -824,6 +832,10 @@ export async function fulfillPaidOrder(
       { transaction }
     );
     await order.reload({ transaction });
+
+    if (order.coupon_id) {
+      await consumeCouponForOrder(order, transaction);
+    }
 
     await creditEventCreatorFromOrder(order, event, transaction);
 
@@ -969,6 +981,7 @@ export async function rejectEventOrder(orderId, { reason } = {}) {
     }
 
     await releaseTierReservation(order.line_items, transaction);
+    await releaseCouponForOrder(order, transaction);
 
     const amount = parseFloat(order.total_amount);
     let refundStatus = null;

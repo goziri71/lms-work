@@ -187,6 +187,13 @@ import {
   cancelEventOrder,
 } from "../controllers/marketplace/eventTicketCheckout.js";
 import {
+  listEventCoupons,
+  createEventCoupon,
+  updateEventCoupon,
+  deleteEventCoupon,
+  validateEventCoupon,
+} from "../controllers/marketplace/eventTicketCoupons.js";
+import {
   getTicketsByAccessToken,
   getTicketByScanCode,
   downloadEventCalendarIcs,
@@ -492,6 +499,7 @@ router.get("/public/tutor/:slug/events", getTutorPublicEvents);
 // Public ticketed events
 router.get("/events", browseEvents);
 router.get("/events/slug/:slug", optionalAuthorize, getEventBySlug);
+router.post("/events/:eventId/coupons/validate", optionalAuthorize, validateEventCoupon);
 router.post("/events/:eventId/orders", optionalAuthorize, createEventOrder);
 router.post(
   "/events/orders/:orderId/confirm-payment",
@@ -1498,6 +1506,19 @@ router.delete(
   "/tutor/events/:eventId/tiers/:tierId",
   tutorAuthorize,
   deleteEventTier,
+);
+
+router.get("/tutor/events/:eventId/coupons", tutorAuthorize, listEventCoupons);
+router.post("/tutor/events/:eventId/coupons", tutorAuthorize, createEventCoupon);
+router.put(
+  "/tutor/events/:eventId/coupons/:couponId",
+  tutorAuthorize,
+  updateEventCoupon,
+);
+router.delete(
+  "/tutor/events/:eventId/coupons/:couponId",
+  tutorAuthorize,
+  deleteEventCoupon,
 );
 
 export default router;
