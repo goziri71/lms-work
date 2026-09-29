@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { Op, Transaction, literal } from "sequelize";
+import { Op, Transaction } from "sequelize";
 import { db } from "../database/database.js";
 import { TicketedEvent } from "../models/marketplace/ticketedEvent.js";
 import { EventTicketTier } from "../models/marketplace/eventTicketTier.js";
@@ -241,33 +241,17 @@ export async function formatEventsAsDiscoveryCards(events) {
   );
 }
 
-/** Public directory: soonest calendar day first, then stable id (not clock time on same day). */
+/** Public directory: newest / last-added events first (top of list). */
 export const PUBLIC_EVENT_LIST_ORDER = [
-  [
-    literal(
-      `(starts_at AT TIME ZONE COALESCE(NULLIF(timezone, ''), 'Africa/Lagos'))::date`
-    ),
-    "ASC",
-  ],
-  ["id", "ASC"],
+  ["created_at", "DESC"],
+  ["id", "DESC"],
 ];
 
-export function eventLocalDateKey(event) {
-  const tz = event.timezone || "Africa/Lagos";
-  try {
-    return new Date(event.starts_at).toLocaleDateString("en-CA", {
-      timeZone: tz,
-    });
-  } catch {
-    return new Date(event.starts_at).toISOString().slice(0, 10);
-  }
-}
-
 export function compareDiscoveryEvents(a, b) {
-  const dayA = eventLocalDateKey(a);
-  const dayB = eventLocalDateKey(b);
-  if (dayA !== dayB) return dayA.localeCompare(dayB);
-  return (a.id || 0) - (b.id || 0);
+  const ca = new Date(a.created_at || 0).getTime();
+  const cb = new Date(b.created_at || 0).getTime();
+  if (cb !== ca) return cb - ca;
+  return (b.id || 0) - (a.id || 0);
 }
 
 function relatedScore(current, candidate) {
