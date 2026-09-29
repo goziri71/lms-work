@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { Op, Transaction } from "sequelize";
+import { Op, Transaction, literal } from "sequelize";
 import { db } from "../database/database.js";
 import { TicketedEvent } from "../models/marketplace/ticketedEvent.js";
 import { EventTicketTier } from "../models/marketplace/eventTicketTier.js";
@@ -241,6 +241,35 @@ export async function formatEventsAsDiscoveryCards(events) {
   );
 }
 
+/** Public directory: soonest calendar day first, then stable id (not clock time on same day). */
+export const PUBLIC_EVENT_LIST_ORDER = [
+  [
+    literal(
+      `(starts_at AT TIME ZONE COALESCE(NULLIF(timezone, ''), 'Africa/Lagos'))::date`
+    ),
+    "ASC",
+  ],
+  ["id", "ASC"],
+];
+
+export function eventLocalDateKey(event) {
+  const tz = event.timezone || "Africa/Lagos";
+  try {
+    return new Date(event.starts_at).toLocaleDateString("en-CA", {
+      timeZone: tz,
+    });
+  } catch {
+    return new Date(event.starts_at).toISOString().slice(0, 10);
+  }
+}
+
+export function compareDiscoveryEvents(a, b) {
+  const dayA = eventLocalDateKey(a);
+  const dayB = eventLocalDateKey(b);
+  if (dayA !== dayB) return dayA.localeCompare(dayB);
+  return (a.id || 0) - (b.id || 0);
+}
+
 function relatedScore(current, candidate) {
   let score = 0;
   const city = String(current.city || "")
@@ -270,13 +299,13 @@ export async function listRelatedEvents(current, { limit = 6 } = {}) {
       status: { [Op.in]: ["published", "sold_out"] },
       ends_at: { [Op.gte]: new Date() },
     },
-    order: [["starts_at", "ASC"]],
+    order: PUBLIC_EVENT_LIST_ORDER,
     limit: 40,
   });
   const ranked = [...candidates].sort((a, b) => {
     const diff = relatedScore(current, b) - relatedScore(current, a);
     if (diff !== 0) return diff;
-    return new Date(a.starts_at) - new Date(b.starts_at);
+    return compareDiscoveryEvents(a, b);
   });
   return formatEventsAsDiscoveryCards(ranked.slice(0, cap));
 }

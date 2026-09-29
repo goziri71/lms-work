@@ -86,6 +86,8 @@ GET /events?page=1&limit=20
 
 Filters: **city**, **month/date**, **category**, **in person / online**, search.
 
+**Sort order (backend):** soonest **event day** first (in each event’s `timezone`), then **`id` ascending** on the same day. Far-future events (e.g. December) stay at the **bottom**. Do not re-sort by `starts_at` clock time only — that pushed an earlier same-day service above a later event on the same date.
+
 Each card:
 
 - Cover

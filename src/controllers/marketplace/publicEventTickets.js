@@ -13,6 +13,7 @@ import {
   getEventHost,
   listRelatedEvents,
   summarizeVisibleTiers,
+  PUBLIC_EVENT_LIST_ORDER,
 } from "../../services/eventTicketService.js";
 import { recordEventPageView, actorFromReq } from "../../services/eventActivityService.js";
 
@@ -83,7 +84,7 @@ export const browseEvents = TryCatchFunction(async (req, res) => {
     where,
     limit: parseInt(limit, 10),
     offset,
-    order: [["starts_at", "ASC"]],
+    order: PUBLIC_EVENT_LIST_ORDER,
   });
 
   const items = await formatEventsAsDiscoveryCards(rows);
@@ -197,7 +198,7 @@ export const getTutorPublicEvents = TryCatchFunction(async (req, res) => {
       status: { [Op.in]: ["published", "sold_out"] },
       ends_at: { [Op.gte]: new Date() },
     },
-    order: [["starts_at", "ASC"]],
+    order: PUBLIC_EVENT_LIST_ORDER,
     limit: 50,
   });
 
