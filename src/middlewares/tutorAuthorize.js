@@ -4,10 +4,7 @@ import { Config } from "../config/config.js";
 import { SoleTutor } from "../models/marketplace/soleTutor.js";
 import { Organization } from "../models/marketplace/organization.js";
 import { OrganizationUser } from "../models/marketplace/organizationUser.js";
-import {
-  resolveLinkedCreatorForStudentId,
-  studentHasUnlinkedCreatorAccount,
-} from "../utils/creatorStudentLink.js";
+import { Students } from "../models/auth/student.js";
 
 /**
  * Middleware to authenticate tutor (sole tutor, organization, or org user)
@@ -25,31 +22,49 @@ export const tutorAuthorize = async (req, res, next) => {
     let effectiveType = decoded.userType;
     let effectiveId = decoded.id;
 
-    // Learner JWT: allow tutor routes when accounts were linked (same email + password at login)
+    // A creator may also have a learner profile. Resolve the active creator by
+    // the verified learner token's email so the creator UI is not blocked by a
+    // student JWT issued for the same identity.
     if (decoded.userType === "student") {
-      const linked = await resolveLinkedCreatorForStudentId(decoded.id);
-      if (linked) {
-        effectiveType = linked.userType;
-        effectiveId = linked.id;
-        req.tutor = linked.tutor;
-        req.user = {
-          id: linked.id,
-          userType: linked.userType,
-          studentId: decoded.id,
-          actingViaLinkedStudent: true,
-        };
-        return next();
+      const student =
+        decoded.email && decoded.id
+          ? { id: decoded.id, email: decoded.email }
+          : await Students.findByPk(decoded.id, { attributes: ["id", "email"] });
+      const email = String(student?.email || "")
+        .trim()
+        .toLowerCase();
+
+      if (!email) {
+        throw new ErrorClass("Creator account could not be resolved", 403);
       }
-      const needsCreatorLogin = await studentHasUnlinkedCreatorAccount(
-        decoded.email
-      );
-      if (needsCreatorLogin) {
+
+      const soleTutor = await SoleTutor.findOne({
+        where: { email, status: "active" },
+      });
+      const organization = soleTutor
+        ? null
+        : await Organization.findOne({
+            where: { email, status: "active" },
+          });
+      const creator = soleTutor || organization;
+
+      if (!creator) {
         throw new ErrorClass(
-          "You have a separate creator account. Log in at creator login with your creator password, or use the same password on learner login once to link accounts.",
+          "No active creator account exists for this email",
           403
         );
       }
-      throw new ErrorClass("Invalid user type for tutor access", 403);
+
+      effectiveType = soleTutor ? "sole_tutor" : "organization";
+      effectiveId = creator.id;
+      req.tutor = creator;
+      req.user = {
+        id: creator.id,
+        userType: effectiveType,
+        studentId: student.id,
+        actingViaStudentAccount: true,
+      };
+      return next();
     }
 
     if (

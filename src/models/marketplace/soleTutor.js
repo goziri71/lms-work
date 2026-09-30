@@ -226,14 +226,6 @@ export const SoleTutor = db.define(
       allowNull: false,
       defaultValue: 0,
     },
-    linked_student_id: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-      references: { model: "students", key: "id" },
-      onDelete: "SET NULL",
-      comment:
-        "Learner account linked after same-email + same-password login (dual role)",
-    },
     created_at: {
       type: DataTypes.DATE,
       allowNull: false,

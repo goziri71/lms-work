@@ -1516,23 +1516,6 @@ export const setupAssociations = () => {
     as: "student",
   });
 
-  Students.hasMany(SoleTutor, {
-    foreignKey: "linked_student_id",
-    as: "linkedSoleTutorProfiles",
-  });
-  SoleTutor.belongsTo(Students, {
-    foreignKey: "linked_student_id",
-    as: "linkedStudent",
-  });
-  Students.hasMany(Organization, {
-    foreignKey: "linked_student_id",
-    as: "linkedOrganizationProfiles",
-  });
-  Organization.belongsTo(Students, {
-    foreignKey: "linked_student_id",
-    as: "linkedStudent",
-  });
-
   TicketedEvent.hasMany(EventTicketCoupon, {
     foreignKey: "event_id",
     as: "coupons",
