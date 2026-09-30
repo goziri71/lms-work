@@ -201,6 +201,15 @@ import {
   getMyTickets,
 } from "../controllers/marketplace/eventTicketAccess.js";
 import {
+  createGuestCheckout,
+  confirmGuestCheckoutPayment,
+} from "../controllers/marketplace/marketplaceGuestCheckout.js";
+import {
+  getGuestPurchaseByToken,
+  guestPurchaseDownloadUrl,
+  resendGuestPurchaseEmail,
+} from "../controllers/marketplace/marketplaceGuestAccess.js";
+import {
   uploadEventCover,
   uploadEventCoverMiddleware,
   createEvent,
@@ -530,6 +539,22 @@ router.get(
 );
 router.post("/tickets/order/:accessToken/resend-email", resendTicketEmail);
 router.get("/my-tickets", authorize, getMyTickets);
+
+// Guest checkout — courses & digital products (no account required)
+router.post("/guest-checkout", optionalAuthorize, createGuestCheckout);
+router.post(
+  "/guest-orders/:orderId/confirm-payment",
+  confirmGuestCheckoutPayment,
+);
+router.get("/guest-orders/access/:accessToken", getGuestPurchaseByToken);
+router.get(
+  "/guest-orders/access/:accessToken/download-url",
+  guestPurchaseDownloadUrl,
+);
+router.post(
+  "/guest-orders/access/:accessToken/resend-email",
+  resendGuestPurchaseEmail,
+);
 
 // Top Products (No authentication required)
 router.get("/products/featured", getFeaturedProducts);

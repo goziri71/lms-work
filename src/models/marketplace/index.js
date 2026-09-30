@@ -91,4 +91,5 @@ export { EventTicketOrder } from "./eventTicketOrder.js";
 export { EventTicket } from "./eventTicket.js";
 export { EventTicketCoupon } from "./eventTicketCoupon.js";
 export { EventActivityLog } from "./eventActivityLog.js";
+export { MarketplaceGuestOrder } from "./marketplaceGuestOrder.js";
 

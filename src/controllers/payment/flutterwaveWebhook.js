@@ -94,6 +94,29 @@ export const flutterwaveWebhook = TryCatchFunction(async (req, res) => {
           }
         }
 
+        if (
+          meta.type === "marketplace_guest" ||
+          (txRef && String(txRef).startsWith("GST-ORDER-"))
+        ) {
+          try {
+            const { fulfillGuestOrderFromWebhook } = await import(
+              "../../services/marketplaceGuestCheckoutService.js"
+            );
+            const gstResult = await fulfillGuestOrderFromWebhook(
+              txRef,
+              transactionData
+            );
+            if (gstResult.handled) {
+              console.log(
+                `✅ Marketplace guest order fulfilled via webhook (${txRef})`
+              );
+              return res.status(200).json({ message: "Webhook received" });
+            }
+          } catch (gstErr) {
+            console.error("Marketplace guest webhook fulfillment failed:", gstErr);
+          }
+        }
+
         // Client never called /api/wallet/fund — recover if charge carries meta.student_id from Flutterwave
         const rawSid = meta.student_id ?? meta.studentId;
         if (rawSid != null && String(rawSid).trim() !== "") {

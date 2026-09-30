@@ -53,6 +53,19 @@ export const studentLogin = TryCatchFunction(async (req, res) => {
     // Update student record if needed (you can add a lastLogin field later)
     // await student.update({ lastLogin: new Date() });
 
+    let guestPurchasesClaimed = 0;
+    try {
+      const { claimGuestOrdersForStudent } = await import(
+        "../../services/marketplaceGuestCheckoutService.js"
+      );
+      guestPurchasesClaimed = await claimGuestOrdersForStudent(
+        student.id,
+        student.email,
+      );
+    } catch (claimErr) {
+      console.error("Guest purchase claim on login:", claimErr.message);
+    }
+
     // Generate JWT token using your actual model fields
     const accessToken = await authService.generateAccessToken({
       id: student.id,
@@ -93,6 +106,7 @@ export const studentLogin = TryCatchFunction(async (req, res) => {
         accessToken,
         userType: "student",
         expiresIn: getAccessTokenExpiresInSeconds("student"),
+        guest_purchases_claimed: guestPurchasesClaimed,
       },
     });
   } catch (error) {
@@ -793,6 +807,19 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
     throw createError;
   }
 
+  let guestPurchasesClaimed = 0;
+  try {
+    const { claimGuestOrdersForStudent } = await import(
+      "../../services/marketplaceGuestCheckoutService.js"
+    );
+    guestPurchasesClaimed = await claimGuestOrdersForStudent(
+      student.id,
+      student.email,
+    );
+  } catch (claimErr) {
+    console.error("Guest purchase claim on register:", claimErr.message);
+  }
+
   // Create default email preferences (optional - table may not exist)
   try {
     await EmailPreference.create({
@@ -859,6 +886,7 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
     message: "Student registered successfully. Welcome email sent.",
     data: {
       user: studentData,
+      guest_purchases_claimed: guestPurchasesClaimed,
     },
   });
 });
