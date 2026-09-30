@@ -18,6 +18,7 @@ import { getIPGeolocation } from "../../services/ipGeolocationService.js";
 import { EmailLog } from "../../models/email/emailLog.js";
 import { Config } from "../../config/config.js";
 import { joinFrontendUrl } from "../../utils/frontendUrl.js";
+import { linkCreatorToStudentOnLogin } from "../../utils/creatorStudentLink.js";
 import {
   normalizeSignupIntent,
   onboardingForIntent,
@@ -334,6 +335,8 @@ export const soleTutorLogin = TryCatchFunction(async (req, res) => {
     await tutor.update({ last_login: new Date() });
   }
 
+  await linkCreatorToStudentOnLogin(tutor, password, "sole_tutor");
+
   // Check and auto-expire subscriptions if needed
   try {
     const { checkSubscriptionExpiration } = await import(
@@ -496,6 +499,8 @@ export const organizationLogin = TryCatchFunction(async (req, res) => {
   } else {
     await organization.update({ last_login: new Date() });
   }
+
+  await linkCreatorToStudentOnLogin(organization, password, "organization");
 
   // Check and auto-expire subscriptions if needed
   try {
@@ -806,6 +811,8 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
     // Update last login
     await tutor.update({ last_login: new Date() });
 
+    await linkCreatorToStudentOnLogin(tutor, password, "sole_tutor");
+
     // Check and auto-expire subscriptions if needed
     try {
       const { checkSubscriptionExpiration } = await import(
@@ -946,6 +953,8 @@ export const unifiedTutorLogin = TryCatchFunction(async (req, res) => {
 
     // Update last login
     await organization.update({ last_login: new Date() });
+
+    await linkCreatorToStudentOnLogin(organization, password, "organization");
 
     // Check and auto-expire subscriptions if needed
     try {

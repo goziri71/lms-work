@@ -15,6 +15,7 @@ import { getIPGeolocation } from "../../services/ipGeolocationService.js";
 import { getCurrencyFromCountry } from "../../services/currencyService.js";
 import { Config } from "../../config/config.js";
 import { joinFrontendUrl } from "../../utils/frontendUrl.js";
+import { linkStudentToCreatorOnLogin } from "../../utils/creatorStudentLink.js";
 
 // Student Login using Sequelize ORM
 export const studentLogin = TryCatchFunction(async (req, res) => {
@@ -50,8 +51,7 @@ export const studentLogin = TryCatchFunction(async (req, res) => {
       throw new ErrorClass("Invalid email or password", 401);
     }
 
-    // Update student record if needed (you can add a lastLogin field later)
-    // await student.update({ lastLogin: new Date() });
+    const creatorLink = await linkStudentToCreatorOnLogin(student, password);
 
     let guestPurchasesClaimed = 0;
     try {
@@ -107,6 +107,16 @@ export const studentLogin = TryCatchFunction(async (req, res) => {
         userType: "student",
         expiresIn: getAccessTokenExpiresInSeconds("student"),
         guest_purchases_claimed: guestPurchasesClaimed,
+        ...(creatorLink.creatorAccessToken && {
+          creatorAccessToken: creatorLink.creatorAccessToken,
+          creatorUserType: creatorLink.creatorUserType,
+          creator_account_linked: true,
+        }),
+        ...(creatorLink.hasCreatorAccount &&
+          !creatorLink.creatorAccessToken && {
+            has_creator_account: true,
+            creator_account_linked: false,
+          }),
       },
     });
   } catch (error) {
@@ -303,6 +313,11 @@ export const login = TryCatchFunction(async (req, res) => {
     tokenPayload.phone = user.phone;
   }
 
+  let creatorLink = null;
+  if (userType === "student") {
+    creatorLink = await linkStudentToCreatorOnLogin(user, password);
+  }
+
   const accessToken = await authService.generateAccessToken(tokenPayload);
 
   // Track login history for students
@@ -392,6 +407,16 @@ export const login = TryCatchFunction(async (req, res) => {
       accessToken,
       userType,
       expiresIn: getAccessTokenExpiresInSeconds(userType),
+      ...(creatorLink?.creatorAccessToken && {
+        creatorAccessToken: creatorLink.creatorAccessToken,
+        creatorUserType: creatorLink.creatorUserType,
+        creator_account_linked: true,
+      }),
+      ...(creatorLink?.hasCreatorAccount &&
+        !creatorLink?.creatorAccessToken && {
+          has_creator_account: true,
+          creator_account_linked: false,
+        }),
     },
   });
 });
