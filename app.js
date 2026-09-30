@@ -79,6 +79,7 @@ const corsOptions = {
 };
 
 const app = express();
+app.set("trust proxy", 1);
 const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   cors: {
@@ -118,7 +119,9 @@ if (process.env.REDIS_URL) {
       console.warn("⚠️ Socket.io Redis adapter (sub) error:", err.message),
     );
     io.adapter(createAdapter(pubClient, subClient));
-    console.log("🔌 Socket.io Redis adapter attached (cross-worker realtime enabled)");
+    console.log(
+      "🔌 Socket.io Redis adapter attached (cross-worker realtime enabled)",
+    );
   } catch (error) {
     console.warn(
       "⚠️ Could not attach Socket.io Redis adapter — realtime features will be process-local only:",
@@ -257,9 +260,9 @@ connectDB().then(async (success) => {
     // clustered worker (concurrent ALTERs against the same tables at boot
     // would race). Everything in this block is boot-time schema setup.
     if (isPrimaryInstance) {
-    // Ensure critical tables exist (especially email_logs)
-    try {
-      const [tableExists] = await db.query(`
+      // Ensure critical tables exist (especially email_logs)
+      try {
+        const [tableExists] = await db.query(`
         SELECT EXISTS (
           SELECT FROM information_schema.tables 
           WHERE table_schema = 'public' 
@@ -267,35 +270,38 @@ connectDB().then(async (success) => {
         )
       `);
 
-      if (!tableExists[0].exists) {
-        console.log("📧 Creating email_logs table...");
-        // Use force: false to create table without dropping existing data
-        await EmailLog.sync({ force: false });
-        console.log("✅ email_logs table created");
-      } else {
-        // Table exists - just verify it's accessible (don't alter to avoid errors)
-        try {
-          await db.query("SELECT 1 FROM email_logs LIMIT 1");
-          console.log("✅ email_logs table verified");
-        } catch (verifyError) {
-          console.warn(
-            "⚠️ email_logs table exists but may have issues:",
-            verifyError.message,
-          );
+        if (!tableExists[0].exists) {
+          console.log("📧 Creating email_logs table...");
+          // Use force: false to create table without dropping existing data
+          await EmailLog.sync({ force: false });
+          console.log("✅ email_logs table created");
+        } else {
+          // Table exists - just verify it's accessible (don't alter to avoid errors)
+          try {
+            await db.query("SELECT 1 FROM email_logs LIMIT 1");
+            console.log("✅ email_logs table verified");
+          } catch (verifyError) {
+            console.warn(
+              "⚠️ email_logs table exists but may have issues:",
+              verifyError.message,
+            );
+          }
         }
-      }
-    } catch (error) {
-      console.error(
-        "⚠️ Warning: Could not verify/create email_logs table:",
-        error.message,
-      );
-      if (error.message.includes("USING") || error.message.includes("syntax")) {
+      } catch (error) {
         console.error(
-          "   This is likely a Sequelize sync issue. Trying alternative method...",
+          "⚠️ Warning: Could not verify/create email_logs table:",
+          error.message,
         );
-        try {
-          // Try creating table with raw SQL as fallback
-          await db.query(`
+        if (
+          error.message.includes("USING") ||
+          error.message.includes("syntax")
+        ) {
+          console.error(
+            "   This is likely a Sequelize sync issue. Trying alternative method...",
+          );
+          try {
+            // Try creating table with raw SQL as fallback
+            await db.query(`
             CREATE TABLE IF NOT EXISTS email_logs (
               id SERIAL PRIMARY KEY,
               user_id INTEGER,
@@ -318,47 +324,56 @@ connectDB().then(async (success) => {
             CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status);
             CREATE INDEX IF NOT EXISTS idx_email_logs_created ON email_logs(created_at);
           `);
-          console.log("✅ email_logs table created using raw SQL");
-        } catch (fallbackError) {
+            console.log("✅ email_logs table created using raw SQL");
+          } catch (fallbackError) {
+            console.error(
+              "❌ Fallback creation also failed:",
+              fallbackError.message,
+            );
+            console.error(
+              "   Please run 'node setup-email-logs-table.js' manually",
+            );
+          }
+        } else {
           console.error(
-            "❌ Fallback creation also failed:",
-            fallbackError.message,
-          );
-          console.error(
-            "   Please run 'node setup-email-logs-table.js' manually",
+            "   Run 'node setup-email-logs-table.js' manually to create the table",
           );
         }
-      } else {
-        console.error(
-          "   Run 'node setup-email-logs-table.js' manually to create the table",
+      }
+
+      try {
+        await TutorMailbox.sync({ alter: false });
+        await MailThread.sync({ alter: false });
+        await MailMessage.sync({ alter: false });
+        console.log(
+          "✅ Tutor mailbox tables (tutor_mailboxes, mail_threads, mail_messages) ready",
+        );
+      } catch (mbErr) {
+        console.warn("⚠️ Tutor mailbox table sync:", mbErr.message);
+      }
+
+      try {
+        await WpuBookUpload.sync({ alter: true });
+        console.log("✅ wpu_book_uploads table ready");
+      } catch (wpuErr) {
+        console.warn("⚠️ wpu_book_uploads sync:", wpuErr.message);
+      }
+
+      // Auto-add author_type columns if missing (for community posts/comments)
+      try {
+        await db.query(
+          `ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS author_type VARCHAR(30) DEFAULT NULL`,
+        );
+        await db.query(
+          `ALTER TABLE community_comments ADD COLUMN IF NOT EXISTS author_type VARCHAR(30) DEFAULT NULL`,
+        );
+        console.log("✅ community author_type columns verified");
+      } catch (colErr) {
+        console.warn(
+          "⚠️ Could not verify author_type columns:",
+          colErr.message,
         );
       }
-    }
-
-    try {
-      await TutorMailbox.sync({ alter: false });
-      await MailThread.sync({ alter: false });
-      await MailMessage.sync({ alter: false });
-      console.log("✅ Tutor mailbox tables (tutor_mailboxes, mail_threads, mail_messages) ready");
-    } catch (mbErr) {
-      console.warn("⚠️ Tutor mailbox table sync:", mbErr.message);
-    }
-
-    try {
-      await WpuBookUpload.sync({ alter: true });
-      console.log("✅ wpu_book_uploads table ready");
-    } catch (wpuErr) {
-      console.warn("⚠️ wpu_book_uploads sync:", wpuErr.message);
-    }
-
-    // Auto-add author_type columns if missing (for community posts/comments)
-    try {
-      await db.query(`ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS author_type VARCHAR(30) DEFAULT NULL`);
-      await db.query(`ALTER TABLE community_comments ADD COLUMN IF NOT EXISTS author_type VARCHAR(30) DEFAULT NULL`);
-      console.log("✅ community author_type columns verified");
-    } catch (colErr) {
-      console.warn("⚠️ Could not verify author_type columns:", colErr.message);
-    }
     } // end isPrimaryInstance (schema sync)
 
     setupDiscussionsSocket(io);
@@ -369,247 +384,251 @@ connectDB().then(async (success) => {
     // Several of these are billing-affecting (subscription auto-renewal
     // debits wallets) — running them in every worker would double-charge.
     if (isPrimaryInstance) {
+      // Setup background jobs for subscriptions
+      try {
+        const { processAutoRenewals, expireSubscriptions } =
+          await import("./src/services/subscriptionRenewalService.js");
 
-    // Setup background jobs for subscriptions
-    try {
-      const { processAutoRenewals, expireSubscriptions } =
-        await import("./src/services/subscriptionRenewalService.js");
-
-      // Helper to check if it's time to run daily job (2 AM)
-      const shouldRunDailyJob = () => {
-        const now = new Date();
-        const hour = now.getHours();
-        const minute = now.getMinutes();
-        return hour === 2 && minute === 0;
-      };
-
-      let lastDailyRun = new Date();
-      lastDailyRun.setHours(0, 0, 0, 0); // Reset to start of day
-
-      // Check every hour if it's time to run daily jobs
-      setInterval(
-        async () => {
+        // Helper to check if it's time to run daily job (2 AM)
+        const shouldRunDailyJob = () => {
           const now = new Date();
-          const hoursSinceLastRun = (now - lastDailyRun) / (1000 * 60 * 60);
+          const hour = now.getHours();
+          const minute = now.getMinutes();
+          return hour === 2 && minute === 0;
+        };
 
-          // Run if it's been at least 24 hours since last run and it's around 2-3 AM
-          if (
-            hoursSinceLastRun >= 24 &&
-            now.getHours() >= 2 &&
-            now.getHours() < 4
-          ) {
-            console.log("🔄 Processing subscription auto-renewals...");
-            try {
-              const results = await processAutoRenewals();
-              console.log(
-                `✅ Auto-renewal completed: ${results.successful} successful, ${results.failed} failed`,
-              );
-              if (results.errors.length > 0) {
-                console.error("❌ Renewal errors:", results.errors);
-              }
-            } catch (error) {
-              console.error("❌ Error processing auto-renewals:", error);
-            }
+        let lastDailyRun = new Date();
+        lastDailyRun.setHours(0, 0, 0, 0); // Reset to start of day
 
-            // Wait a bit before expiring subscriptions
-            setTimeout(async () => {
-              console.log("⏰ Expiring subscriptions...");
+        // Check every hour if it's time to run daily jobs
+        setInterval(
+          async () => {
+            const now = new Date();
+            const hoursSinceLastRun = (now - lastDailyRun) / (1000 * 60 * 60);
+
+            // Run if it's been at least 24 hours since last run and it's around 2-3 AM
+            if (
+              hoursSinceLastRun >= 24 &&
+              now.getHours() >= 2 &&
+              now.getHours() < 4
+            ) {
+              console.log("🔄 Processing subscription auto-renewals...");
               try {
-                const results = await expireSubscriptions();
-                console.log(`✅ Expired ${results.expired} subscriptions`);
+                const results = await processAutoRenewals();
+                console.log(
+                  `✅ Auto-renewal completed: ${results.successful} successful, ${results.failed} failed`,
+                );
+                if (results.errors.length > 0) {
+                  console.error("❌ Renewal errors:", results.errors);
+                }
               } catch (error) {
-                console.error("❌ Error expiring subscriptions:", error);
+                console.error("❌ Error processing auto-renewals:", error);
               }
-            }, 60000); // Wait 1 minute after renewals
 
-            lastDailyRun = new Date();
-          }
-        },
-        60 * 60 * 1000,
-      ); // Check every hour
+              // Wait a bit before expiring subscriptions
+              setTimeout(async () => {
+                console.log("⏰ Expiring subscriptions...");
+                try {
+                  const results = await expireSubscriptions();
+                  console.log(`✅ Expired ${results.expired} subscriptions`);
+                } catch (error) {
+                  console.error("❌ Error expiring subscriptions:", error);
+                }
+              }, 60000); // Wait 1 minute after renewals
 
-      console.log("⏰ Subscription renewal background jobs started");
-    } catch (error) {
-      console.warn(
-        "⚠️ Could not setup subscription renewal jobs:",
-        error.message,
-      );
-    }
-
-    // Community subscription expiration checker (runs daily)
-    try {
-      let lastCommunityCheck = new Date(0);
-      setInterval(
-        async () => {
-          const now = new Date();
-          const hoursSinceLastCheck =
-            (now - lastCommunityCheck) / (1000 * 60 * 60);
-
-          // Run once per day (check hourly, execute only once)
-          if (hoursSinceLastCheck >= 24) {
-            console.log("🔄 Checking community subscription expirations...");
-            try {
-              const { checkAndProcessCommunitySubscriptions } =
-                await import("./src/services/communitySubscriptionExpirationService.js");
-              await checkAndProcessCommunitySubscriptions();
-              console.log("✅ Community subscription check completed");
-            } catch (error) {
-              console.error(
-                "❌ Error checking community subscriptions:",
-                error,
-              );
+              lastDailyRun = new Date();
             }
-            lastCommunityCheck = new Date();
-          }
-        },
-        60 * 60 * 1000,
-      ); // Check hourly
+          },
+          60 * 60 * 1000,
+        ); // Check every hour
 
-      console.log("⏰ Community subscription expiration checker started");
-    } catch (error) {
-      console.warn(
-        "⚠️ Could not setup community subscription checker:",
-        error.message,
-      );
-    }
-
-    // Exchange rate update job (hourly; no startup burst — avoids pool stampede)
-    try {
-      const { runExchangeRateUpdate } =
-        await import("./src/scripts/updateExchangeRates.js");
-
-      scheduleBackgroundInterval(
-        "exchange-rates",
-        runExchangeRateUpdate,
-        60 * 60 * 1000
-      );
-
-      console.log("⏰ Exchange rate update job started (hourly, serialized)");
-    } catch (error) {
-      console.warn(
-        "⚠️ Could not setup exchange rate update job:",
-        error.message,
-      );
-    }
-
-    // Expired cart cleanup job (runs daily)
-    try {
-      const { cleanupExpiredCarts } =
-        await import("./src/scripts/cleanupExpiredCarts.js");
-
-      // Schedule daily cleanup (runs at 3 AM)
-      let lastCartCleanup = new Date(0);
-      setInterval(
-        async () => {
-          const now = new Date();
-          const hoursSinceLastCleanup =
-            (now - lastCartCleanup) / (1000 * 60 * 60);
-
-          if (
-            hoursSinceLastCleanup >= 24 &&
-            now.getHours() >= 3 &&
-            now.getHours() < 4
-          ) {
-            scheduleBackgroundJob("expired-cart-cleanup", async () => {
-              console.log("🔄 Cleaning up expired guest carts...");
-              await cleanupExpiredCarts();
-              lastCartCleanup = new Date();
-            });
-          }
-        },
-        60 * 60 * 1000,
-      );
-
-      console.log("⏰ Expired cart cleanup job started (daily at 3 AM)");
-    } catch (error) {
-      console.warn(
-        "⚠️ Could not setup expired cart cleanup job:",
-        error.message,
-      );
-    }
-
-    // Expire stale pending event ticket orders + send start reminders
-    try {
-      const { expireStalePendingOrders } = await import(
-        "./src/services/eventTicketService.js"
-      );
-      const { sendDueEventReminders } = await import(
-        "./src/services/eventReminderService.js"
-      );
-      setTimeout(() => {
-        scheduleBackgroundInterval(
-          "event-ticket-cleanup",
-          expireStalePendingOrders,
-          15 * 60 * 1000
+        console.log("⏰ Subscription renewal background jobs started");
+      } catch (error) {
+        console.warn(
+          "⚠️ Could not setup subscription renewal jobs:",
+          error.message,
         );
+      }
+
+      // Community subscription expiration checker (runs daily)
+      try {
+        let lastCommunityCheck = new Date(0);
+        setInterval(
+          async () => {
+            const now = new Date();
+            const hoursSinceLastCheck =
+              (now - lastCommunityCheck) / (1000 * 60 * 60);
+
+            // Run once per day (check hourly, execute only once)
+            if (hoursSinceLastCheck >= 24) {
+              console.log("🔄 Checking community subscription expirations...");
+              try {
+                const { checkAndProcessCommunitySubscriptions } =
+                  await import("./src/services/communitySubscriptionExpirationService.js");
+                await checkAndProcessCommunitySubscriptions();
+                console.log("✅ Community subscription check completed");
+              } catch (error) {
+                console.error(
+                  "❌ Error checking community subscriptions:",
+                  error,
+                );
+              }
+              lastCommunityCheck = new Date();
+            }
+          },
+          60 * 60 * 1000,
+        ); // Check hourly
+
+        console.log("⏰ Community subscription expiration checker started");
+      } catch (error) {
+        console.warn(
+          "⚠️ Could not setup community subscription checker:",
+          error.message,
+        );
+      }
+
+      // Exchange rate update job (hourly; no startup burst — avoids pool stampede)
+      try {
+        const { runExchangeRateUpdate } =
+          await import("./src/scripts/updateExchangeRates.js");
+
         scheduleBackgroundInterval(
-          "event-ticket-reminders",
-          sendDueEventReminders,
-          15 * 60 * 1000
+          "exchange-rates",
+          runExchangeRateUpdate,
+          60 * 60 * 1000,
+        );
+
+        console.log("⏰ Exchange rate update job started (hourly, serialized)");
+      } catch (error) {
+        console.warn(
+          "⚠️ Could not setup exchange rate update job:",
+          error.message,
+        );
+      }
+
+      // Expired cart cleanup job (runs daily)
+      try {
+        const { cleanupExpiredCarts } =
+          await import("./src/scripts/cleanupExpiredCarts.js");
+
+        // Schedule daily cleanup (runs at 3 AM)
+        let lastCartCleanup = new Date(0);
+        setInterval(
+          async () => {
+            const now = new Date();
+            const hoursSinceLastCleanup =
+              (now - lastCartCleanup) / (1000 * 60 * 60);
+
+            if (
+              hoursSinceLastCleanup >= 24 &&
+              now.getHours() >= 3 &&
+              now.getHours() < 4
+            ) {
+              scheduleBackgroundJob("expired-cart-cleanup", async () => {
+                console.log("🔄 Cleaning up expired guest carts...");
+                await cleanupExpiredCarts();
+                lastCartCleanup = new Date();
+              });
+            }
+          },
+          60 * 60 * 1000,
+        );
+
+        console.log("⏰ Expired cart cleanup job started (daily at 3 AM)");
+      } catch (error) {
+        console.warn(
+          "⚠️ Could not setup expired cart cleanup job:",
+          error.message,
+        );
+      }
+
+      // Expire stale pending event ticket orders + send start reminders
+      try {
+        const { expireStalePendingOrders } =
+          await import("./src/services/eventTicketService.js");
+        const { sendDueEventReminders } =
+          await import("./src/services/eventReminderService.js");
+        setTimeout(
+          () => {
+            scheduleBackgroundInterval(
+              "event-ticket-cleanup",
+              expireStalePendingOrders,
+              15 * 60 * 1000,
+            );
+            scheduleBackgroundInterval(
+              "event-ticket-reminders",
+              sendDueEventReminders,
+              15 * 60 * 1000,
+            );
+            console.log(
+              "⏰ Event ticket cleanup + reminders started (every 15 min, serialized)",
+            );
+          },
+          10 * 60 * 1000,
+        );
+      } catch (error) {
+        console.warn(
+          "⚠️ Could not setup event ticket reservation cleanup:",
+          error.message,
+        );
+      }
+
+      // Active coaching session tracker: auto-ends sessions whose scheduled
+      // time is up, sends 10/5-min warnings, and warns on low coaching-hours
+      // balance. Was previously defined but never scheduled — sessions could
+      // stay "active" (and billing hours) forever if a tutor forgot to end one.
+      try {
+        const { trackActiveSessions } =
+          await import("./src/services/coachingTimeTracker.js");
+        scheduleBackgroundInterval(
+          "coaching-session-tracker",
+          trackActiveSessions,
+          60 * 1000,
         );
         console.log(
-          "⏰ Event ticket cleanup + reminders started (every 15 min, serialized)"
+          "⏰ Coaching session tracker started (every 1 min, serialized)",
         );
-      }, 10 * 60 * 1000);
-    } catch (error) {
-      console.warn(
-        "⚠️ Could not setup event ticket reservation cleanup:",
-        error.message
-      );
-    }
+      } catch (error) {
+        console.warn(
+          "⚠️ Could not setup coaching session tracker:",
+          error.message,
+        );
+      }
 
-    // Active coaching session tracker: auto-ends sessions whose scheduled
-    // time is up, sends 10/5-min warnings, and warns on low coaching-hours
-    // balance. Was previously defined but never scheduled — sessions could
-    // stay "active" (and billing hours) forever if a tutor forgot to end one.
-    try {
-      const { trackActiveSessions } = await import(
-        "./src/services/coachingTimeTracker.js"
-      );
-      scheduleBackgroundInterval(
-        "coaching-session-tracker",
-        trackActiveSessions,
-        60 * 1000
-      );
-      console.log("⏰ Coaching session tracker started (every 1 min, serialized)");
-    } catch (error) {
-      console.warn("⚠️ Could not setup coaching session tracker:", error.message);
-    }
+      // Product popularity score update job (runs daily)
+      try {
+        const { runProductPopularityUpdate } =
+          await import("./src/scripts/updateProductPopularity.js");
 
-    // Product popularity score update job (runs daily)
-    try {
-      const { runProductPopularityUpdate } =
-        await import("./src/scripts/updateProductPopularity.js");
+        let lastPopularityUpdate = new Date(0);
+        setInterval(
+          async () => {
+            const now = new Date();
+            const hoursSinceLastUpdate =
+              (now - lastPopularityUpdate) / (1000 * 60 * 60);
 
-      let lastPopularityUpdate = new Date(0);
-      setInterval(
-        async () => {
-          const now = new Date();
-          const hoursSinceLastUpdate =
-            (now - lastPopularityUpdate) / (1000 * 60 * 60);
+            if (
+              hoursSinceLastUpdate >= 24 &&
+              now.getHours() >= 2 &&
+              now.getHours() < 3
+            ) {
+              scheduleBackgroundJob("product-popularity", async () => {
+                console.log("🔄 Updating product popularity scores...");
+                await runProductPopularityUpdate();
+                lastPopularityUpdate = new Date();
+              });
+            }
+          },
+          60 * 60 * 1000,
+        );
 
-          if (
-            hoursSinceLastUpdate >= 24 &&
-            now.getHours() >= 2 &&
-            now.getHours() < 3
-          ) {
-            scheduleBackgroundJob("product-popularity", async () => {
-              console.log("🔄 Updating product popularity scores...");
-              await runProductPopularityUpdate();
-              lastPopularityUpdate = new Date();
-            });
-          }
-        },
-        60 * 60 * 1000,
-      );
-
-      console.log("⏰ Product popularity update job started (daily at 2 AM)");
-    } catch (error) {
-      console.warn(
-        "⚠️ Could not setup product popularity update job:",
-        error.message,
-      );
-    }
+        console.log("⏰ Product popularity update job started (daily at 2 AM)");
+      } catch (error) {
+        console.warn(
+          "⚠️ Could not setup product popularity update job:",
+          error.message,
+        );
+      }
     } // end isPrimaryInstance (background jobs)
 
     server.listen(PORT, () => {
