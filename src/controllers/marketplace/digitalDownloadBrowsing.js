@@ -5,6 +5,7 @@ import { SoleTutor, Organization } from "../../models/marketplace/index.js";
 import { Op } from "sequelize";
 import { supabase } from "../../utils/supabase.js";
 import { db } from "../../database/database.js";
+import { productViewUrl } from "../../utils/productViewUrl.js";
 
 /**
  * Browse all published digital downloads
@@ -82,14 +83,14 @@ export const browseDigitalDownloads = TryCatchFunction(async (req, res) => {
       {
         model: SoleTutor,
         as: "soleTutor",
-        attributes: ["id", "fname", "lname", "email"],
+        attributes: ["id", "fname", "lname", "email", "phone"],
         required: false,
         on: db.Sequelize.literal(`"DigitalDownloads"."owner_id" = "soleTutor"."id" AND "DigitalDownloads"."owner_type" = 'sole_tutor'`),
       },
       {
         model: Organization,
         as: "organization",
-        attributes: ["id", "name", "email"],
+        attributes: ["id", "name", "email", "phone"],
         required: false,
         on: db.Sequelize.literal(`"DigitalDownloads"."owner_id" = "organization"."id" AND "DigitalDownloads"."owner_type" = 'organization'`),
       },
@@ -124,8 +125,11 @@ export const browseDigitalDownloads = TryCatchFunction(async (req, res) => {
             id: owner.id,
             name: owner.name || `${owner.fname || ""} ${owner.lname || ""}`.trim(),
             type: downloadJson.owner_type,
+            email: owner.email || null,
+            phone: owner.phone || null,
           }
         : null,
+      ...productViewUrl("digital_download", downloadJson),
       created_at: downloadJson.created_at,
     };
   });
@@ -162,14 +166,14 @@ export const getDigitalDownloadById = TryCatchFunction(async (req, res) => {
       {
         model: SoleTutor,
         as: "soleTutor",
-        attributes: ["id", "fname", "lname", "email", "bio"],
+        attributes: ["id", "fname", "lname", "email", "phone", "bio"],
         required: false,
         on: db.Sequelize.literal(`"DigitalDownloads"."owner_id" = "soleTutor"."id" AND "DigitalDownloads"."owner_type" = 'sole_tutor'`),
       },
       {
         model: Organization,
         as: "organization",
-        attributes: ["id", "name", "email", "description"],
+        attributes: ["id", "name", "email", "phone", "description"],
         required: false,
         on: db.Sequelize.literal(`"DigitalDownloads"."owner_id" = "organization"."id" AND "DigitalDownloads"."owner_type" = 'organization'`),
       },
@@ -224,11 +228,15 @@ export const getDigitalDownloadById = TryCatchFunction(async (req, res) => {
           ? {
               id: owner.id,
               name: owner.name || `${owner.fname || ""} ${owner.lname || ""}`.trim(),
-              type: downloadJson.owner_type,
-              bio: owner.bio || owner.description || null,
-            }
-          : null,
+            email: owner.email || null,
+            phone: owner.phone || null,
+            type: downloadJson.owner_type,
+            bio: owner.bio || owner.description || null,
+          }
+        : null,
         is_purchased,
+        guest_checkout: true,
+        ...productViewUrl("digital_download", downloadJson),
         created_at: downloadJson.created_at,
       },
     },

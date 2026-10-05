@@ -12,6 +12,7 @@ import { invalidateCache } from "../../middlewares/cacheMiddleware.js";
 import multer from "multer";
 import { supabase } from "../../utils/supabase.js";
 import { generateCourseSlug } from "../../utils/productSlugHelper.js";
+import { parseDiscountPercent } from "../../utils/coursePricing.js";
 
 // Configure multer for course image uploads
 const uploadCourseImage = multer({
@@ -279,6 +280,9 @@ export const createCourse = TryCatchFunction(async (req, res) => {
     enrollment_limit,
     access_duration_days,
     image_url, // Can be provided as URL or uploaded as file
+    discount_percent,
+    discount_starts_at,
+    discount_ends_at,
   } = req.body;
 
   // Validation - Required fields
@@ -590,6 +594,15 @@ export const createCourse = TryCatchFunction(async (req, res) => {
         access_duration_days: access_duration_days
           ? parseInt(access_duration_days)
           : null,
+        discount_percent: (() => {
+          try {
+            return parseDiscountPercent(discount_percent) ?? 0;
+          } catch (e) {
+            throw new ErrorClass(e.message, 400);
+          }
+        })(),
+        discount_starts_at: discount_starts_at || null,
+        discount_ends_at: discount_ends_at || null,
         date: new Date(),
       },
       { transaction }
@@ -700,6 +713,9 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
     enrollment_limit,
     access_duration_days,
     image_url,
+    discount_percent,
+    discount_starts_at,
+    discount_ends_at,
   } = req.body;
 
   // Validation for published status: free (0) or paid (>0) both allowed
@@ -889,6 +905,17 @@ export const updateCourse = TryCatchFunction(async (req, res) => {
     updateData.access_duration_days = access_duration_days
       ? parseInt(access_duration_days)
       : null;
+  if (discount_percent !== undefined) {
+    try {
+      updateData.discount_percent = parseDiscountPercent(discount_percent) ?? 0;
+    } catch (e) {
+      throw new ErrorClass(e.message, 400);
+    }
+  }
+  if (discount_starts_at !== undefined)
+    updateData.discount_starts_at = discount_starts_at || null;
+  if (discount_ends_at !== undefined)
+    updateData.discount_ends_at = discount_ends_at || null;
 
   await course.update(updateData);
 

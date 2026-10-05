@@ -14,6 +14,9 @@ import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { getProductReviewStats } from "../../services/productReviewService.js";
 import { Op } from "sequelize";
+import { productViewUrl } from "../../utils/productViewUrl.js";
+import { formatOwnerContact } from "../../utils/ownerContact.js";
+import { getCourseSalePricing } from "../../utils/coursePricing.js";
 
 /**
  * Browse all products (public - no auth required)
@@ -96,6 +99,10 @@ export const browseStoreProducts = TryCatchFunction(async (req, res) => {
             "duration_days",
             "owner_type",
             "owner_id",
+            "discount_percent",
+            "discount_starts_at",
+            "discount_ends_at",
+            "price_usd",
           ],
         }));
         break;
@@ -205,11 +212,11 @@ export const browseStoreProducts = TryCatchFunction(async (req, res) => {
       if (ownerId && ownerType) {
         if (ownerType === "sole_tutor") {
           tutor = await SoleTutor.findByPk(ownerId, {
-            attributes: ["id", "fname", "lname", "profile_image"],
+            attributes: ["id", "fname", "lname", "profile_image", "email", "phone"],
           });
         } else if (ownerType === "organization") {
           tutor = await Organization.findByPk(ownerId, {
-            attributes: ["id", "name", "logo"],
+            attributes: ["id", "name", "logo", "email", "phone", "website"],
           });
         }
       }
@@ -227,9 +234,10 @@ export const browseStoreProducts = TryCatchFunction(async (req, res) => {
         image_url: product.image_url || product.cover_image,
         category: product.category,
         slug: product.slug,
+        ...productViewUrl(type, product),
         tutor: tutor
           ? {
-              id: tutor.id,
+              ...formatOwnerContact(tutor, ownerType),
               name:
                 ownerType === "sole_tutor"
                   ? `${tutor.fname} ${tutor.lname || ""}`.trim()
@@ -243,6 +251,11 @@ export const browseStoreProducts = TryCatchFunction(async (req, res) => {
       // Add type-specific fields
       if (type === "course") {
         productData.duration_days = product.duration_days;
+        const pricing = getCourseSalePricing(product);
+        productData.price = parseFloat(pricing.sale_price);
+        productData.list_price = parseFloat(pricing.list_price);
+        productData.discount_percent = pricing.discount_percent;
+        productData.discount_active = pricing.discount_active;
       } else if (type === "ebook" || type === "digital_download") {
         productData.author = product.author;
         productData.pages = product.pages;
@@ -350,6 +363,9 @@ export const getStoreProduct = TryCatchFunction(async (req, res) => {
           "course_outline",
           "owner_type",
           "owner_id",
+          "discount_percent",
+          "discount_starts_at",
+          "discount_ends_at",
         ],
       });
       break;
@@ -465,11 +481,11 @@ export const getStoreProduct = TryCatchFunction(async (req, res) => {
   if (ownerId && ownerType) {
     if (ownerType === "sole_tutor") {
       tutor = await SoleTutor.findByPk(ownerId, {
-        attributes: ["id", "fname", "lname", "mname", "profile_image", "bio", "specialization"],
+        attributes: ["id", "fname", "lname", "mname", "profile_image", "bio", "specialization", "email", "phone"],
       });
     } else if (ownerType === "organization") {
       tutor = await Organization.findByPk(ownerId, {
-        attributes: ["id", "name", "logo", "description"],
+        attributes: ["id", "name", "logo", "description", "email", "phone", "website"],
       });
     }
   }
@@ -488,9 +504,10 @@ export const getStoreProduct = TryCatchFunction(async (req, res) => {
     image_url: product.image_url || product.cover_image,
     category: product.category,
     slug: product.slug,
+    ...productViewUrl(type, product),
     tutor: tutor
       ? {
-          id: tutor.id,
+          ...formatOwnerContact(tutor, ownerType),
           name:
             ownerType === "sole_tutor"
               ? `${tutor.fname} ${tutor.lname || ""}`.trim()
@@ -508,6 +525,12 @@ export const getStoreProduct = TryCatchFunction(async (req, res) => {
     productData.enrollment_limit = product.enrollment_limit;
     productData.access_duration_days = product.access_duration_days;
     productData.course_outline = product.course_outline;
+    const pricing = getCourseSalePricing(product);
+    productData.price = parseFloat(pricing.sale_price);
+    productData.list_price = parseFloat(pricing.list_price);
+    productData.discount_percent = pricing.discount_percent;
+    productData.discount_active = pricing.discount_active;
+    productData.requires_account = true;
   } else if (type === "ebook") {
     productData.author = product.author;
     productData.pages = product.pages;
@@ -521,6 +544,7 @@ export const getStoreProduct = TryCatchFunction(async (req, res) => {
     productData.dimensions = product.dimensions;
     productData.resolution = product.resolution;
     productData.tags = product.tags || [];
+    productData.guest_checkout = true;
   } else if (type === "community") {
     productData.member_count = product.member_count;
     productData.trial_days = product.trial_days;

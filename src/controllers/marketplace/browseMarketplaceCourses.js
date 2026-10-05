@@ -5,6 +5,8 @@ import { Courses } from "../../models/course/courses.js";
 import { CourseReg } from "../../models/course_reg.js";
 import { Staff } from "../../models/auth/staff.js";
 import { Op } from "sequelize";
+import { getCourseSalePricing } from "../../utils/coursePricing.js";
+import { productViewUrl } from "../../utils/productViewUrl.js";
 
 /**
  * Browse all available marketplace courses
@@ -111,6 +113,10 @@ export const browseMarketplaceCourses = TryCatchFunction(async (req, res) => {
       "category",
       "enrollment_limit",
       "access_duration_days",
+      "discount_percent",
+      "discount_starts_at",
+      "discount_ends_at",
+      "slug",
     ],
     order: [["id", "DESC"]],
     limit: Number(limit),
@@ -136,14 +142,21 @@ export const browseMarketplaceCourses = TryCatchFunction(async (req, res) => {
   const coursesWithOwnership = courses.map((course) => {
     const courseData = course.toJSON();
     const isOwned = ownedCourseIds.includes(courseData.id);
-    const coursePrice = parseFloat(course.price) || 0;
+    const pricing = getCourseSalePricing(course);
+    const coursePrice = parseFloat(pricing.sale_price);
 
     return {
       ...courseData,
       price: coursePrice,
-      is_owned: isOwned, // Whether student already owns this course
-      requires_purchase: !isOwned && coursePrice > 0, // Needs purchase if not owned and has price
+      list_price: parseFloat(pricing.list_price),
+      discount_percent: pricing.discount_percent,
+      discount_active: pricing.discount_active,
+      is_owned: isOwned,
+      requires_purchase: !isOwned && coursePrice > 0,
+      requires_account: true,
       purchase_endpoint: !isOwned ? "/api/marketplace/courses/purchase" : null,
+      bva_endpoint: !isOwned && coursePrice > 0 ? "/api/marketplace/payments/bva" : null,
+      ...productViewUrl("course", courseData),
       instructor: courseData.instructor,
     };
   });

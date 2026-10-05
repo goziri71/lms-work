@@ -20,7 +20,7 @@ import {
   getTransactionAmount,
   getTransactionReference,
 } from "./flutterwaveService.js";
-import { supabase } from "../utils/supabase.js";
+import { attachPaymentOptions } from "./bvaPaymentService.js";
 
 export const GUEST_RESERVATION_MINUTES = 15;
 
@@ -38,26 +38,10 @@ function normalizeEmail(email) {
 
 async function loadProduct(productType, productId) {
   if (productType === "course") {
-    const course = await Courses.findByPk(productId);
-    if (!course) throw new ErrorClass("Course not found", 404);
-    if (!course.is_marketplace || course.marketplace_status !== "published") {
-      throw new ErrorClass("This course is not available for purchase", 400);
-    }
-    const price = parseFloat(course.price || 0);
-    if (Number.isNaN(price) || price < 0) {
-      throw new ErrorClass("Course price is invalid", 400);
-    }
-    return {
-      product_type: "course",
-      product_id: course.id,
-      title: course.title,
-      price,
-      currency: (course.currency || "NGN").toUpperCase(),
-      owner_type: course.owner_type,
-      owner_id: course.owner_id,
-      is_free: price === 0 || course.pricing_type === "free",
-      enrollment_limit: course.enrollment_limit,
-    };
+    throw new ErrorClass(
+      "Courses cannot be purchased as a guest. Create a student account first.",
+      400
+    );
   }
 
   const download = await DigitalDownloads.findByPk(productId);
@@ -422,20 +406,23 @@ export async function createGuestCheckoutOrder({
 }
 
 export function buildGuestFlutterwavePayload(order) {
-  return {
-    provider: "flutterwave",
-    tx_ref: order.transaction_ref,
-    amount: parseFloat(order.total_amount).toFixed(2),
-    currency: order.currency,
-    public_key: process.env.FLUTTERWAVE_PUBLIC_KEY?.trim() || null,
-    meta: {
-      order_id: order.id,
-      product_type: order.product_type,
-      product_id: order.product_id,
-      type: "marketplace_guest",
-      buyer_email: order.buyer_email,
+  return attachPaymentOptions(
+    {
+      provider: "flutterwave",
+      tx_ref: order.transaction_ref,
+      amount: parseFloat(order.total_amount).toFixed(2),
+      currency: order.currency,
+      public_key: process.env.FLUTTERWAVE_PUBLIC_KEY?.trim() || null,
+      meta: {
+        order_id: order.id,
+        product_type: order.product_type,
+        product_id: order.product_id,
+        type: "marketplace_guest",
+        buyer_email: order.buyer_email,
+      },
     },
-  };
+    { source: "guest_order", order_id: order.id }
+  );
 }
 
 export async function confirmGuestOrderFlutterwave(orderId, { transactionReference, flutterwaveTransactionId }) {

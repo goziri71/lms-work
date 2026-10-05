@@ -33,8 +33,11 @@ export const createGuestCheckout = TryCatchFunction(async (req, res) => {
   if (!product_type || !product_id) {
     throw new ErrorClass("product_type and product_id are required", 400);
   }
-  if (!["course", "digital_download"].includes(String(product_type))) {
-    throw new ErrorClass("product_type must be course or digital_download", 400);
+  if (!["digital_download"].includes(String(product_type))) {
+    throw new ErrorClass(
+      "Guest checkout is only for digital downloads. Courses require a student account.",
+      400
+    );
   }
 
   const studentId =

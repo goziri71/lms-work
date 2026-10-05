@@ -673,3 +673,109 @@ export const getTransferStatus = async (transferId) => {
     );
   }
 };
+
+/**
+ * Create a one-time Flutterwave bank virtual account (BVA / bank transfer).
+ * Buyer pays into the generated NUBAN; Flutterwave fires charge.completed.
+ */
+export async function createOneTimeVirtualAccount({
+  txRef,
+  amount,
+  currency = "NGN",
+  email,
+  phoneNumber,
+  fullname,
+  narration,
+  meta = {},
+  expiryMinutes = 30,
+}) {
+  if (!FLUTTERWAVE_SECRET_KEY) {
+    throw new ErrorClass("Flutterwave secret key not configured", 500);
+  }
+
+  const cur = String(currency || "NGN").toUpperCase();
+  if (cur !== "NGN") {
+    throw new ErrorClass(
+      "One-time bank virtual account is only available for NGN payments",
+      400
+    );
+  }
+
+  const amt = parseFloat(amount);
+  if (!txRef || !email || Number.isNaN(amt) || amt <= 0) {
+    throw new ErrorClass("tx_ref, email, and a positive amount are required", 400);
+  }
+
+  try {
+    const response = await axios.post(
+      `${FLUTTERWAVE_BASE_URL}/charges?type=bank_transfer`,
+      {
+        tx_ref: String(txRef),
+        amount: amt,
+        currency: "NGN",
+        email: String(email).trim().toLowerCase(),
+        phone_number: phoneNumber || undefined,
+        fullname: fullname || undefined,
+        narration: narration || `Nomada payment ${txRef}`,
+        is_permanent: false,
+        expires: expiryMinutes * 60,
+        meta,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 20000,
+        ...getQuotaGuardAxiosProxyConfig(),
+      }
+    );
+
+    const data = response.data?.data;
+    if (response.data?.status !== "success" || !data) {
+      throw new ErrorClass(
+        response.data?.message || "Failed to create bank virtual account",
+        400
+      );
+    }
+
+    const metaObj = data.meta || {};
+    const authorization = data.authorization || {};
+
+    return {
+      provider: "flutterwave_bva",
+      tx_ref: data.tx_ref || txRef,
+      flw_ref: data.flw_ref || null,
+      amount: parseFloat(data.amount || amt).toFixed(2),
+      currency: "NGN",
+      account_number:
+        data.account_number ||
+        authorization.transfer_account ||
+        metaObj.authorization?.transfer_account ||
+        null,
+      account_name:
+        data.account_name ||
+        authorization.transfer_bank ||
+        "Flutterwave",
+      bank_name:
+        data.bank_name ||
+        authorization.transfer_bank ||
+        "Flutterwave",
+      expires_at:
+        data.account_expiration ||
+        authorization.account_expiration ||
+        null,
+      note:
+        data.note ||
+        authorization.transfer_note ||
+        "Transfer the exact amount to this account to complete payment.",
+    };
+  } catch (error) {
+    if (error instanceof ErrorClass) throw error;
+    const message =
+      error.response?.data?.message ||
+      error.message ||
+      "Failed to create bank virtual account";
+    throw new ErrorClass(message, error.response?.status || 500);
+  }
+}

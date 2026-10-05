@@ -15,6 +15,7 @@ import {
   generateAccessToken,
   RESERVATION_MINUTES,
 } from "../../services/eventTicketService.js";
+import { attachPaymentOptions } from "../../services/bvaPaymentService.js";
 import { applyCouponToOrderPricing } from "../../services/eventCouponService.js";
 import { logEventActivity, actorFromReq } from "../../services/eventActivityService.js";
 
@@ -235,7 +236,10 @@ async function respondWithOrder(res, order, event) {
     message: "Order created",
     data: {
       order: formatOrder(order),
-      payment: buildFlutterwavePaymentPayload(order),
+      payment: attachPaymentOptions(
+        buildFlutterwavePaymentPayload(order),
+        { source: "event_order", order_id: order.id }
+      ),
       requires_approval: !!event?.requires_approval,
     },
   });

@@ -205,6 +205,10 @@ import {
   confirmGuestCheckoutPayment,
 } from "../controllers/marketplace/marketplaceGuestCheckout.js";
 import {
+  initiateBvaPayment,
+  confirmBvaPayment,
+} from "../controllers/marketplace/bvaPayments.js";
+import {
   getGuestPurchaseByToken,
   guestPurchaseDownloadUrl,
   resendGuestPurchaseEmail,
@@ -540,7 +544,7 @@ router.get(
 router.post("/tickets/order/:accessToken/resend-email", resendTicketEmail);
 router.get("/my-tickets", authorize, getMyTickets);
 
-// Guest checkout — courses & digital products (no account required)
+// Guest checkout — digital downloads only (no account required)
 router.post("/guest-checkout", optionalAuthorize, createGuestCheckout);
 router.post(
   "/guest-orders/:orderId/confirm-payment",
@@ -555,6 +559,10 @@ router.post(
   "/guest-orders/access/:accessToken/resend-email",
   resendGuestPurchaseEmail,
 );
+
+// One-time bank virtual account (BVA)
+router.post("/payments/bva", optionalAuthorize, initiateBvaPayment);
+router.post("/payments/bva/confirm", optionalAuthorize, confirmBvaPayment);
 
 // Top Products (No authentication required)
 router.get("/products/featured", getFeaturedProducts);

@@ -5,6 +5,7 @@ import { CoachingSessionPurchase } from "../../models/marketplace/coachingSessio
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { Op, Sequelize } from "sequelize";
+import { productViewUrl } from "../../utils/productViewUrl.js";
 
 /**
  * Browse available coaching sessions
@@ -74,13 +75,13 @@ export const browseSessions = TryCatchFunction(async (req, res) => {
       {
         model: SoleTutor,
         as: "soleTutorOwner",
-        attributes: ["id", "fname", "lname", "email"],
+        attributes: ["id", "fname", "lname", "email", "phone"],
         required: false,
       },
       {
         model: Organization,
         as: "organizationOwner",
-        attributes: ["id", "name", "email"],
+        attributes: ["id", "name", "email", "phone"],
         required: false,
       },
     ],
@@ -160,11 +161,14 @@ export const browseSessions = TryCatchFunction(async (req, res) => {
                   id: (s.soleTutorOwner || s.organizationOwner).id,
                   name: tutorName,
                   type: s.soleTutorOwner ? "sole_tutor" : "organization",
+                  email: (s.soleTutorOwner || s.organizationOwner).email || null,
+                  phone: (s.soleTutorOwner || s.organizationOwner).phone || null,
                 }
               : null,
           purchased: studentId ? purchasedSessionIds.includes(s.id) : false,
           status: s.status,
           display_status: displayStatus,
+          ...productViewUrl("coaching", s),
           can_purchase:
             canPurchase &&
             s.pricing_type === "paid" &&
@@ -196,13 +200,13 @@ export const getSessionDetails = TryCatchFunction(async (req, res) => {
       {
         model: SoleTutor,
         as: "soleTutorOwner",
-        attributes: ["id", "fname", "lname", "email", "profile_image", "bio"],
+        attributes: ["id", "fname", "lname", "email", "phone", "profile_image", "bio"],
         required: false,
       },
       {
         model: Organization,
         as: "organizationOwner",
-        attributes: ["id", "name", "email", "logo", "description"],
+        attributes: ["id", "name", "email", "phone", "logo", "description"],
         required: false,
       },
     ],
@@ -269,6 +273,7 @@ export const getSessionDetails = TryCatchFunction(async (req, res) => {
             id: session.soleTutorOwner.id,
             name: `${session.soleTutorOwner.fname || ""} ${session.soleTutorOwner.lname || ""}`.trim(),
             email: session.soleTutorOwner.email,
+            phone: session.soleTutorOwner.phone || null,
             profile_image: session.soleTutorOwner.profile_image,
             bio: session.soleTutorOwner.bio,
             type: "sole_tutor",
@@ -278,6 +283,7 @@ export const getSessionDetails = TryCatchFunction(async (req, res) => {
               id: session.organizationOwner.id,
               name: session.organizationOwner.name,
               email: session.organizationOwner.email,
+              phone: session.organizationOwner.phone || null,
               logo: session.organizationOwner.logo,
               description: session.organizationOwner.description,
               type: "organization",
@@ -287,6 +293,8 @@ export const getSessionDetails = TryCatchFunction(async (req, res) => {
       can_join: session.pricing_type === "free" || hasPurchased,
       can_purchase:
         canPurchase && session.pricing_type === "paid" && !hasPurchased,
+      ...productViewUrl("coaching", session),
+      view_url: session.view_link || productViewUrl("coaching", session).view_url,
     },
   });
 });

@@ -14,7 +14,11 @@ import { EBooks } from "../../models/marketplace/ebooks.js";
 import { DigitalDownloads } from "../../models/marketplace/digitalDownloads.js";
 import { Community } from "../../models/marketplace/community.js";
 import { Membership } from "../../models/marketplace/membership.js";
+import { CoachingSession } from "../../models/marketplace/coachingSession.js";
 import { Op } from "sequelize";
+import { productViewUrl } from "../../utils/productViewUrl.js";
+import { formatOwnerContact } from "../../utils/ownerContact.js";
+import { getCourseSalePricing } from "../../utils/coursePricing.js";
 
 /**
  * GET /api/marketplace/public/tutor/:slug/products
@@ -44,6 +48,8 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
       "specialization",
       "rating",
       "total_reviews",
+      "email",
+      "phone",
     ],
   });
 
@@ -67,6 +73,7 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
       rating: tutor.rating ? parseFloat(tutor.rating) : null,
       total_reviews: tutor.total_reviews || 0,
       owner_type: "sole_tutor",
+      contact: formatOwnerContact(tutor, "sole_tutor"),
     };
   } else {
     const org = await Organization.findOne({
@@ -82,6 +89,9 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
         "description",
         "rating",
         "total_reviews",
+        "email",
+        "phone",
+        "website",
       ],
     });
 
@@ -101,10 +111,11 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
       rating: org.rating ? parseFloat(org.rating) : null,
       total_reviews: org.total_reviews || 0,
       owner_type: "organization",
+      contact: formatOwnerContact(org, "organization"),
     };
   }
 
-  const [courses, ebooks, digitalDownloads, communities, memberships] =
+  const [courses, ebooks, digitalDownloads, communities, memberships, coachingSessions] =
     await Promise.all([
       Courses.findAll({
         where: {
@@ -126,6 +137,9 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
           "duration_days",
           "owner_type",
           "owner_id",
+          "discount_percent",
+          "discount_starts_at",
+          "discount_ends_at",
         ],
         order: [["id", "DESC"]],
       }),
@@ -214,6 +228,26 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
         ],
         order: [["id", "DESC"]],
       }),
+      CoachingSession.findAll({
+        where: {
+          tutor_id: ownerId,
+          tutor_type: ownerType,
+          status: { [Op.in]: ["scheduled", "active"] },
+        },
+        attributes: [
+          "id",
+          "title",
+          "description",
+          "price",
+          "currency",
+          "image_url",
+          "category",
+          "view_link",
+          "start_time",
+          "pricing_type",
+        ],
+        order: [["start_time", "ASC"]],
+      }),
     ]);
 
   const formatProduct = (p, type) => {
@@ -227,11 +261,26 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
       image_url: p.image_url || p.cover_image,
       category: p.category,
       slug: p.slug,
+      ...productViewUrl(type === "coaching" ? "coaching" : type, p),
     };
-    if (type === "course") base.duration_days = p.duration_days;
+    if (type === "course") {
+      base.duration_days = p.duration_days;
+      const pricing = getCourseSalePricing(p);
+      base.price = parseFloat(pricing.sale_price);
+      base.list_price = parseFloat(pricing.list_price);
+      base.discount_percent = pricing.discount_percent;
+      base.discount_active = pricing.discount_active;
+      base.requires_account = true;
+    }
     if (type === "ebook") base.pages = p.pages;
     if (type === "community") base.member_count = p.member_count;
     if (type === "membership") base.pricing_type = p.pricing_type;
+    if (type === "digital_download") base.guest_checkout = true;
+    if (type === "coaching") {
+      base.start_time = p.start_time;
+      base.pricing_type = p.pricing_type;
+      if (p.view_link) base.view_url = p.view_link;
+    }
     return base;
   };
 
@@ -241,6 +290,7 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
     ...digitalDownloads.map((p) => formatProduct(p, "digital_download")),
     ...communities.map((p) => formatProduct(p, "community")),
     ...memberships.map((p) => formatProduct(p, "membership")),
+    ...coachingSessions.map((p) => formatProduct(p, "coaching")),
   ];
 
   res.status(200).json({
@@ -256,6 +306,7 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
         digital_downloads: digitalDownloads.length,
         communities: communities.length,
         memberships: memberships.length,
+        coaching: coachingSessions.length,
       },
     },
   });

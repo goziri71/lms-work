@@ -8,6 +8,7 @@ import {
   resendGuestOrderEmail,
 } from "../../services/marketplaceGuestCheckoutService.js";
 import { joinFrontendUrl } from "../../utils/frontendUrl.js";
+import { productViewUrl } from "../../utils/productViewUrl.js";
 
 export const getGuestPurchaseByToken = TryCatchFunction(async (req, res) => {
   const { accessToken } = req.params;
@@ -53,10 +54,16 @@ export const getGuestPurchaseByToken = TryCatchFunction(async (req, res) => {
         : null;
     } else {
       const product = await DigitalDownloads.findByPk(order.product_id, {
-        attributes: ["id", "title", "product_type", "download_enabled", "streaming_enabled"],
+        attributes: ["id", "title", "slug", "product_type", "download_enabled", "streaming_enabled"],
       });
       data.digital_product = product;
       data.can_download = !!product?.download_enabled;
+      data.can_stream = !!product?.streaming_enabled;
+      Object.assign(data, productViewUrl("digital_download", product || { id: order.product_id }));
+      data.view_url = joinFrontendUrl(
+        process.env.FRONTEND_URL,
+        `access/purchase/${order.access_token}`
+      );
     }
   }
 

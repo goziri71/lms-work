@@ -117,6 +117,48 @@ export const flutterwaveWebhook = TryCatchFunction(async (req, res) => {
           }
         }
 
+        if (
+          meta.type === "course_purchase" ||
+          (txRef && String(txRef).startsWith("COURSE-BVA-"))
+        ) {
+          try {
+            const { fulfillCoursePurchaseFromPayment } = await import(
+              "../../services/bvaPaymentService.js"
+            );
+            const courseResult = await fulfillCoursePurchaseFromPayment(
+              txRef,
+              transactionData
+            );
+            if (courseResult.handled) {
+              console.log(`✅ Course BVA purchase fulfilled (${txRef})`);
+              return res.status(200).json({ message: "Webhook received" });
+            }
+          } catch (courseErr) {
+            console.error("Course BVA webhook fulfillment failed:", courseErr);
+          }
+        }
+
+        if (
+          meta.type === "coaching_session" ||
+          (txRef && String(txRef).startsWith("COACH-BVA-"))
+        ) {
+          try {
+            const { fulfillCoachingPurchaseFromPayment } = await import(
+              "../../services/bvaPaymentService.js"
+            );
+            const coachResult = await fulfillCoachingPurchaseFromPayment(
+              txRef,
+              transactionData
+            );
+            if (coachResult.handled) {
+              console.log(`✅ Coaching BVA purchase fulfilled (${txRef})`);
+              return res.status(200).json({ message: "Webhook received" });
+            }
+          } catch (coachErr) {
+            console.error("Coaching BVA webhook fulfillment failed:", coachErr);
+          }
+        }
+
         // Client never called /api/wallet/fund — recover if charge carries meta.student_id from Flutterwave
         const rawSid = meta.student_id ?? meta.studentId;
         if (rawSid != null && String(rawSid).trim() !== "") {

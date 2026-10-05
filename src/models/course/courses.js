@@ -151,6 +151,20 @@ export const Courses = db.define(
       unique: true,
       comment: "URL-friendly slug for public product link",
     },
+    discount_percent: {
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: true,
+      defaultValue: 0,
+      comment: "Sale discount percent off list price (0-100)",
+    },
+    discount_starts_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    discount_ends_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
     is_featured: {
       type: DataTypes.BOOLEAN,
       allowNull: false,

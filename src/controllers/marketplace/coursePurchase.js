@@ -7,6 +7,7 @@ import { processMarketplacePurchase } from "../../services/revenueSharingService
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { getWalletBalance } from "../../services/walletBalanceService.js";
+import { getCourseSalePricing } from "../../utils/coursePricing.js";
 
 /**
  * Purchase marketplace course
@@ -35,8 +36,9 @@ export const purchaseMarketplaceCourse = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("This course is not available on marketplace", 400);
   }
 
-  // Validate course price (0 = free course)
-  const coursePrice = parseFloat(course.price || 0);
+  // Validate course price (0 = free course). Sale price wins when discount is active.
+  const pricing = getCourseSalePricing(course);
+  const coursePrice = parseFloat(pricing.sale_price);
   if (Number.isNaN(coursePrice) || coursePrice < 0) {
     throw new ErrorClass("Course price is invalid or not set", 400);
   }
