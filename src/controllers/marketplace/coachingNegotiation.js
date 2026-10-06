@@ -1,9 +1,102 @@
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { CoachingBookingRequest } from "../../models/marketplace/coachingBookingRequest.js";
+import { CoachingSession } from "../../models/marketplace/coachingSession.js";
 import { TutorCoachingProfile } from "../../models/marketplace/tutorCoachingProfile.js";
 import { Students } from "../../models/auth/student.js";
 import { Op } from "sequelize";
+import { db } from "../../database/database.js";
+
+// A tutor's acceptance of a booking is a real-world calendar commitment, so
+// it must be serialized per tutor — otherwise two concurrent "accept"
+// requests (one on the original proposal, one on a counter-proposal, or two
+// different pending requests) could both pass the conflict check below
+// before either commits. sole_tutor and organization have independent id
+// sequences (the same collision issue fixed elsewhere for Stream identity),
+// so the lock key must include tutor_type, not just tutor_id.
+async function withTutorBookingLock(tutorId, tutorType, fn) {
+  const transaction = await db.transaction();
+  try {
+    await db.query("SELECT pg_advisory_xact_lock(:tutorId, :typeKey)", {
+      replacements: { tutorId, typeKey: tutorType === "sole_tutor" ? 1 : 2 },
+      transaction,
+    });
+    const result = await fn(transaction);
+    await transaction.commit();
+    return result;
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+}
+
+/**
+ * Throws if the tutor already has another accepted-but-not-yet-session'd
+ * booking, or a scheduled/active CoachingSession, overlapping the given
+ * time window. Must be called inside the same locked transaction as the
+ * status change that follows it (see withTutorBookingLock above).
+ */
+async function assertNoSchedulingConflict(
+  tutorId,
+  tutorType,
+  startTime,
+  endTime,
+  excludeBookingId,
+  transaction
+) {
+  const conflictingBooking = await CoachingBookingRequest.findOne({
+    where: {
+      tutor_id: tutorId,
+      tutor_type: tutorType,
+      status: "accepted",
+      id: { [Op.ne]: excludeBookingId },
+      [Op.or]: [
+        {
+          accepted_by: "tutor",
+          proposed_start_time: { [Op.lt]: endTime },
+          proposed_end_time: { [Op.gt]: startTime },
+        },
+        {
+          accepted_by: "student",
+          counter_proposed_start_time: { [Op.lt]: endTime },
+          counter_proposed_end_time: { [Op.gt]: startTime },
+        },
+      ],
+    },
+    transaction,
+  });
+
+  if (conflictingBooking) {
+    throw new ErrorClass(
+      "You already have another accepted booking that overlaps this time slot.",
+      409
+    );
+  }
+
+  const conflictingSession = await CoachingSession.findOne({
+    where: {
+      tutor_id: tutorId,
+      tutor_type: tutorType,
+      status: { [Op.in]: ["scheduled", "active"] },
+      start_time: { [Op.lt]: endTime },
+      end_time: { [Op.gt]: startTime },
+    },
+    transaction,
+  });
+
+  if (conflictingSession) {
+    throw new ErrorClass(
+      "You already have another coaching session scheduled that overlaps this time slot.",
+      409
+    );
+  }
+}
+
+// Bookings move to "accepted" before the student actually pays — give that
+// window a hard deadline instead of letting it sit forever. A background
+// sweep (see coachingTimeTracker.js) expires anything that blows past this,
+// freeing the slot back up.
+const ACCEPTED_PAYMENT_WINDOW_MS = 30 * 60 * 1000;
 
 function getTutorInfo(req) {
   if (!req.user) {
@@ -184,6 +277,7 @@ export const acceptBookingRequest = TryCatchFunction(async (req, res) => {
   }
 
   const startTime = new Date(booking.proposed_start_time);
+  const endTime = new Date(booking.proposed_end_time);
   if (startTime <= new Date()) {
     throw new ErrorClass("The proposed time has already passed", 400);
   }
@@ -192,12 +286,24 @@ export const acceptBookingRequest = TryCatchFunction(async (req, res) => {
   const duration = booking.proposed_duration_minutes;
   const finalPrice = Math.round(hourlyRate * (duration / 60) * 100) / 100;
 
-  booking.status = "accepted";
-  booking.accepted_by = "tutor";
-  booking.accepted_at = new Date();
-  booking.final_price = finalPrice;
-  if (tutor_note) booking.tutor_note = tutor_note.trim();
-  await booking.save();
+  await withTutorBookingLock(tutorId, tutorType, async (transaction) => {
+    await assertNoSchedulingConflict(
+      tutorId,
+      tutorType,
+      startTime,
+      endTime,
+      booking.id,
+      transaction
+    );
+
+    booking.status = "accepted";
+    booking.accepted_by = "tutor";
+    booking.accepted_at = new Date();
+    booking.final_price = finalPrice;
+    booking.expires_at = new Date(Date.now() + ACCEPTED_PAYMENT_WINDOW_MS);
+    if (tutor_note) booking.tutor_note = tutor_note.trim();
+    await booking.save({ transaction });
+  });
 
   res.status(200).json({
     success: true,
@@ -210,6 +316,7 @@ export const acceptBookingRequest = TryCatchFunction(async (req, res) => {
       proposed_start_time: booking.proposed_start_time,
       proposed_end_time: booking.proposed_end_time,
       proposed_duration_minutes: booking.proposed_duration_minutes,
+      payment_due_at: booking.expires_at,
     },
   });
 });
@@ -236,9 +343,16 @@ export const declineBookingRequest = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Booking request not found", 404);
   }
 
-  if (!["pending", "counter_proposed"].includes(booking.status)) {
+  // "accepted" is included here, but only before payment (no session_id
+  // yet) — lets a tutor withdraw an acceptance if the student never pays,
+  // instead of the booking sitting unresolved until the payment-window
+  // sweep catches it.
+  const declinableStatuses = ["pending", "counter_proposed", "accepted"];
+  if (!declinableStatuses.includes(booking.status) || booking.session_id) {
     throw new ErrorClass(
-      `Cannot decline a booking that is ${booking.status}`,
+      booking.session_id
+        ? "A session has already been created for this booking. Use the cancel-session endpoint instead."
+        : `Cannot decline a booking that is ${booking.status}`,
       400
     );
   }
@@ -404,6 +518,7 @@ export const acceptCounterProposal = TryCatchFunction(async (req, res) => {
   }
 
   const startTime = new Date(booking.counter_proposed_start_time);
+  const endTime = new Date(booking.counter_proposed_end_time);
   if (startTime <= new Date()) {
     throw new ErrorClass("The counter-proposed time has already passed", 400);
   }
@@ -412,11 +527,23 @@ export const acceptCounterProposal = TryCatchFunction(async (req, res) => {
   const duration = booking.counter_proposed_duration_minutes;
   const finalPrice = Math.round(hourlyRate * (duration / 60) * 100) / 100;
 
-  booking.status = "accepted";
-  booking.accepted_by = "student";
-  booking.accepted_at = new Date();
-  booking.final_price = finalPrice;
-  await booking.save();
+  await withTutorBookingLock(booking.tutor_id, booking.tutor_type, async (transaction) => {
+    await assertNoSchedulingConflict(
+      booking.tutor_id,
+      booking.tutor_type,
+      startTime,
+      endTime,
+      booking.id,
+      transaction
+    );
+
+    booking.status = "accepted";
+    booking.accepted_by = "student";
+    booking.accepted_at = new Date();
+    booking.final_price = finalPrice;
+    booking.expires_at = new Date(Date.now() + ACCEPTED_PAYMENT_WINDOW_MS);
+    await booking.save({ transaction });
+  });
 
   res.status(200).json({
     success: true,
@@ -429,6 +556,7 @@ export const acceptCounterProposal = TryCatchFunction(async (req, res) => {
       start_time: booking.counter_proposed_start_time,
       end_time: booking.counter_proposed_end_time,
       duration_minutes: booking.counter_proposed_duration_minutes,
+      payment_due_at: booking.expires_at,
     },
   });
 });
@@ -473,3 +601,32 @@ export const declineCounterProposal = TryCatchFunction(async (req, res) => {
     data: { booking_id: booking.id, status: booking.status },
   });
 });
+
+// ============================================
+// BACKGROUND JOB: EXPIRE STALE ACCEPTED-BUT-UNPAID BOOKINGS
+// ============================================
+
+/**
+ * Bookings move to "accepted" before the student pays, with `expires_at`
+ * repurposed as a payment deadline (see acceptBookingRequest /
+ * acceptCounterProposal above). Without this sweep, a booking the student
+ * never pays for stays "accepted" forever — blocking that tutor/time-slot
+ * combination from the overlap check indefinitely with no way to resolve
+ * it other than one party remembering to manually cancel/decline it.
+ * Intended to run periodically from app.js.
+ */
+export async function expireStaleAcceptedBookings() {
+  const [count] = await CoachingBookingRequest.update(
+    { status: "expired" },
+    {
+      where: {
+        status: "accepted",
+        session_id: null,
+        expires_at: { [Op.lt]: new Date() },
+      },
+    }
+  );
+  if (count > 0) {
+    console.log(`⏰ Expired ${count} stale accepted-but-unpaid coaching booking(s)`);
+  }
+}

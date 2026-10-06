@@ -72,65 +72,83 @@ export const getSessionMessages = TryCatchFunction(async (req, res) => {
   // Reverse to show oldest first (for pagination when scrolling up)
   const reversedMessages = messages.reverse();
 
-  // Get sender info for each message
-  const messagesWithSenders = await Promise.all(
-    reversedMessages.map(async (msg) => {
-      let senderInfo;
-      if (msg.sender_type === "tutor") {
-        if (session.tutor_type === "sole_tutor") {
-          const tutor = await SoleTutor.findByPk(msg.sender_id, {
-            attributes: ["id", "fname", "lname", "email"],
-          });
-          senderInfo = tutor
-            ? {
-                id: tutor.id,
-                name: `${tutor.fname} ${tutor.lname}`,
-                email: tutor.email,
-              }
-            : null;
-        } else {
-          const org = await Organization.findByPk(msg.sender_id, {
-            attributes: ["id", "name", "email"],
-          });
-          senderInfo = org
-            ? {
-                id: org.id,
-                name: org.name,
-                email: org.email,
-              }
-            : null;
-        }
-      } else {
-        const student = await Students.findByPk(msg.sender_id, {
-          attributes: ["id", "fname", "lname", "mname", "email"],
-        });
-        senderInfo = student
-          ? {
-              id: student.id,
-              name: `${student.fname || ""} ${student.mname || ""} ${student.lname || ""}`.trim() ||
-                student.email,
-              email: student.email,
-            }
-          : null;
-      }
+  // Resolve sender info with a couple of batched queries instead of one
+  // query per message. A one-on-one session thread only ever has 2
+  // distinct senders (the tutor and the student), but a long thread was
+  // still re-fetching one of them on every single message.
+  const tutorIds = new Set();
+  const studentIds = new Set();
+  for (const msg of reversedMessages) {
+    if (msg.sender_type === "tutor") tutorIds.add(msg.sender_id);
+    else studentIds.add(msg.sender_id);
+  }
 
-      return {
-        id: msg.id,
-        session_id: msg.session_id,
-        sender_id: msg.sender_id,
-        sender_type: msg.sender_type,
-        sender_info: senderInfo,
-        message: msg.message,
-        message_type: msg.message_type,
-        proposed_start_time: msg.proposed_start_time,
-        proposed_end_time: msg.proposed_end_time,
-        status: msg.status,
-        read_at: msg.read_at,
-        created_at: msg.created_at,
-        updated_at: msg.updated_at,
-      };
-    })
-  );
+  const senderMap = new Map(); // `${sender_type}:${sender_id}` -> info
+
+  const queries = [];
+  if (tutorIds.size > 0) {
+    if (session.tutor_type === "sole_tutor") {
+      queries.push(
+        SoleTutor.findAll({
+          where: { id: { [Op.in]: [...tutorIds] } },
+          attributes: ["id", "fname", "lname", "email"],
+        }).then((rows) =>
+          rows.forEach((t) =>
+            senderMap.set(`tutor:${t.id}`, {
+              id: t.id,
+              name: `${t.fname} ${t.lname}`,
+              email: t.email,
+            })
+          )
+        )
+      );
+    } else {
+      queries.push(
+        Organization.findAll({
+          where: { id: { [Op.in]: [...tutorIds] } },
+          attributes: ["id", "name", "email"],
+        }).then((rows) =>
+          rows.forEach((o) =>
+            senderMap.set(`tutor:${o.id}`, { id: o.id, name: o.name, email: o.email })
+          )
+        )
+      );
+    }
+  }
+  if (studentIds.size > 0) {
+    queries.push(
+      Students.findAll({
+        where: { id: { [Op.in]: [...studentIds] } },
+        attributes: ["id", "fname", "lname", "mname", "email"],
+      }).then((rows) =>
+        rows.forEach((s) =>
+          senderMap.set(`student:${s.id}`, {
+            id: s.id,
+            name:
+              `${s.fname || ""} ${s.mname || ""} ${s.lname || ""}`.trim() || s.email,
+            email: s.email,
+          })
+        )
+      )
+    );
+  }
+  await Promise.all(queries);
+
+  const messagesWithSenders = reversedMessages.map((msg) => ({
+    id: msg.id,
+    session_id: msg.session_id,
+    sender_id: msg.sender_id,
+    sender_type: msg.sender_type,
+    sender_info: senderMap.get(`${msg.sender_type}:${msg.sender_id}`) || null,
+    message: msg.message,
+    message_type: msg.message_type,
+    proposed_start_time: msg.proposed_start_time,
+    proposed_end_time: msg.proposed_end_time,
+    status: msg.status,
+    read_at: msg.read_at,
+    created_at: msg.created_at,
+    updated_at: msg.updated_at,
+  }));
 
   res.json({
     status: true,

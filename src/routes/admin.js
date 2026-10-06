@@ -173,6 +173,11 @@ import {
 } from "../controllers/admin/superAdmin/paymentVerification.js";
 
 import {
+  getSettings as getCoachingSettings,
+  updateSettings as updateCoachingSettings,
+} from "../controllers/admin/coachingSettings.js";
+
+import {
   getDashboardStats,
 } from "../controllers/admin/superAdmin/dashboardController.js";
 
@@ -387,6 +392,14 @@ router.get("/payment-setup/:id", adminAuthorize, requireSuperAdmin, getPaymentSe
 router.post("/payment-setup", adminAuthorize, requireSuperAdmin, createPaymentSetup);
 router.put("/payment-setup/:id", adminAuthorize, requireSuperAdmin, updatePaymentSetup);
 router.delete("/payment-setup/:id", adminAuthorize, requireSuperAdmin, deletePaymentSetup);
+
+// ============================================
+// COACHING SETTINGS (Super Admin Only)
+// ============================================
+// Previously defined in the controller but never routed — pricing could
+// only be changed by running a one-off script directly against the DB.
+router.get("/coaching/settings", adminAuthorize, requireSuperAdmin, getCoachingSettings);
+router.put("/coaching/settings", adminAuthorize, requireSuperAdmin, updateCoachingSettings);
 
 // ============================================
 // PAYMENT VERIFICATION (Super Admin Only)

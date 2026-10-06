@@ -108,3 +108,22 @@ export const questionCreationLimiter = rateLimit({
   legacyHeaders: false,
   store: createRedisStore("rl:question:"),
 });
+
+// Coaching booking actions (create/accept/counter/decline/pay) - 20 per
+// 15 minutes per user. These are low-frequency, deliberate actions for a
+// real human to take, so this is generous for legitimate use while still
+// blocking scripted spam against tutors' booking requests or the payment
+// endpoint.
+export const coachingBookingLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: {
+    status: false,
+    code: 429,
+    message: "Too many booking actions. Please slow down and try again shortly.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createRedisStore("rl:coaching_booking:"),
+  keyGenerator: (req) => `user_${req.user?.id || "guest"}`,
+});

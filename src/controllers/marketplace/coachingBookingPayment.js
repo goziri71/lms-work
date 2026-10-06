@@ -61,6 +61,19 @@ export const processBookingPayment = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("This booking has already been processed and a session created", 400);
   }
 
+  // `expires_at` is repurposed as the payment deadline once a booking is
+  // accepted (see coachingNegotiation.js) — a background sweep expires
+  // anything past this, but check it here too in case payment lands in the
+  // gap between the deadline passing and the sweep job running.
+  if (booking.expires_at && new Date(booking.expires_at) < new Date()) {
+    booking.status = "expired";
+    await booking.save();
+    throw new ErrorClass(
+      "The payment window for this booking has expired. Please create a new booking request.",
+      410
+    );
+  }
+
   // Determine the agreed-upon times
   const isCounterAccepted = booking.accepted_by === "student";
   const agreedStartTime = isCounterAccepted

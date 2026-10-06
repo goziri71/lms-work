@@ -531,9 +531,17 @@ export const cancelBookingRequest = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Booking request not found", 404);
   }
 
-  if (!["pending", "counter_proposed"].includes(booking.status)) {
+  // "accepted" is included here, but only before payment (no session_id
+  // yet) — once a session exists, use the dedicated cancel-session
+  // endpoint instead, which handles refunds. Without this, a booking stuck
+  // in "accepted" with payment never completed had no way to be cancelled
+  // by either party.
+  const cancellableStatuses = ["pending", "counter_proposed", "accepted"];
+  if (!cancellableStatuses.includes(booking.status) || booking.session_id) {
     throw new ErrorClass(
-      `Cannot cancel a booking that is already ${booking.status}`,
+      booking.session_id
+        ? "A session has already been created for this booking. Use the cancel-session endpoint instead."
+        : `Cannot cancel a booking that is already ${booking.status}`,
       400
     );
   }

@@ -1,5 +1,5 @@
 import express from "express";
-import { authLimiter } from "../middlewares/rateLimiter.js";
+import { authLimiter, coachingBookingLimiter } from "../middlewares/rateLimiter.js";
 import { cacheMiddleware } from "../middlewares/cacheMiddleware.js";
 import {
   registerSoleTutor,
@@ -1026,21 +1026,25 @@ router.get(
 router.post(
   "/tutor/coaching/booking-requests/:id/accept",
   tutorAuthorize,
+  coachingBookingLimiter,
   acceptBookingRequest,
 );
 router.post(
   "/tutor/coaching/booking-requests/:id/decline",
   tutorAuthorize,
+  coachingBookingLimiter,
   declineBookingRequest,
 );
 router.post(
   "/tutor/coaching/booking-requests/:id/counter",
   tutorAuthorize,
+  coachingBookingLimiter,
   counterProposeBooking,
 );
 router.post(
   "/tutor/coaching/booking-requests/:id/cancel-session",
   tutorAuthorize,
+  coachingBookingLimiter,
   tutorCancelBookedSession,
 );
 
@@ -1054,6 +1058,7 @@ router.get("/coaching/sessions/:id", optionalAuthorize, getSessionDetails);
 router.post(
   "/coaching/sessions/:id/purchase",
   authorize,
+  coachingBookingLimiter,
   purchaseSessionAccess,
 );
 router.post(
@@ -1087,21 +1092,29 @@ router.get(
 );
 
 // Booking requests (student auth required)
-router.post("/coaching/booking-request", authorize, createBookingRequest);
+router.post(
+  "/coaching/booking-request",
+  authorize,
+  coachingBookingLimiter,
+  createBookingRequest,
+);
 router.get("/coaching/my-booking-requests", authorize, getMyBookingRequests);
 router.post(
   "/coaching/booking-request/:id/cancel",
   authorize,
+  coachingBookingLimiter,
   cancelBookingRequest,
 );
 router.post(
   "/coaching/booking-request/:id/accept-counter",
   authorize,
+  coachingBookingLimiter,
   acceptCounterProposal,
 );
 router.post(
   "/coaching/booking-request/:id/decline-counter",
   authorize,
+  coachingBookingLimiter,
   declineCounterProposal,
 );
 
@@ -1114,11 +1127,13 @@ router.get(
 router.post(
   "/coaching/booking/:id/process-payment",
   authorize,
+  coachingBookingLimiter,
   processBookingPayment,
 );
 router.post(
   "/coaching/booking/:id/cancel-session",
   authorize,
+  coachingBookingLimiter,
   studentCancelBookedSession,
 );
 

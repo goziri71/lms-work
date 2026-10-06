@@ -5,11 +5,15 @@ import { CoachingSessionPurchase } from "../../models/marketplace/coachingSessio
 import { Students } from "../../models/auth/student.js";
 import { Funding } from "../../models/payment/funding.js";
 import { GeneralSetup } from "../../models/settings/generalSetup.js";
-import { getWalletBalance } from "../../services/walletBalanceService.js";
+import {
+  getWalletBalance,
+  calculateWalletBalanceFromFunding,
+} from "../../services/walletBalanceService.js";
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { WspCommission } from "../../models/marketplace/wspCommission.js";
 import { db } from "../../database/database.js";
+import { Transaction } from "sequelize";
 import { checkProductAccess } from "../../services/membershipAccessService.js";
 
 /**
@@ -100,22 +104,10 @@ export const purchaseSessionAccess = TryCatchFunction(async (req, res) => {
     }
   }
 
-  // Check wallet balance
-  const { balance: walletBalance } = await getWalletBalance(studentId, true);
-
-  if (walletBalance < priceInStudentCurrency) {
-    let requiredDisplay;
-    if (sessionCurrency !== studentCurrency) {
-      requiredDisplay = `${priceInStudentCurrency.toFixed(2)} ${studentCurrency} (${sessionPrice} ${sessionCurrency})`;
-    } else {
-      requiredDisplay = `${priceInStudentCurrency.toFixed(2)} ${studentCurrency}`;
-    }
-
-    throw new ErrorClass(
-      `Insufficient wallet balance. Required: ${requiredDisplay}, Available: ${walletBalance.toFixed(2)} ${studentCurrency}. Please fund your wallet first.`,
-      400
-    );
-  }
+  // Pre-check outside the transaction so we can fail fast with a clear
+  // error before taking a row lock; the authoritative check happens again
+  // under the lock below.
+  await getWalletBalance(studentId, true);
 
   // Get commission rate (from session, separate from course commission)
   const commissionRate = parseFloat(session.commission_rate || 15.0);
@@ -130,6 +122,37 @@ export const purchaseSessionAccess = TryCatchFunction(async (req, res) => {
   const transaction = await db.transaction();
 
   try {
+    // Lock the student's row for the duration of the transaction so two
+    // concurrent purchase requests can't both read the same starting
+    // balance and both debit (driving the wallet negative).
+    const lockedStudent = await Students.findByPk(studentId, {
+      transaction,
+      lock: Transaction.LOCK.UPDATE,
+    });
+    if (!lockedStudent) {
+      throw new ErrorClass("Student not found", 404);
+    }
+
+    const walletBalance = await calculateWalletBalanceFromFunding(
+      studentId,
+      lockedStudent.currency,
+      transaction
+    );
+
+    if (walletBalance < priceInStudentCurrency) {
+      let requiredDisplay;
+      if (sessionCurrency !== studentCurrency) {
+        requiredDisplay = `${priceInStudentCurrency.toFixed(2)} ${studentCurrency} (${sessionPrice} ${sessionCurrency})`;
+      } else {
+        requiredDisplay = `${priceInStudentCurrency.toFixed(2)} ${studentCurrency}`;
+      }
+
+      throw new ErrorClass(
+        `Insufficient wallet balance. Required: ${requiredDisplay}, Available: ${walletBalance.toFixed(2)} ${studentCurrency}. Please fund your wallet first.`,
+        400
+      );
+    }
+
     // Debit wallet
     const newBalance = walletBalance - priceInStudentCurrency;
 
@@ -150,7 +173,7 @@ export const purchaseSessionAccess = TryCatchFunction(async (req, res) => {
     );
 
     // Update student wallet
-    await student.update({ wallet_balance: newBalance }, { transaction });
+    await lockedStudent.update({ wallet_balance: newBalance }, { transaction });
 
     // Create purchase record
     const purchase = await CoachingSessionPurchase.create(
@@ -182,12 +205,20 @@ export const purchaseSessionAccess = TryCatchFunction(async (req, res) => {
       );
     }
 
-    // Update tutor earnings
+    // Update tutor earnings (locked, since concurrent purchases of this
+    // tutor's sessions would otherwise race on a read-modify-write of
+    // total_earnings and lose an update)
     let tutor;
     if (session.tutor_type === "sole_tutor") {
-      tutor = await SoleTutor.findByPk(session.tutor_id, { transaction });
+      tutor = await SoleTutor.findByPk(session.tutor_id, {
+        transaction,
+        lock: Transaction.LOCK.UPDATE,
+      });
     } else {
-      tutor = await Organization.findByPk(session.tutor_id, { transaction });
+      tutor = await Organization.findByPk(session.tutor_id, {
+        transaction,
+        lock: Transaction.LOCK.UPDATE,
+      });
     }
 
     if (tutor) {

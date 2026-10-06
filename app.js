@@ -595,6 +595,28 @@ connectDB().then(async (success) => {
         );
       }
 
+      // Expire accepted-but-unpaid coaching booking requests: once a tutor
+      // accepts, the student has a fixed window to pay before the slot
+      // frees back up (see coachingNegotiation.js) — without this sweep an
+      // abandoned acceptance blocks that tutor/time-slot combination forever.
+      try {
+        const { expireStaleAcceptedBookings } =
+          await import("./src/controllers/marketplace/coachingNegotiation.js");
+        scheduleBackgroundInterval(
+          "coaching-booking-expiry",
+          expireStaleAcceptedBookings,
+          5 * 60 * 1000,
+        );
+        console.log(
+          "⏰ Coaching booking expiry sweep started (every 5 min, serialized)",
+        );
+      } catch (error) {
+        console.warn(
+          "⚠️ Could not setup coaching booking expiry sweep:",
+          error.message,
+        );
+      }
+
       // Product popularity score update job (runs daily)
       try {
         const { runProductPopularityUpdate } =
