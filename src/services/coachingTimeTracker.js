@@ -2,7 +2,7 @@ import { CoachingSession } from "../models/marketplace/coachingSession.js";
 import { CoachingSettings } from "../models/marketplace/coachingSettings.js";
 import { CoachingHoursBalance } from "../models/marketplace/coachingHoursBalance.js";
 import { TutorSubscription, SUBSCRIPTION_TIERS } from "../models/marketplace/tutorSubscription.js";
-import { streamVideoService } from "./streamVideoService.js";
+import { streamVideoService } from "../service/streamVideoService.js";
 import { refundHours } from "../controllers/marketplace/coachingHours.js";
 import { Op } from "sequelize";
 import { db } from "../database/database.js";

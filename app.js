@@ -110,14 +110,26 @@ if (process.env.REDIS_URL) {
       // backoff so a prolonged outage logs periodically instead of spinning.
       retryStrategy: (times) => Math.min(times * 500, 10000),
     };
-    const pubClient = new Redis(process.env.REDIS_URL, redisOpts);
-    const subClient = pubClient.duplicate();
+    // lazyConnect + an explicit awaited .connect() below, instead of
+    // ioredis's default auto-connect-on-construct: a connection failure
+    // during the initial handshake (e.g. an AUTH error) rejects ioredis's
+    // internal connect promise separately from the client's "error" event.
+    // With auto-connect, that rejection has nothing awaiting it and crashes
+    // the process as an unhandled rejection even though an "error" listener
+    // is attached — awaiting .connect() here routes that same failure
+    // through this try/catch instead.
+    const pubClient = new Redis(process.env.REDIS_URL, {
+      ...redisOpts,
+      lazyConnect: true,
+    });
+    const subClient = pubClient.duplicate({ lazyConnect: true });
     pubClient.on("error", (err) =>
       console.warn("⚠️ Socket.io Redis adapter (pub) error:", err.message),
     );
     subClient.on("error", (err) =>
       console.warn("⚠️ Socket.io Redis adapter (sub) error:", err.message),
     );
+    await Promise.all([pubClient.connect(), subClient.connect()]);
     io.adapter(createAdapter(pubClient, subClient));
     console.log(
       "🔌 Socket.io Redis adapter attached (cross-worker realtime enabled)",
