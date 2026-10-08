@@ -1,42 +1,20 @@
-import crypto from "crypto";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { CoachingBookingRequest } from "../../models/marketplace/coachingBookingRequest.js";
-import { CoachingSession } from "../../models/marketplace/coachingSession.js";
-import { CoachingSessionPurchase } from "../../models/marketplace/coachingSessionPurchase.js";
-import { CoachingParticipant } from "../../models/marketplace/coachingParticipant.js";
-import { TutorCoachingProfile } from "../../models/marketplace/tutorCoachingProfile.js";
 import { Students } from "../../models/auth/student.js";
-import { Funding } from "../../models/payment/funding.js";
 import { GeneralSetup } from "../../models/settings/generalSetup.js";
-import { SoleTutor } from "../../models/marketplace/soleTutor.js";
-import { Organization } from "../../models/marketplace/organization.js";
-import { TutorWalletTransaction } from "../../models/marketplace/tutorWalletTransaction.js";
-import { WspCommission } from "../../models/marketplace/wspCommission.js";
+import { getWalletBalance } from "../../services/walletBalanceService.js";
 import {
-  getWalletBalance,
-  calculateWalletBalanceFromFunding,
-} from "../../services/walletBalanceService.js";
-import { Transaction } from "sequelize";
-import {
-  streamVideoService,
-  formatStreamUserId,
-} from "../../service/streamVideoService.js";
-import { checkAndDeductHours } from "./coachingHours.js";
-import { Config } from "../../config/config.js";
-import { db } from "../../database/database.js";
-import { applyLegacyWalletMirror } from "../../utils/tutorWallet.js";
+  buildBookingTxRef,
+  fulfillAcceptedBookingPayment,
+  getAgreedBookingTimes,
+  assertBookingPayable,
+} from "../../services/coachingBookingFulfillmentService.js";
 
 /**
- * Process payment and create session after booking is accepted.
- * Called by the party that does NOT accept — the acceptor's endpoint triggers this.
- *
- * Flow:
- * 1. Tutor accepts student's time  -> tutor calls accept  -> this processes payment
- * 2. Student accepts counter-offer  -> student calls accept-counter -> this processes payment
- *
+ * Process payment and create session after booking is accepted (wallet).
  * POST /api/marketplace/coaching/booking/:id/process-payment
- * Auth: Student required (student is always the one paying)
+ * Auth: Student required
  */
 export const processBookingPayment = TryCatchFunction(async (req, res) => {
   const studentId = req.user?.id;
@@ -57,355 +35,42 @@ export const processBookingPayment = TryCatchFunction(async (req, res) => {
     );
   }
 
-  if (booking.session_id) {
-    throw new ErrorClass("This booking has already been processed and a session created", 400);
-  }
+  await assertBookingPayable(booking);
 
-  // `expires_at` is repurposed as the payment deadline once a booking is
-  // accepted (see coachingNegotiation.js) — a background sweep expires
-  // anything past this, but check it here too in case payment lands in the
-  // gap between the deadline passing and the sweep job running.
-  if (booking.expires_at && new Date(booking.expires_at) < new Date()) {
-    booking.status = "expired";
-    await booking.save();
-    throw new ErrorClass(
-      "The payment window for this booking has expired. Please create a new booking request.",
-      410
-    );
-  }
-
-  // Determine the agreed-upon times
-  const isCounterAccepted = booking.accepted_by === "student";
-  const agreedStartTime = isCounterAccepted
-    ? new Date(booking.counter_proposed_start_time)
-    : new Date(booking.proposed_start_time);
-  const agreedEndTime = isCounterAccepted
-    ? new Date(booking.counter_proposed_end_time)
-    : new Date(booking.proposed_end_time);
-  const agreedDuration = isCounterAccepted
-    ? booking.counter_proposed_duration_minutes
-    : booking.proposed_duration_minutes;
-
-  if (agreedStartTime <= new Date()) {
-    throw new ErrorClass("The agreed session time has already passed. Please create a new booking request.", 400);
-  }
-
-  const finalPrice = parseFloat(booking.final_price);
-  if (!finalPrice || finalPrice <= 0) {
-    throw new ErrorClass("Invalid booking price", 400);
-  }
+  const txRef = buildBookingTxRef(id);
+  const result = await fulfillAcceptedBookingPayment(booking.id, {
+    paymentMethod: "wallet",
+    txRef,
+    payerStudentId: studentId,
+  });
 
   const student = await Students.findByPk(studentId);
-  if (!student) {
-    throw new ErrorClass("Student not found", 404);
-  }
 
-  // Currency conversion
-  const generalSetup = await GeneralSetup.findOne({ order: [["id", "DESC"]] });
-  const exchangeRate = parseFloat(generalSetup?.rate || "1500");
-
-  const bookingCurrency = (booking.currency || "NGN").toUpperCase();
-  const studentCurrency = (student.currency || "NGN").toUpperCase();
-
-  let priceInStudentCurrency = finalPrice;
-  if (bookingCurrency !== studentCurrency) {
-    if (bookingCurrency === "USD" && studentCurrency === "NGN") {
-      priceInStudentCurrency = finalPrice * exchangeRate;
-    } else if (bookingCurrency === "NGN" && studentCurrency === "USD") {
-      priceInStudentCurrency = finalPrice / exchangeRate;
-    }
-  }
-
-  // Pre-check outside the transaction so we can fail fast with a clear
-  // error before taking a row lock; the authoritative check happens again
-  // under the lock below.
-  await getWalletBalance(studentId, true);
-
-  const commissionRate = 15.0;
-  const wspCommission = (priceInStudentCurrency * commissionRate) / 100;
-  const tutorEarnings = priceInStudentCurrency - wspCommission;
-  const txRef = `COACHING-BOOKING-${id}-${Date.now()}`;
-  const today = new Date().toISOString().split("T")[0];
-  const durationHours = agreedDuration / 60;
-
-  const dbTransaction = await db.transaction();
-  let newBalance;
-
-  try {
-    // Lock the student's row for the duration of the transaction so two
-    // concurrent payment confirmations for the same student can't both
-    // read the same starting balance and both debit (driving the wallet
-    // negative).
-    const lockedStudent = await Students.findByPk(studentId, {
-      transaction: dbTransaction,
-      lock: Transaction.LOCK.UPDATE,
-    });
-    if (!lockedStudent) {
-      throw new ErrorClass("Student not found", 404);
-    }
-
-    const walletBalance = await calculateWalletBalanceFromFunding(
-      studentId,
-      lockedStudent.currency,
-      dbTransaction
-    );
-
-    if (walletBalance < priceInStudentCurrency) {
-      let requiredDisplay;
-      if (bookingCurrency !== studentCurrency) {
-        requiredDisplay = `${priceInStudentCurrency.toFixed(2)} ${studentCurrency} (${finalPrice} ${bookingCurrency})`;
-      } else {
-        requiredDisplay = `${priceInStudentCurrency.toFixed(2)} ${studentCurrency}`;
-      }
-
-      throw new ErrorClass(
-        `Insufficient wallet balance. Required: ${requiredDisplay}, Available: ${walletBalance.toFixed(2)} ${studentCurrency}. Please fund your wallet first.`,
-        400
-      );
-    }
-
-    // 1. Debit student wallet
-    newBalance = walletBalance - priceInStudentCurrency;
-
-    await Funding.create(
-      {
-        student_id: studentId,
-        amount: priceInStudentCurrency,
-        type: "Debit",
-        service_name: "Coaching Session Booking",
-        ref: txRef,
-        date: today,
-        semester: null,
-        academic_year: null,
-        currency: studentCurrency,
-        balance: newBalance.toString(),
+  res.status(201).json({
+    success: true,
+    message: "Payment processed and coaching session created successfully",
+    data: {
+      booking_id: booking.id,
+      session_id: result.session.id,
+      stream_call_id: result.stream_call_id,
+      view_link: result.view_link,
+      price_paid: parseFloat(result.purchase.price_paid),
+      currency: result.purchase.currency,
+      transaction_ref: txRef,
+      new_wallet_balance: parseFloat(student?.wallet_balance || 0),
+      session: {
+        id: result.session.id,
+        title: result.session.title,
+        start_time: result.session.start_time,
+        end_time: result.session.end_time,
+        duration_minutes: result.session.duration_minutes,
+        status: result.session.status,
       },
-      { transaction: dbTransaction }
-    );
-
-    await lockedStudent.update(
-      { wallet_balance: newBalance },
-      { transaction: dbTransaction }
-    );
-
-    // 2. Check and deduct tutor coaching hours
-    let hoursCheck;
-    try {
-      hoursCheck = await checkAndDeductHours(
-        booking.tutor_id,
-        booking.tutor_type,
-        durationHours,
-        dbTransaction
-      );
-    } catch (hoursError) {
-      console.warn("Hours deduction skipped:", hoursError.message);
-      hoursCheck = { allowed: true, unlimited: true };
-    }
-
-    if (!hoursCheck.allowed) {
-      throw new ErrorClass(
-        `Tutor does not have enough coaching hours: ${hoursCheck.reason}`,
-        400
-      );
-    }
-
-    // 3. Create Stream.io video call
-    const callUuid = crypto.randomUUID();
-    const streamCallId = `coaching_${booking.tutor_id}_${callUuid}`;
-
-    if (Config.streamApiKey && Config.streamSecret) {
-      try {
-        await streamVideoService.getOrCreateCall("default", streamCallId, {
-          createdBy: formatStreamUserId(booking.tutor_type, booking.tutor_id),
-          record: false,
-          startsAt: agreedStartTime.toISOString(),
-        });
-      } catch (streamError) {
-        console.error("Stream.io call creation failed:", streamError.message);
-      }
-    }
-
-    const viewLink = `${Config.frontendUrl}coaching/session/${streamCallId}`;
-
-    // 4. Create coaching session
-    const session = await CoachingSession.create(
-      {
-        tutor_id: booking.tutor_id,
-        tutor_type: booking.tutor_type,
-        title: `One-on-One: ${booking.topic}`,
-        description: booking.description || null,
-        start_time: agreedStartTime,
-        end_time: agreedEndTime,
-        duration_minutes: agreedDuration,
-        stream_call_id: streamCallId,
-        view_link: viewLink,
-        status: "scheduled",
-        hours_reserved: durationHours,
-        hours_used: 0.0,
-        student_count: 1,
-        pricing_type: "paid",
-        price: finalPrice,
-        currency: booking.currency,
-        category: booking.category || null,
-        commission_rate: commissionRate,
-        session_type: "one_on_one",
-        agreed_start_time: agreedStartTime,
-        agreed_end_time: agreedEndTime,
-      },
-      { transaction: dbTransaction }
-    );
-
-    // 5. Add student as participant
-    await CoachingParticipant.create(
-      {
-        session_id: session.id,
-        student_id: studentId,
-        email_sent: false,
-      },
-      { transaction: dbTransaction }
-    );
-
-    // 6. Create purchase record
-    const purchase = await CoachingSessionPurchase.create(
-      {
-        session_id: session.id,
-        student_id: studentId,
-        price_paid: priceInStudentCurrency,
-        currency: studentCurrency,
-        commission_rate: commissionRate,
-        wsp_commission: wspCommission,
-        tutor_earnings: tutorEarnings,
-        transaction_ref: txRef,
-        payment_method: "wallet",
-      },
-      { transaction: dbTransaction }
-    );
-
-    // 7. Record platform commission
-    if (wspCommission > 0) {
-      await WspCommission.create(
-        {
-          transaction_id: purchase.id,
-          amount: wspCommission,
-          currency: studentCurrency,
-          status: "collected",
-          collected_at: new Date(),
-        },
-        { transaction: dbTransaction }
-      );
-    }
-
-    // 8. Credit tutor earnings and wallet in the same transaction
-    let tutor;
-    if (booking.tutor_type === "sole_tutor") {
-      tutor = await SoleTutor.findByPk(booking.tutor_id, {
-        transaction: dbTransaction,
-        lock: Transaction.LOCK.UPDATE,
-      });
-    } else {
-      tutor = await Organization.findByPk(booking.tutor_id, {
-        transaction: dbTransaction,
-        lock: Transaction.LOCK.UPDATE,
-      });
-    }
-
-    if (!tutor) {
-      throw new ErrorClass("Tutor account not found", 404);
-    }
-
-    const tutorCreditCurrency = (studentCurrency || "NGN").toUpperCase();
-    let tutorWalletField = "wallet_balance_primary";
-    if (tutorCreditCurrency === "USD") tutorWalletField = "wallet_balance_usd";
-    if (tutorCreditCurrency === "GBP") tutorWalletField = "wallet_balance_gbp";
-
-    const tutorWalletBefore = parseFloat(tutor[tutorWalletField] || 0);
-    const tutorWalletAfter = tutorWalletBefore + tutorEarnings;
-    const newTotalEarnings = parseFloat(tutor.total_earnings || 0) + tutorEarnings;
-
-    const tutorUpd = {
-      total_earnings: newTotalEarnings,
-      [tutorWalletField]: tutorWalletAfter,
-    };
-    if (tutorWalletField === "wallet_balance_primary") {
-      applyLegacyWalletMirror(tutorUpd, tutorWalletAfter);
-    }
-    await tutor.update(tutorUpd, { transaction: dbTransaction });
-
-    await TutorWalletTransaction.create(
-      {
-        tutor_id: booking.tutor_id,
-        tutor_type: booking.tutor_type,
-        transaction_type: "credit",
-        amount: tutorEarnings,
-        currency: tutorCreditCurrency,
-        service_name: "One-on-One Coaching Booking",
-        transaction_reference: txRef,
-        balance_before: tutorWalletBefore,
-        balance_after: tutorWalletAfter,
-        related_id: booking.id,
-        related_type: "coaching_booking_request",
-        status: "successful",
-        notes: "Tutor earnings credited after booking payment",
-        metadata: {
-          booking_id: booking.id,
-          purchase_id: purchase.id,
-          session_id: session.id,
-          student_id: studentId,
-          gross_amount_paid: priceInStudentCurrency,
-          commission_amount: wspCommission,
-        },
-      },
-      { transaction: dbTransaction }
-    );
-
-    // 9. Update booking with session reference
-    await booking.update(
-      { session_id: session.id },
-      { transaction: dbTransaction }
-    );
-
-    // 10. Increment tutor's completed sessions count
-    await TutorCoachingProfile.increment("total_sessions_completed", {
-      by: 1,
-      where: {
-        tutor_id: booking.tutor_id,
-        tutor_type: booking.tutor_type,
-      },
-      transaction: dbTransaction,
-    });
-
-    await dbTransaction.commit();
-
-    res.status(201).json({
-      success: true,
-      message: "Payment processed and coaching session created successfully",
-      data: {
-        booking_id: booking.id,
-        session_id: session.id,
-        stream_call_id: streamCallId,
-        view_link: viewLink,
-        price_paid: priceInStudentCurrency,
-        currency: studentCurrency,
-        transaction_ref: txRef,
-        new_wallet_balance: newBalance,
-        session: {
-          id: session.id,
-          title: session.title,
-          start_time: session.start_time,
-          end_time: session.end_time,
-          duration_minutes: session.duration_minutes,
-          status: session.status,
-        },
-      },
-    });
-  } catch (error) {
-    await dbTransaction.rollback();
-    throw error;
-  }
+    },
+  });
 });
 
 /**
- * Get booking payment details (preview before paying)
  * GET /api/marketplace/coaching/booking/:id/payment-preview
  * Auth: Student required
  */
@@ -448,16 +113,7 @@ export const getBookingPaymentPreview = TryCatchFunction(async (req, res) => {
 
   const { balance: walletBalance } = await getWalletBalance(studentId, true);
 
-  const isCounterAccepted = booking.accepted_by === "student";
-  const agreedStartTime = isCounterAccepted
-    ? booking.counter_proposed_start_time
-    : booking.proposed_start_time;
-  const agreedEndTime = isCounterAccepted
-    ? booking.counter_proposed_end_time
-    : booking.proposed_end_time;
-  const agreedDuration = isCounterAccepted
-    ? booking.counter_proposed_duration_minutes
-    : booking.proposed_duration_minutes;
+  const { startTime, endTime, durationMinutes } = getAgreedBookingTimes(booking);
 
   const commissionRate = 15.0;
   const platformFee = (priceInStudentCurrency * commissionRate) / 100;
@@ -467,9 +123,9 @@ export const getBookingPaymentPreview = TryCatchFunction(async (req, res) => {
     data: {
       booking_id: booking.id,
       topic: booking.topic,
-      agreed_start_time: agreedStartTime,
-      agreed_end_time: agreedEndTime,
-      agreed_duration_minutes: agreedDuration,
+      agreed_start_time: startTime,
+      agreed_end_time: endTime,
+      agreed_duration_minutes: durationMinutes,
       price: finalPrice,
       price_currency: bookingCurrency,
       price_in_your_currency: Math.round(priceInStudentCurrency * 100) / 100,
@@ -481,6 +137,7 @@ export const getBookingPaymentPreview = TryCatchFunction(async (req, res) => {
         walletBalance < priceInStudentCurrency
           ? Math.round((priceInStudentCurrency - walletBalance) * 100) / 100
           : 0,
+      access_token: booking.access_token,
     },
   });
 });

@@ -6,6 +6,7 @@ import { Op } from "sequelize";
 import { supabase } from "../../utils/supabase.js";
 import { db } from "../../database/database.js";
 import { productViewUrl } from "../../utils/productViewUrl.js";
+import { getDigitalSalePricing } from "../../utils/coursePricing.js";
 
 /**
  * Browse all published digital downloads
@@ -102,6 +103,7 @@ export const browseDigitalDownloads = TryCatchFunction(async (req, res) => {
     const downloadJson = download.toJSON();
     const owner = downloadJson.soleTutor || downloadJson.organization;
     
+    const pricing = getDigitalSalePricing(downloadJson);
     return {
       id: downloadJson.id,
       title: downloadJson.title,
@@ -109,7 +111,10 @@ export const browseDigitalDownloads = TryCatchFunction(async (req, res) => {
       author: downloadJson.author,
       pages: downloadJson.pages,
       product_type: downloadJson.product_type,
-      price: parseFloat(downloadJson.price || 0),
+      price: parseFloat(pricing.sale_price),
+      list_price: parseFloat(pricing.list_price),
+      discount_percent: pricing.discount_percent,
+      discount_active: pricing.discount_active,
       currency: downloadJson.currency,
       cover_image: downloadJson.cover_image,
       preview_url: downloadJson.preview_url,
@@ -198,6 +203,7 @@ export const getDigitalDownloadById = TryCatchFunction(async (req, res) => {
 
   const downloadJson = download.toJSON();
   const owner = downloadJson.soleTutor || downloadJson.organization;
+  const pricing = getDigitalSalePricing(downloadJson);
 
   res.status(200).json({
     success: true,
@@ -210,7 +216,10 @@ export const getDigitalDownloadById = TryCatchFunction(async (req, res) => {
         author: downloadJson.author,
         pages: downloadJson.pages,
         product_type: downloadJson.product_type,
-        price: parseFloat(downloadJson.price || 0),
+        price: parseFloat(pricing.sale_price),
+        list_price: parseFloat(pricing.list_price),
+        discount_percent: pricing.discount_percent,
+        discount_active: pricing.discount_active,
         currency: downloadJson.currency,
         cover_image: downloadJson.cover_image,
         preview_url: downloadJson.preview_url,

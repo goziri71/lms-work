@@ -7,6 +7,7 @@ import { processMarketplacePurchase } from "../../services/revenueSharingService
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { getWalletBalance } from "../../services/walletBalanceService.js";
+import { getDigitalSalePricing } from "../../utils/coursePricing.js";
 
 /**
  * Purchase marketplace digital download
@@ -35,7 +36,7 @@ export const purchaseDigitalDownload = TryCatchFunction(async (req, res) => {
   }
 
   // Validate price (can be 0 for free products)
-  const productPrice = parseFloat(download.price || 0);
+  const productPrice = parseFloat(getDigitalSalePricing(download).sale_price);
   if (productPrice < 0) {
     throw new ErrorClass("Product price is invalid", 400);
   }

@@ -6,6 +6,10 @@ import multer from "multer";
 import { supabase } from "../../utils/supabase.js";
 import { normalizeCategory, CATEGORIES } from "../../constants/categories.js";
 import { generateDigitalDownloadSlug } from "../../utils/productSlugHelper.js";
+import {
+  attachDigitalPricing,
+  parseDiscountPercent,
+} from "../../utils/coursePricing.js";
 
 // Product type configurations
 const PRODUCT_TYPES = {
@@ -450,6 +454,9 @@ export const createDigitalDownload = TryCatchFunction(async (req, res) => {
     dimensions,
     resolution,
     preview_url,
+    discount_percent,
+    discount_starts_at,
+    discount_ends_at,
   } = req.body;
 
   // Validation
@@ -485,6 +492,13 @@ export const createDigitalDownload = TryCatchFunction(async (req, res) => {
       "Paid products must include a valid USD price (price_usd)",
       400
     );
+  }
+
+  let parsedDiscount = 0;
+  try {
+    parsedDiscount = parseDiscountPercent(discount_percent) ?? 0;
+  } catch (e) {
+    throw new ErrorClass(e.message, 400);
   }
 
   const config = getProductTypeConfig(product_type);
@@ -558,20 +572,16 @@ export const createDigitalDownload = TryCatchFunction(async (req, res) => {
     resolution: resolution || null,
     streaming_enabled: config.streamingEnabled,
     download_enabled: config.downloadEnabled,
+    discount_percent: parsedDiscount,
+    discount_starts_at: discount_starts_at || null,
+    discount_ends_at: discount_ends_at || null,
   });
 
   res.status(201).json({
     success: true,
     message: "Digital download created successfully",
     data: {
-      digital_download: {
-        id: download.id,
-        title: download.title,
-        product_type: download.product_type,
-        price: parseFloat(download.price || 0),
-        price_usd: download.price_usd ? parseFloat(download.price_usd) : null,
-        status: download.status,
-      },
+      digital_download: attachDigitalPricing(download.toJSON()),
     },
   });
 });
@@ -620,6 +630,9 @@ export const updateDigitalDownload = TryCatchFunction(async (req, res) => {
     duration,
     dimensions,
     resolution,
+    discount_percent,
+    discount_starts_at,
+    discount_ends_at,
   } = req.body;
 
   // Validation for published status
@@ -680,21 +693,28 @@ export const updateDigitalDownload = TryCatchFunction(async (req, res) => {
   if (duration !== undefined) updateData.duration = duration ? parseInt(duration) : null;
   if (dimensions !== undefined) updateData.dimensions = dimensions;
   if (resolution !== undefined) updateData.resolution = resolution;
+  if (discount_percent !== undefined) {
+    try {
+      updateData.discount_percent = parseDiscountPercent(discount_percent) ?? 0;
+    } catch (e) {
+      throw new ErrorClass(e.message, 400);
+    }
+  }
+  if (discount_starts_at !== undefined) {
+    updateData.discount_starts_at = discount_starts_at || null;
+  }
+  if (discount_ends_at !== undefined) {
+    updateData.discount_ends_at = discount_ends_at || null;
+  }
 
   await download.update(updateData);
+  await download.reload();
 
   res.status(200).json({
     success: true,
     message: "Digital download updated successfully",
     data: {
-      digital_download: {
-        id: download.id,
-        title: download.title,
-        product_type: download.product_type,
-        price: parseFloat(download.price || 0),
-        price_usd: download.price_usd ? parseFloat(download.price_usd) : null,
-        status: download.status,
-      },
+      digital_download: attachDigitalPricing(download.toJSON()),
     },
   });
 });

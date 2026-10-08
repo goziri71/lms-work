@@ -6,6 +6,12 @@ import { PaymentTransaction } from "../models/payment/paymentTransaction.js";
 import { Courses } from "../models/course/courses.js";
 import { CourseReg } from "../models/course_reg.js";
 import { CoachingSession } from "../models/marketplace/coachingSession.js";
+import { CoachingBookingRequest } from "../models/marketplace/coachingBookingRequest.js";
+import {
+  assertBookingPayable,
+  buildBookingTxRef,
+  fulfillAcceptedBookingPayment,
+} from "./coachingBookingFulfillmentService.js";
 import { CoachingSessionPurchase } from "../models/marketplace/coachingSessionPurchase.js";
 import { Students } from "../models/auth/student.js";
 import { SoleTutor } from "../models/marketplace/soleTutor.js";
@@ -230,6 +236,86 @@ export async function createBvaForCoachingSession(student, sessionId) {
     },
   });
   return { ...bva, session_id: sessionId };
+}
+
+export async function createBvaForCoachingBooking(
+  bookingId,
+  { accessToken, payerStudentId } = {}
+) {
+  const booking = await CoachingBookingRequest.findByPk(bookingId, {
+    include: [{ model: Students, as: "student", required: false }],
+  });
+  if (!booking) throw new ErrorClass("Booking not found", 404);
+  if (payerStudentId) {
+    if (booking.student_id && booking.student_id !== payerStudentId) {
+      throw new ErrorClass("Forbidden", 403);
+    }
+  } else if (!accessToken || accessToken !== booking.access_token) {
+    throw new ErrorClass("Valid access_token is required", 403);
+  }
+  await assertBookingPayable(booking);
+
+  const amount = parseFloat(booking.final_price || 0);
+  if (amount <= 0) throw new ErrorClass("Invalid booking price", 400);
+  if ((booking.currency || "NGN").toUpperCase() !== "NGN") {
+    throw new ErrorClass(
+      "One-time bank transfer is only available for NGN-priced bookings",
+      400
+    );
+  }
+
+  const txRef = booking.transaction_ref || buildBookingTxRef(bookingId);
+  if (!booking.transaction_ref) {
+    await booking.update({ transaction_ref: txRef });
+  }
+
+  const email =
+    booking.guest_email ||
+    booking.student?.email ||
+    "buyer@example.com";
+  const name =
+    booking.guest_name ||
+    (booking.student
+      ? `${booking.student.fname || ""} ${booking.student.lname || ""}`.trim()
+      : "Guest");
+
+  const bva = await createBvaForTx({
+    txRef,
+    amount,
+    currency: "NGN",
+    email,
+    phone: booking.guest_phone || booking.student?.phone,
+    name,
+    narration: `Coaching booking ${booking.topic}`,
+    meta: {
+      type: "coaching_booking",
+      booking_id: String(bookingId),
+    },
+  });
+  return { ...bva, booking_id: bookingId };
+}
+
+export async function fulfillCoachingBookingFromPayment(txRef, transactionData = {}) {
+  const booking = await CoachingBookingRequest.findOne({
+    where: { transaction_ref: txRef },
+  });
+  if (!booking) return { handled: false };
+  if (booking.session_id) return { handled: true, alreadyPaid: true };
+
+  const { isTransactionSuccessful, getTransactionAmount, getTransactionCurrency } =
+    await import("./flutterwaveService.js");
+  if (!isTransactionSuccessful(transactionData)) {
+    return { handled: false };
+  }
+
+  await fulfillAcceptedBookingPayment(booking.id, {
+    paymentMethod: "flutterwave_bva",
+    txRef,
+    paidAmount: getTransactionAmount(transactionData),
+    paidCurrency: getTransactionCurrency(transactionData),
+    payerStudentId: booking.student_id,
+  });
+  return { handled: true, alreadyPaid: false };
 }
 
 export async function fulfillCoursePurchaseFromPayment(txRef, transactionData = {}) {

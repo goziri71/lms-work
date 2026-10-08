@@ -16,7 +16,10 @@ import { getProductReviewStats } from "../../services/productReviewService.js";
 import { Op } from "sequelize";
 import { productViewUrl } from "../../utils/productViewUrl.js";
 import { formatOwnerContact } from "../../utils/ownerContact.js";
-import { getCourseSalePricing } from "../../utils/coursePricing.js";
+import {
+  getCourseSalePricing,
+  getDigitalSalePricing,
+} from "../../utils/coursePricing.js";
 
 /**
  * Browse all products (public - no auth required)
@@ -261,6 +264,11 @@ export const browseStoreProducts = TryCatchFunction(async (req, res) => {
         productData.pages = product.pages;
         if (type === "digital_download") {
           productData.product_type = product.product_type;
+          const dPricing = getDigitalSalePricing(product);
+          productData.price = parseFloat(dPricing.sale_price);
+          productData.list_price = parseFloat(dPricing.list_price);
+          productData.discount_percent = dPricing.discount_percent;
+          productData.discount_active = dPricing.discount_active;
         }
       } else if (type === "community") {
         productData.member_count = product.member_count;

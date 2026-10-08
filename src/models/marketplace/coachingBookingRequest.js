@@ -11,12 +11,41 @@ export const CoachingBookingRequest = db.define(
     },
     student_id: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
       references: {
         model: "students",
         key: "id",
       },
       onDelete: "CASCADE",
+    },
+    guest_email: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    guest_name: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    guest_phone: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+    },
+    access_token: {
+      type: DataTypes.STRING(128),
+      allowNull: true,
+      unique: true,
+    },
+    transaction_ref: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    payment_method: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+    },
+    paid_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
     },
     tutor_id: {
       type: DataTypes.INTEGER,

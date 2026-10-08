@@ -21,12 +21,16 @@ export const CoachingParticipant = db.define(
     },
     student_id: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
       references: {
         model: "students",
         key: "id",
       },
       onDelete: "CASCADE",
+    },
+    guest_email: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
     },
     invited_at: {
       type: DataTypes.DATE,

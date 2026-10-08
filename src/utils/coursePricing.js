@@ -1,12 +1,12 @@
-export function getCourseSalePricing(course) {
-  const listPrice = parseFloat(course?.price || 0) || 0;
-  const percent = parseFloat(course?.discount_percent || 0) || 0;
+export function getProductSalePricing(product) {
+  const listPrice = parseFloat(product?.price || 0) || 0;
+  const percent = parseFloat(product?.discount_percent || 0) || 0;
   const now = new Date();
-  const starts = course?.discount_starts_at
-    ? new Date(course.discount_starts_at)
+  const starts = product?.discount_starts_at
+    ? new Date(product.discount_starts_at)
     : null;
-  const ends = course?.discount_ends_at
-    ? new Date(course.discount_ends_at)
+  const ends = product?.discount_ends_at
+    ? new Date(product.discount_ends_at)
     : null;
   const startsOk = !starts || Number.isNaN(starts.getTime()) || now >= starts;
   const endsOk = !ends || Number.isNaN(ends.getTime()) || now <= ends;
@@ -16,7 +16,8 @@ export function getCourseSalePricing(course) {
     : listPrice;
 
   let salePriceUsd = null;
-  const listUsd = course?.price_usd != null ? parseFloat(course.price_usd) : null;
+  const listUsd =
+    product?.price_usd != null ? parseFloat(product.price_usd) : null;
   if (listUsd != null && !Number.isNaN(listUsd)) {
     salePriceUsd = active
       ? Math.round(listUsd * (1 - percent / 100) * 100) / 100
@@ -28,18 +29,36 @@ export function getCourseSalePricing(course) {
     sale_price: salePrice.toFixed(2),
     discount_percent: active ? percent : 0,
     discount_active: active,
-    discount_starts_at: course?.discount_starts_at || null,
-    discount_ends_at: course?.discount_ends_at || null,
-    currency: (course?.currency || "NGN").toUpperCase(),
+    discount_starts_at: product?.discount_starts_at || null,
+    discount_ends_at: product?.discount_ends_at || null,
+    currency: (product?.currency || "NGN").toUpperCase(),
     list_price_usd: listUsd != null && !Number.isNaN(listUsd) ? listUsd.toFixed(2) : null,
     sale_price_usd: salePriceUsd != null ? salePriceUsd.toFixed(2) : null,
   };
+}
+
+export function getCourseSalePricing(course) {
+  return getProductSalePricing(course);
+}
+
+export function getDigitalSalePricing(download) {
+  return getProductSalePricing(download);
 }
 
 export function attachCoursePricing(courseData) {
   const pricing = getCourseSalePricing(courseData);
   return {
     ...courseData,
+    price: parseFloat(pricing.sale_price),
+    list_price: parseFloat(pricing.list_price),
+    ...pricing,
+  };
+}
+
+export function attachDigitalPricing(downloadData) {
+  const pricing = getDigitalSalePricing(downloadData);
+  return {
+    ...downloadData,
     price: parseFloat(pricing.sale_price),
     list_price: parseFloat(pricing.list_price),
     ...pricing,

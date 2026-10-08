@@ -63,6 +63,15 @@ export const studentLogin = TryCatchFunction(async (req, res) => {
       console.error("Guest purchase claim on login:", claimErr.message);
     }
 
+    try {
+      const { claimGuestCoachingBookingsForStudent } = await import(
+        "../../services/coachingBookingFulfillmentService.js"
+      );
+      await claimGuestCoachingBookingsForStudent(student.id, student.email);
+    } catch (claimBookErr) {
+      console.error("Guest coaching claim on login:", claimBookErr.message);
+    }
+
     // Generate JWT token using your actual model fields
     const accessToken = await authService.generateAccessToken({
       id: student.id,
@@ -815,6 +824,15 @@ export const registerStudent = TryCatchFunction(async (req, res) => {
     );
   } catch (claimErr) {
     console.error("Guest purchase claim on register:", claimErr.message);
+  }
+
+  try {
+    const { claimGuestCoachingBookingsForStudent } = await import(
+      "../../services/coachingBookingFulfillmentService.js"
+    );
+    await claimGuestCoachingBookingsForStudent(student.id, student.email);
+  } catch (claimBookErr) {
+    console.error("Guest coaching claim on register:", claimBookErr.message);
   }
 
   // Create default email preferences (optional - table may not exist)

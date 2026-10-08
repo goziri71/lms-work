@@ -36,6 +36,19 @@ export const DigitalDownloads = db.define(
       allowNull: true,
       comment: "USD price set by tutor",
     },
+    discount_percent: {
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: true,
+      defaultValue: 0,
+    },
+    discount_starts_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    discount_ends_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
     currency: {
       type: DataTypes.STRING(5),
       allowNull: false,

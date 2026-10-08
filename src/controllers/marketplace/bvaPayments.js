@@ -7,8 +7,10 @@ import {
   createBvaForWalletFund,
   createBvaForCoursePurchase,
   createBvaForCoachingSession,
+  createBvaForCoachingBooking,
   fulfillCoursePurchaseFromPayment,
   fulfillCoachingPurchaseFromPayment,
+  fulfillCoachingBookingFromPayment,
 } from "../../services/bvaPaymentService.js";
 import {
   verifyTransaction,
@@ -17,7 +19,8 @@ import {
 } from "../../services/flutterwaveService.js";
 
 export const initiateBvaPayment = TryCatchFunction(async (req, res) => {
-  const { source, order_id, course_id, session_id, amount } = req.body || {};
+  const { source, order_id, course_id, session_id, booking_id, access_token, amount } =
+    req.body || {};
   if (!source) throw new ErrorClass("source is required", 400);
 
   let bva;
@@ -49,9 +52,22 @@ export const initiateBvaPayment = TryCatchFunction(async (req, res) => {
     const student = await Students.findByPk(req.user.id);
     if (!student) throw new ErrorClass("Student not found", 404);
     bva = await createBvaForCoachingSession(student, parseInt(session_id, 10));
+  } else if (source === "coaching_booking") {
+    if (!booking_id) throw new ErrorClass("booking_id is required", 400);
+    if (req.user?.userType !== "student" && !access_token) {
+      throw new ErrorClass(
+        "access_token is required for guest booking payment",
+        400
+      );
+    }
+    bva = await createBvaForCoachingBooking(parseInt(booking_id, 10), {
+      accessToken: access_token,
+      payerStudentId:
+        req.user?.userType === "student" ? req.user.id : null,
+    });
   } else {
     throw new ErrorClass(
-      "source must be guest_order, event_order, wallet, course, or coaching_session",
+      "source must be guest_order, event_order, wallet, course, coaching_session, or coaching_booking",
       400
     );
   }
@@ -104,6 +120,16 @@ export const confirmBvaPayment = TryCatchFunction(async (req, res) => {
     return res.status(200).json({
       success: true,
       message: result.alreadyPaid ? "Already purchased" : "Session access granted",
+      data: { source, tx_ref: txRef },
+    });
+  }
+
+  if (source === "coaching_booking") {
+    const result = await fulfillCoachingBookingFromPayment(txRef, fw);
+    if (!result.handled) throw new ErrorClass("Booking payment not found", 404);
+    return res.status(200).json({
+      success: true,
+      message: result.alreadyPaid ? "Already paid" : "Booking confirmed",
       data: { source, tx_ref: txRef },
     });
   }

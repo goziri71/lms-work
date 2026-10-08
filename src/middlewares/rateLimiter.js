@@ -127,3 +127,24 @@ export const coachingBookingLimiter = rateLimit({
   store: createRedisStore("rl:coaching_booking:"),
   keyGenerator: (req) => `user_${req.user?.id || "guest"}`,
 });
+
+// Public (access-token based) coaching booking payment endpoints — these
+// are reachable by guests with no req.user at all, so keying by user id
+// would lump every guest into one shared "guest" bucket (one abusive guest
+// could lock out everyone else). Keyed by the booking id itself instead:
+// 20 attempts per booking per 15 minutes is generous for a real payer,
+// generous enough to block brute-forcing a specific booking's access_token
+// or spamming its payment-confirmation endpoint.
+export const coachingPublicBookingLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: {
+    status: false,
+    code: 429,
+    message: "Too many attempts for this booking. Please slow down and try again shortly.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createRedisStore("rl:coaching_booking_public:"),
+  keyGenerator: (req) => `booking_${req.params?.id || req.params?.accessToken || "unknown"}`,
+});

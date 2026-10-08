@@ -6,6 +6,7 @@ import { CoachingBookingRequest } from "../../models/marketplace/coachingBooking
 import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { Op, Sequelize } from "sequelize";
+import { generateGuestAccessToken } from "../../services/marketplaceGuestCheckoutService.js";
 
 /**
  * Browse tutors who offer coaching (public or student)
@@ -239,13 +240,11 @@ export const getTutorCoachingDetails = TryCatchFunction(async (req, res) => {
 /**
  * Submit a booking request
  * POST /api/marketplace/coaching/booking-request
- * Auth: Student required
+ * Auth: Student or guest (guest_email + guest_name)
  */
 export const createBookingRequest = TryCatchFunction(async (req, res) => {
-  const studentId = req.user?.id;
-  if (!studentId) {
-    throw new ErrorClass("Authentication required", 401);
-  }
+  const studentId =
+    req.user?.userType === "student" ? req.user.id : null;
 
   const {
     tutor_id,
@@ -257,7 +256,23 @@ export const createBookingRequest = TryCatchFunction(async (req, res) => {
     proposed_end_time,
     duration_minutes,
     student_note,
+    guest_email,
+    guest_name,
+    guest_phone,
   } = req.body;
+
+  let guestEmailNorm = null;
+  let guestName = null;
+  if (!studentId) {
+    if (!guest_email?.trim() || !guest_name?.trim()) {
+      throw new ErrorClass(
+        "guest_email and guest_name are required when not logged in",
+        400
+      );
+    }
+    guestEmailNorm = String(guest_email).trim().toLowerCase();
+    guestName = guest_name.trim();
+  }
 
   if (!tutor_id) throw new ErrorClass("tutor_id is required", 400);
   if (!topic || !topic.trim()) throw new ErrorClass("topic is required", 400);
@@ -313,14 +328,19 @@ export const createBookingRequest = TryCatchFunction(async (req, res) => {
     );
   }
 
-  // Check if student already has a pending/counter_proposed request with this tutor
+  const existingWhere = {
+    tutor_id,
+    tutor_type,
+    status: { [Op.in]: ["pending", "counter_proposed"] },
+  };
+  if (studentId) {
+    existingWhere.student_id = studentId;
+  } else {
+    existingWhere.guest_email = guestEmailNorm;
+  }
+
   const existingRequest = await CoachingBookingRequest.findOne({
-    where: {
-      student_id: studentId,
-      tutor_id,
-      tutor_type,
-      status: { [Op.in]: ["pending", "counter_proposed"] },
-    },
+    where: existingWhere,
   });
 
   if (existingRequest) {
@@ -369,6 +389,10 @@ export const createBookingRequest = TryCatchFunction(async (req, res) => {
 
   const booking = await CoachingBookingRequest.create({
     student_id: studentId,
+    guest_email: guestEmailNorm,
+    guest_name: guestName,
+    guest_phone: guest_phone?.trim() || null,
+    access_token: generateGuestAccessToken(),
     tutor_id,
     tutor_type,
     topic: topic.trim(),
@@ -404,6 +428,8 @@ export const createBookingRequest = TryCatchFunction(async (req, res) => {
         estimated_price: parseFloat(booking.estimated_price),
         currency: booking.currency,
         expires_at: booking.expires_at,
+        access_token: booking.access_token,
+        is_guest: !studentId,
       },
     },
   });

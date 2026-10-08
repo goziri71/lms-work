@@ -6,6 +6,10 @@ import { TutorCoachingProfile } from "../../models/marketplace/tutorCoachingProf
 import { Students } from "../../models/auth/student.js";
 import { Op } from "sequelize";
 import { db } from "../../database/database.js";
+import {
+  ACCEPTED_PAYMENT_WINDOW_MS,
+  sendBookingAcceptedPaymentEmail,
+} from "../../services/coachingBookingFulfillmentService.js";
 
 // A tutor's acceptance of a booking is a real-world calendar commitment, so
 // it must be serialized per tutor — otherwise two concurrent "accept"
@@ -96,8 +100,6 @@ async function assertNoSchedulingConflict(
 // window a hard deadline instead of letting it sit forever. A background
 // sweep (see coachingTimeTracker.js) expires anything that blows past this,
 // freeing the slot back up.
-const ACCEPTED_PAYMENT_WINDOW_MS = 30 * 60 * 1000;
-
 function getTutorInfo(req) {
   if (!req.user) {
     throw new ErrorClass("User not authenticated", 401);
@@ -305,9 +307,16 @@ export const acceptBookingRequest = TryCatchFunction(async (req, res) => {
     await booking.save({ transaction });
   });
 
+  await booking.reload({
+    include: [{ model: Students, as: "student", required: false }],
+  });
+  sendBookingAcceptedPaymentEmail(booking).catch((err) =>
+    console.error("Booking accept email error:", err.message)
+  );
+
   res.status(200).json({
     success: true,
-    message: "Booking request accepted. Payment will be processed and session will be created.",
+    message: "Booking request accepted. Payment link sent by email.",
     data: {
       booking_id: booking.id,
       status: booking.status,
@@ -317,6 +326,7 @@ export const acceptBookingRequest = TryCatchFunction(async (req, res) => {
       proposed_end_time: booking.proposed_end_time,
       proposed_duration_minutes: booking.proposed_duration_minutes,
       payment_due_at: booking.expires_at,
+      access_token: booking.access_token,
     },
   });
 });
@@ -489,16 +499,26 @@ export const counterProposeBooking = TryCatchFunction(async (req, res) => {
  * Auth: Student required
  */
 export const acceptCounterProposal = TryCatchFunction(async (req, res) => {
-  const studentId = req.user?.id;
-  if (!studentId) {
-    throw new ErrorClass("Authentication required", 401);
-  }
-
   const { id } = req.params;
+  const { access_token: accessToken } = req.body || {};
+  const studentId =
+    req.user?.userType === "student" ? req.user.id : null;
 
-  const booking = await CoachingBookingRequest.findOne({
-    where: { id, student_id: studentId },
-  });
+  let booking;
+  if (studentId) {
+    booking = await CoachingBookingRequest.findOne({
+      where: { id, student_id: studentId },
+      include: [{ model: Students, as: "student", required: false }],
+    });
+  } else {
+    if (!accessToken) {
+      throw new ErrorClass("access_token or student login required", 401);
+    }
+    booking = await CoachingBookingRequest.findOne({
+      where: { id, access_token: accessToken },
+      include: [{ model: Students, as: "student", required: false }],
+    });
+  }
 
   if (!booking) {
     throw new ErrorClass("Booking request not found", 404);
@@ -545,9 +565,16 @@ export const acceptCounterProposal = TryCatchFunction(async (req, res) => {
     await booking.save({ transaction });
   });
 
+  await booking.reload({
+    include: [{ model: Students, as: "student", required: false }],
+  });
+  sendBookingAcceptedPaymentEmail(booking).catch((err) =>
+    console.error("Booking counter-accept email error:", err.message)
+  );
+
   res.status(200).json({
     success: true,
-    message: "Counter-proposal accepted. Payment will be processed and session will be created.",
+    message: "Counter-proposal accepted. Payment link sent by email.",
     data: {
       booking_id: booking.id,
       status: booking.status,
@@ -557,6 +584,7 @@ export const acceptCounterProposal = TryCatchFunction(async (req, res) => {
       end_time: booking.counter_proposed_end_time,
       duration_minutes: booking.counter_proposed_duration_minutes,
       payment_due_at: booking.expires_at,
+      access_token: booking.access_token,
     },
   });
 });

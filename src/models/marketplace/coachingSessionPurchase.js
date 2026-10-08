@@ -20,12 +20,16 @@ export const CoachingSessionPurchase = db.define(
     },
     student_id: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
       references: {
         model: "students",
         key: "id",
       },
       onDelete: "CASCADE",
+    },
+    guest_email: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
     },
     price_paid: {
       type: DataTypes.DECIMAL(10, 2),

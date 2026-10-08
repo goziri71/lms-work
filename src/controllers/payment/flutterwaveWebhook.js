@@ -139,6 +139,27 @@ export const flutterwaveWebhook = TryCatchFunction(async (req, res) => {
         }
 
         if (
+          meta.type === "coaching_booking" ||
+          (txRef && String(txRef).startsWith("COACHING-BOOKING-"))
+        ) {
+          try {
+            const { fulfillBookingFromWebhook } = await import(
+              "../../services/coachingBookingFulfillmentService.js"
+            );
+            const bookResult = await fulfillBookingFromWebhook(
+              txRef,
+              transactionData
+            );
+            if (bookResult.handled) {
+              console.log(`✅ Coaching booking fulfilled via webhook (${txRef})`);
+              return res.status(200).json({ message: "Webhook received" });
+            }
+          } catch (bookErr) {
+            console.error("Coaching booking webhook fulfillment failed:", bookErr);
+          }
+        }
+
+        if (
           meta.type === "coaching_session" ||
           (txRef && String(txRef).startsWith("COACH-BVA-"))
         ) {

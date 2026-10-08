@@ -21,6 +21,7 @@ import {
   getTransactionReference,
 } from "./flutterwaveService.js";
 import { attachPaymentOptions } from "./bvaPaymentService.js";
+import { getDigitalSalePricing } from "../utils/coursePricing.js";
 
 export const GUEST_RESERVATION_MINUTES = 15;
 
@@ -49,7 +50,8 @@ async function loadProduct(productType, productId) {
   if (download.status !== "published") {
     throw new ErrorClass("This product is not available for purchase", 400);
   }
-  const price = parseFloat(download.price || 0);
+  const pricing = getDigitalSalePricing(download);
+  const price = parseFloat(pricing.sale_price);
   if (price < 0) throw new ErrorClass("Product price is invalid", 400);
   return {
     product_type: "digital_download",

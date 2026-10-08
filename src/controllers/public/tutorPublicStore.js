@@ -18,7 +18,10 @@ import { CoachingSession } from "../../models/marketplace/coachingSession.js";
 import { Op } from "sequelize";
 import { productViewUrl } from "../../utils/productViewUrl.js";
 import { formatOwnerContact } from "../../utils/ownerContact.js";
-import { getCourseSalePricing } from "../../utils/coursePricing.js";
+import {
+  getCourseSalePricing,
+  getDigitalSalePricing,
+} from "../../utils/coursePricing.js";
 
 /**
  * GET /api/marketplace/public/tutor/:slug/products
@@ -176,10 +179,14 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
           "title",
           "description",
           "price",
+          "price_usd",
           "currency",
           "cover_image",
           "category",
           "slug",
+          "discount_percent",
+          "discount_starts_at",
+          "discount_ends_at",
           "owner_type",
           "owner_id",
         ],
@@ -275,7 +282,14 @@ export const getTutorProductsBySlug = TryCatchFunction(async (req, res) => {
     if (type === "ebook") base.pages = p.pages;
     if (type === "community") base.member_count = p.member_count;
     if (type === "membership") base.pricing_type = p.pricing_type;
-    if (type === "digital_download") base.guest_checkout = true;
+    if (type === "digital_download") {
+      base.guest_checkout = true;
+      const dPricing = getDigitalSalePricing(p);
+      base.price = parseFloat(dPricing.sale_price);
+      base.list_price = parseFloat(dPricing.list_price);
+      base.discount_percent = dPricing.discount_percent;
+      base.discount_active = dPricing.discount_active;
+    }
     if (type === "coaching") {
       base.start_time = p.start_time;
       base.pricing_type = p.pricing_type;

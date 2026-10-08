@@ -1,5 +1,9 @@
 import express from "express";
-import { authLimiter, coachingBookingLimiter } from "../middlewares/rateLimiter.js";
+import {
+  authLimiter,
+  coachingBookingLimiter,
+  coachingPublicBookingLimiter,
+} from "../middlewares/rateLimiter.js";
 import { cacheMiddleware } from "../middlewares/cacheMiddleware.js";
 import {
   registerSoleTutor,
@@ -358,6 +362,11 @@ import {
   processBookingPayment,
   getBookingPaymentPreview,
 } from "../controllers/marketplace/coachingBookingPayment.js";
+import {
+  getPublicBookingByAccessToken,
+  initBookingPayment,
+  confirmBookingPayment,
+} from "../controllers/marketplace/coachingBookingPublic.js";
 import {
   studentCancelBookedSession,
   tutorCancelBookedSession,
@@ -1091,10 +1100,28 @@ router.get(
   getTutorCoachingDetails,
 );
 
-// Booking requests (student auth required)
+router.get(
+  "/coaching/bookings/access/:accessToken",
+  coachingPublicBookingLimiter,
+  getPublicBookingByAccessToken,
+);
+router.post(
+  "/coaching/bookings/:id/init-payment",
+  optionalAuthorize,
+  coachingPublicBookingLimiter,
+  initBookingPayment,
+);
+router.post(
+  "/coaching/bookings/:id/confirm-payment",
+  optionalAuthorize,
+  coachingPublicBookingLimiter,
+  confirmBookingPayment,
+);
+
+// Booking requests (student or guest)
 router.post(
   "/coaching/booking-request",
-  authorize,
+  optionalAuthorize,
   coachingBookingLimiter,
   createBookingRequest,
 );
@@ -1107,7 +1134,7 @@ router.post(
 );
 router.post(
   "/coaching/booking-request/:id/accept-counter",
-  authorize,
+  optionalAuthorize,
   coachingBookingLimiter,
   acceptCounterProposal,
 );
