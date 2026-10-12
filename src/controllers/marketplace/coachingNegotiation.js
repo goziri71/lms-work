@@ -10,6 +10,11 @@ import {
   ACCEPTED_PAYMENT_WINDOW_MS,
   sendBookingAcceptedPaymentEmail,
 } from "../../services/coachingBookingFulfillmentService.js";
+import {
+  assertTutorSlotAvailable,
+  reserveCalendarForAcceptedBooking,
+  releaseCalendarHoldForBooking,
+} from "../../services/coachingCalendarService.js";
 
 // A tutor's acceptance of a booking is a real-world calendar commitment, so
 // it must be serialized per tutor — otherwise two concurrent "accept"
@@ -297,6 +302,10 @@ export const acceptBookingRequest = TryCatchFunction(async (req, res) => {
       booking.id,
       transaction
     );
+    await assertTutorSlotAvailable(tutorId, tutorType, startTime, endTime, {
+      excludeBookingId: booking.id,
+      transaction,
+    });
 
     booking.status = "accepted";
     booking.accepted_by = "tutor";
@@ -305,13 +314,18 @@ export const acceptBookingRequest = TryCatchFunction(async (req, res) => {
     booking.expires_at = new Date(Date.now() + ACCEPTED_PAYMENT_WINDOW_MS);
     if (tutor_note) booking.tutor_note = tutor_note.trim();
     await booking.save({ transaction });
+    await reserveCalendarForAcceptedBooking(booking, transaction);
   });
 
   await booking.reload({
     include: [{ model: Students, as: "student", required: false }],
   });
   sendBookingAcceptedPaymentEmail(booking).catch((err) =>
-    console.error("Booking accept email error:", err.message)
+    console.error(
+      `Booking accept email error (booking ${booking.id}):`,
+      err.message,
+      err.stack
+    )
   );
 
   res.status(200).json({
@@ -367,10 +381,18 @@ export const declineBookingRequest = TryCatchFunction(async (req, res) => {
     );
   }
 
+  const wasAccepted = booking.status === "accepted";
+
   booking.status = "declined";
   booking.declined_at = new Date();
   if (tutor_note) booking.tutor_note = tutor_note.trim();
   await booking.save();
+
+  if (wasAccepted) {
+    await releaseCalendarHoldForBooking(booking.id, {
+      reactivateAvailability: true,
+    });
+  }
 
   res.status(200).json({
     success: true,
@@ -556,6 +578,13 @@ export const acceptCounterProposal = TryCatchFunction(async (req, res) => {
       booking.id,
       transaction
     );
+    await assertTutorSlotAvailable(
+      booking.tutor_id,
+      booking.tutor_type,
+      startTime,
+      endTime,
+      { excludeBookingId: booking.id, transaction }
+    );
 
     booking.status = "accepted";
     booking.accepted_by = "student";
@@ -563,13 +592,18 @@ export const acceptCounterProposal = TryCatchFunction(async (req, res) => {
     booking.final_price = finalPrice;
     booking.expires_at = new Date(Date.now() + ACCEPTED_PAYMENT_WINDOW_MS);
     await booking.save({ transaction });
+    await reserveCalendarForAcceptedBooking(booking, transaction);
   });
 
   await booking.reload({
     include: [{ model: Students, as: "student", required: false }],
   });
   sendBookingAcceptedPaymentEmail(booking).catch((err) =>
-    console.error("Booking counter-accept email error:", err.message)
+    console.error(
+      `Booking counter-accept email error (booking ${booking.id}):`,
+      err.message,
+      err.stack
+    )
   );
 
   res.status(200).json({
@@ -644,6 +678,15 @@ export const declineCounterProposal = TryCatchFunction(async (req, res) => {
  * Intended to run periodically from app.js.
  */
 export async function expireStaleAcceptedBookings() {
+  const stale = await CoachingBookingRequest.findAll({
+    where: {
+      status: "accepted",
+      session_id: null,
+      expires_at: { [Op.lt]: new Date() },
+    },
+    attributes: ["id"],
+  });
+
   const [count] = await CoachingBookingRequest.update(
     { status: "expired" },
     {
@@ -654,6 +697,20 @@ export async function expireStaleAcceptedBookings() {
       },
     }
   );
+
+  for (const row of stale) {
+    try {
+      await releaseCalendarHoldForBooking(row.id, {
+        reactivateAvailability: true,
+      });
+    } catch (err) {
+      console.error(
+        `Calendar hold release failed for expired booking ${row.id}:`,
+        err.message
+      );
+    }
+  }
+
   if (count > 0) {
     console.log(`⏰ Expired ${count} stale accepted-but-unpaid coaching booking(s)`);
   }

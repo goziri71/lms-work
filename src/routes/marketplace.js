@@ -364,6 +364,7 @@ import {
 } from "../controllers/marketplace/coachingBookingPayment.js";
 import {
   getPublicBookingByAccessToken,
+  resendBookingPaymentEmail,
   initBookingPayment,
   confirmBookingPayment,
 } from "../controllers/marketplace/coachingBookingPublic.js";
@@ -1104,6 +1105,11 @@ router.get(
   "/coaching/bookings/access/:accessToken",
   coachingPublicBookingLimiter,
   getPublicBookingByAccessToken,
+);
+router.post(
+  "/coaching/bookings/access/:accessToken/resend-payment-email",
+  coachingPublicBookingLimiter,
+  resendBookingPaymentEmail,
 );
 router.post(
   "/coaching/bookings/:id/init-payment",

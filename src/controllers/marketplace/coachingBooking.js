@@ -7,6 +7,10 @@ import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import { Op, Sequelize } from "sequelize";
 import { generateGuestAccessToken } from "../../services/marketplaceGuestCheckoutService.js";
+import {
+  assertTutorSlotAvailable,
+  listTutorUnavailableIntervals,
+} from "../../services/coachingCalendarService.js";
 
 /**
  * Browse tutors who offer coaching (public or student)
@@ -190,6 +194,11 @@ export const getTutorCoachingDetails = TryCatchFunction(async (req, res) => {
       ? `${tutor?.fname || ""} ${tutor?.lname || ""}`.trim()
       : tutor?.name || "";
 
+  const unavailable_intervals = await listTutorUnavailableIntervals(
+    parseInt(tutorId, 10),
+    tutorType
+  );
+
   res.status(200).json({
     success: true,
     data: {
@@ -217,6 +226,7 @@ export const getTutorCoachingDetails = TryCatchFunction(async (req, res) => {
           ? parseFloat(profile.average_rating)
           : null,
       },
+      unavailable_intervals,
       availability: {
         recurring: availability.filter((s) => s.is_recurring).map((s) => ({
           id: s.id,
@@ -386,6 +396,8 @@ export const createBookingRequest = TryCatchFunction(async (req, res) => {
 
   // Set expiry to 48 hours from now for pending requests
   const expiresAt = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+
+  await assertTutorSlotAvailable(tutor_id, tutor_type, startTime, endTime);
 
   const booking = await CoachingBookingRequest.create({
     student_id: studentId,

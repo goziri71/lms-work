@@ -25,6 +25,8 @@ import { applyLegacyWalletMirror } from "../utils/tutorWallet.js";
 import { joinFrontendUrl } from "../utils/frontendUrl.js";
 import { emailService } from "./emailService.js";
 import { generateGuestAccessToken } from "./marketplaceGuestCheckoutService.js";
+import { releaseCalendarHoldAfterPayment } from "./coachingCalendarService.js";
+import { getAgreedBookingTimes } from "../utils/coachingBookingTimes.js";
 
 export const ACCEPTED_PAYMENT_WINDOW_MS = 30 * 60 * 1000;
 
@@ -52,24 +54,43 @@ export function getBookingBuyerEmail(booking) {
   return booking.guest_email;
 }
 
-export function getAgreedBookingTimes(booking) {
-  const isCounterAccepted = booking.accepted_by === "student";
-  return {
-    startTime: new Date(
-      isCounterAccepted
-        ? booking.counter_proposed_start_time
-        : booking.proposed_start_time
-    ),
-    endTime: new Date(
-      isCounterAccepted
-        ? booking.counter_proposed_end_time
-        : booking.proposed_end_time
-    ),
-    durationMinutes: isCounterAccepted
-      ? booking.counter_proposed_duration_minutes
-      : booking.proposed_duration_minutes,
-  };
+/** Resolve buyer email/name even when Sequelize include did not load student. */
+export async function resolveBookingRecipient(booking) {
+  let email = normalizeEmail(booking.guest_email);
+  let name = booking.guest_name?.trim() || null;
+
+  if (!email && booking.student_id) {
+    const student =
+      booking.student ||
+      (await Students.findByPk(booking.student_id, {
+        attributes: ["id", "email", "fname", "lname"],
+      }));
+    if (student) {
+      email = normalizeEmail(student.email);
+      if (!name) {
+        name = `${student.fname || ""} ${student.lname || ""}`.trim() || null;
+      }
+    }
+  }
+
+  return { email, name: name || "there" };
 }
+
+async function sendNomadaEmail({ to, name, subject, htmlBody }) {
+  const result = await emailService.sendEmail({
+    to,
+    name,
+    subject,
+    htmlBody,
+    useTutorLearnerBranding: true,
+  });
+  if (!result.success) {
+    throw new Error(result.message || "Email delivery failed");
+  }
+  return result;
+}
+
+export { getAgreedBookingTimes } from "../utils/coachingBookingTimes.js";
 
 export async function assertBookingPayable(booking) {
   if (!booking) throw new ErrorClass("Booking not found", 404);
@@ -100,59 +121,86 @@ export async function assertBookingPayable(booking) {
 }
 
 export async function sendBookingAcceptedPaymentEmail(booking) {
-  const token = booking.access_token || generateGuestAccessToken();
-  if (!booking.access_token) {
-    await booking.update({ access_token: token });
+  const row =
+    booking?.id != null
+      ? await CoachingBookingRequest.findByPk(booking.id, {
+          include: [{ model: Students, as: "student", required: false }],
+        })
+      : booking;
+  if (!row) throw new Error("Booking not found for payment email");
+
+  const token = row.access_token || generateGuestAccessToken();
+  if (!row.access_token) {
+    await row.update({ access_token: token });
   }
 
-  const email =
-    normalizeEmail(booking.guest_email) ||
-    normalizeEmail(booking.student?.email);
-  const name =
-    booking.guest_name ||
-    (booking.student
-      ? `${booking.student.fname || ""} ${booking.student.lname || ""}`.trim()
-      : "there");
-
+  const { email, name } = await resolveBookingRecipient(row);
   if (!email) {
-    console.warn(`Booking ${booking.id}: no email for acceptance notice`);
-    return;
+    throw new Error(
+      `Booking ${row.id}: no buyer email (guest_email or student record)`
+    );
   }
 
   const payUrl = buildBookingPayUrl(token);
-  const finalPrice = parseFloat(booking.final_price || 0).toFixed(2);
-  const { startTime, endTime } = getAgreedBookingTimes(booking);
+  const finalPrice = parseFloat(row.final_price || 0).toFixed(2);
+  const { startTime, endTime } = getAgreedBookingTimes(row);
 
   const html = `
     <h2>Your coaching session is confirmed — payment required</h2>
     <p>Hi ${name},</p>
-    <p>Your coach accepted your booking for <strong>${booking.topic}</strong>.</p>
+    <p>Your coach accepted your booking for <strong>${row.topic}</strong>.</p>
     <p><strong>When:</strong> ${startTime.toLocaleString()} – ${endTime.toLocaleString()}</p>
-    <p><strong>Amount:</strong> ${finalPrice} ${booking.currency || "NGN"}</p>
+    <p><strong>Amount:</strong> ${finalPrice} ${row.currency || "NGN"}</p>
     <p><a href="${payUrl}">Complete payment</a></p>
+    <p>Or copy this link: ${payUrl}</p>
     <p>After payment, we will email your meeting link. Do not share this payment link.</p>
-    <p style="font-size:12px;color:#6b7280">Pinnacle</p>
+    <p style="font-size:12px;color:#6b7280">Nomada</p>
   `;
 
-  await emailService.sendEmail({
+  await sendNomadaEmail({
     to: email,
     name,
-    subject: `Pay for your coaching session: ${booking.topic}`,
+    subject: `Pay for your coaching session: ${row.topic}`,
     htmlBody: html,
   });
+
+  console.log(
+    `✅ Coaching booking ${row.id}: payment link email sent to ${email}`
+  );
+  return { email, payUrl };
+}
+
+export async function resendBookingPaymentEmailByAccessToken(accessToken) {
+  const booking = await CoachingBookingRequest.findOne({
+    where: { access_token: accessToken },
+    include: [{ model: Students, as: "student", required: false }],
+  });
+  if (!booking) throw new ErrorClass("Booking not found", 404);
+  if (booking.status !== "accepted") {
+    throw new ErrorClass(
+      `Payment email only applies to accepted bookings (status: ${booking.status})`,
+      400
+    );
+  }
+  if (booking.session_id) {
+    throw new ErrorClass("This booking is already paid", 400);
+  }
+  return sendBookingAcceptedPaymentEmail(booking);
 }
 
 export async function sendBookingMeetingLinkEmail(booking, session) {
-  const email =
-    normalizeEmail(booking.guest_email) ||
-    normalizeEmail(booking.student?.email);
-  const name =
-    booking.guest_name ||
-    (booking.student
-      ? `${booking.student.fname || ""} ${booking.student.lname || ""}`.trim()
-      : "there");
+  const row =
+    booking?.id != null
+      ? await CoachingBookingRequest.findByPk(booking.id, {
+          include: [{ model: Students, as: "student", required: false }],
+        })
+      : booking;
+  if (!row) throw new Error("Booking not found for meeting email");
 
-  if (!email) return;
+  const { email, name } = await resolveBookingRecipient(row);
+  if (!email) {
+    throw new Error(`Booking ${row.id}: no email for meeting link`);
+  }
 
   const meetingUrl =
     session.view_link ||
@@ -167,15 +215,20 @@ export async function sendBookingMeetingLinkEmail(booking, session) {
     <p>Payment received for <strong>${session.title}</strong>.</p>
     <p><strong>Starts:</strong> ${new Date(session.start_time).toLocaleString()}</p>
     <p><a href="${meetingUrl}">Open meeting page</a></p>
-    <p style="font-size:12px;color:#6b7280">Pinnacle</p>
+    <p>Or copy this link: ${meetingUrl}</p>
+    <p style="font-size:12px;color:#6b7280">Nomada</p>
   `;
 
-  await emailService.sendEmail({
+  await sendNomadaEmail({
     to: email,
     name,
     subject: `Meeting link: ${session.title}`,
     htmlBody: html,
   });
+
+  console.log(
+    `✅ Coaching booking ${row.id}: meeting link email sent to ${email}`
+  );
 }
 
 /**
@@ -470,6 +523,8 @@ export async function fulfillAcceptedBookingPayment(
       { transaction: dbTransaction }
     );
 
+    await releaseCalendarHoldAfterPayment(booking.id, dbTransaction);
+
     await TutorCoachingProfile.increment("total_sessions_completed", {
       by: 1,
       where: {
@@ -486,7 +541,11 @@ export async function fulfillAcceptedBookingPayment(
     });
 
     sendBookingMeetingLinkEmail(bookingPlain, session).catch((err) =>
-      console.error("Booking meeting email error:", err.message)
+      console.error(
+        `Booking meeting email error (booking ${bookingId}):`,
+        err.message,
+        err.stack
+      )
     );
 
     return {

@@ -125,6 +125,54 @@ No JWT. Required:
 
 On **accept**, buyer gets payment email. UI should show `final_price`, `payment_due_at`.
 
+**Calendar / double-booking:** When a booking becomes **`accepted`**, the backend **holds that time** on the tutor calendar until payment, expiry, or tutor decline. The slot must not be offered to another buyer.
+
+---
+
+## Calendar: avoid double booking
+
+### Public tutor profile (booking UI)
+
+**GET** `/coaching/tutors/:tutorId?tutor_type=sole_tutor`
+
+Response includes:
+
+- `availability` — recurring + specific-date **templates** (unchanged)
+- **`unavailable_intervals`** — concrete blocked windows:
+
+```json
+{
+  "source": "calendar_hold | accepted_booking | coaching_session",
+  "booking_request_id": 12,
+  "session_id": 34,
+  "start_time": "2026-10-15T14:00:00.000Z",
+  "end_time": "2026-10-15T15:00:00.000Z"
+}
+```
+
+**Frontend:** When rendering pickable slots, **subtract** any interval that overlaps `unavailable_intervals` (standard interval overlap: `startA < endB && endA > startB`).
+
+Pending requests (`status: pending`) do **not** block the calendar until the tutor accepts.
+
+### Tutor dashboard calendar
+
+**GET** `/tutor/coaching/availability` also returns **`unavailable_intervals`** with the same shape — show as busy/blocked on the creator calendar.
+
+### API errors
+
+**POST** `/coaching/booking-request` returns **409** if the proposed time overlaps an accepted hold or scheduled session.
+
+### Lifecycle
+
+| Event | Calendar |
+|--------|----------|
+| Tutor **accepts** (or buyer accepts counter) | Hold created; one-off availability slot may be deactivated |
+| **Payment** succeeds | Hold released; **coaching session** blocks the time instead |
+| Payment **window expires** (background job) | Booking → `expired`, hold released, specific slot reactivated if applicable |
+| Tutor **declines** after accept | Hold released, slot reactivated |
+
+**Ops migration:** `node scripts/migrate-coaching-calendar-holds.js`
+
 ---
 
 ## Buyer: accept counter-proposal
@@ -156,6 +204,8 @@ Triggers same **payment email** as tutor accept.
 **GET** `/coaching/bookings/access/:accessToken`
 
 No auth. Response `data` includes:
+
+**Resend payment email** (accepted, not yet paid): **POST** `/coaching/bookings/access/:accessToken/resend-payment-email`
 
 - `topic`, tutor summary, agreed times, `final_price`, `currency`
 - `status`, `paid`, `can_pay`, `payment_due_at`

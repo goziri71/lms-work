@@ -28,6 +28,7 @@ export { CoachingSchedulingMessage } from "./coachingSchedulingMessage.js";
 export { TutorCoachingProfile } from "./tutorCoachingProfile.js";
 export { TutorAvailability } from "./tutorAvailability.js";
 export { CoachingBookingRequest } from "./coachingBookingRequest.js";
+export { CoachingCalendarHold } from "./coachingCalendarHold.js";
 // Community exports
 export { Community } from "./community.js";
 export { CommunityMember } from "./communityMember.js";

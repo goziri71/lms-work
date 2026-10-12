@@ -2,6 +2,7 @@ import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { TutorCoachingProfile } from "../../models/marketplace/tutorCoachingProfile.js";
 import { TutorAvailability } from "../../models/marketplace/tutorAvailability.js";
+import { listTutorUnavailableIntervals } from "../../services/coachingCalendarService.js";
 import { Op } from "sequelize";
 
 function getTutorInfo(req) {
@@ -183,12 +184,18 @@ export const getAvailability = TryCatchFunction(async (req, res) => {
   const recurring = slots.filter((s) => s.is_recurring);
   const specific = slots.filter((s) => !s.is_recurring);
 
+  const unavailable_intervals = await listTutorUnavailableIntervals(
+    tutorId,
+    tutorType
+  );
+
   res.status(200).json({
     success: true,
     data: {
       recurring,
       specific,
       total: slots.length,
+      unavailable_intervals,
     },
   });
 });

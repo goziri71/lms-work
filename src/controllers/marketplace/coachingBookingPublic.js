@@ -9,6 +9,7 @@ import {
   buildBookingTxRef,
   fulfillAcceptedBookingPayment,
   getAgreedBookingTimes,
+  resendBookingPaymentEmailByAccessToken,
 } from "../../services/coachingBookingFulfillmentService.js";
 import { attachPaymentOptions } from "../../services/bvaPaymentService.js";
 import {
@@ -144,6 +145,20 @@ export const getPublicBookingByAccessToken = TryCatchFunction(async (req, res) =
   res.json({
     success: true,
     data: serializePublicBooking(booking, tutor),
+  });
+});
+
+/**
+ * POST /api/marketplace/coaching/bookings/access/:accessToken/resend-payment-email
+ */
+export const resendBookingPaymentEmail = TryCatchFunction(async (req, res) => {
+  const result = await resendBookingPaymentEmailByAccessToken(
+    req.params.accessToken
+  );
+  res.json({
+    success: true,
+    message: "Payment link email sent",
+    data: { sent_to: result.email },
   });
 });
 
