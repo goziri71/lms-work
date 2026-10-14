@@ -241,8 +241,8 @@ export async function sendBookingMeetingLinkEmail(booking, session) {
   const meetingUrl =
     session.view_link ||
     joinFrontendUrl(
-      process.env.FRONTEND_URL || Config.frontendUrl,
-      `coaching/sessions/${session.id}`
+      Config.adminFrontendUrl,
+      `coaching/session/${session.stream_call_id || session.id}`
     );
 
   const html = `
@@ -415,8 +415,13 @@ export async function fulfillAcceptedBookingPayment(
       }
     }
 
+    // The /coaching/session/:streamCallId meeting page is currently only
+    // served from the manage.* (admin/tutor) frontend, not app.* (student)
+    // — confirmed by testing both directly: app.* 404s, manage.* loads the
+    // page. Use adminFrontendUrl until app.* gets this route too, otherwise
+    // every meeting-link email (including to guests/students) 404s.
     const viewLink = joinFrontendUrl(
-      Config.frontendUrl,
+      Config.adminFrontendUrl,
       `coaching/session/${streamCallId}`
     );
 

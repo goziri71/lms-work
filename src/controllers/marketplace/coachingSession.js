@@ -294,8 +294,11 @@ export const createSession = TryCatchFunction(async (req, res) => {
       );
     }
 
-    // Generate view link (public link for students)
-    const viewLink = `${Config.frontendUrl}coaching/session/${streamCallId}`;
+    // Generate view link. The /coaching/session/:streamCallId meeting page
+    // is currently only served from the manage.* (admin/tutor) frontend,
+    // not app.* (student) — confirmed by testing both: app.* 404s, manage.*
+    // loads the page. Use adminFrontendUrl until app.* gets this route too.
+    const viewLink = `${Config.adminFrontendUrl}coaching/session/${streamCallId}`;
 
     // Handle image upload if file is provided
     let finalImageUrl = image_url || null;
@@ -1030,6 +1033,28 @@ export const getJoinToken = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("Video calls are currently disabled", 503);
   }
 
+  // getOrCreateCall is idempotent — safe to call again even if the call
+  // already exists. It's only ever called once otherwise, at booking/
+  // session-creation time, with any failure there silently swallowed (logged,
+  // not retried). Re-asserting here means a call that failed to register
+  // with Stream back then still gets created before anyone actually tries
+  // to join, instead of everyone hitting a "call not found" failure forever.
+  try {
+    await streamVideoService.getOrCreateCall("default", session.stream_call_id, {
+      createdBy: formatStreamUserId(session.tutor_type, session.tutor_id),
+      startsAt: session.start_time,
+    });
+  } catch (streamError) {
+    console.error(
+      `Failed to ensure Stream call exists for session ${session.id}:`,
+      streamError.message
+    );
+    throw new ErrorClass(
+      "Could not connect to the video call right now. Please try again shortly.",
+      502
+    );
+  }
+
   // Generate token (1 hour TTL)
   const streamUserId = formatStreamUserId(tutorType, tutorId);
   const token = streamVideoService.generateUserToken(streamUserId, 3600);
@@ -1096,6 +1121,27 @@ export const getStudentJoinToken = TryCatchFunction(async (req, res) => {
 
   if (!Config.streamApiKey || !Config.streamSecret) {
     throw new ErrorClass("Video calls are currently disabled", 503);
+  }
+
+  // getOrCreateCall is idempotent — re-asserting here means a call that
+  // failed to register with Stream at creation time (that failure is
+  // logged, not retried, and doesn't block session creation) still gets
+  // created before the student actually tries to join. See getJoinToken
+  // above for the tutor-side equivalent.
+  try {
+    await streamVideoService.getOrCreateCall("default", session.stream_call_id, {
+      createdBy: formatStreamUserId(session.tutor_type, session.tutor_id),
+      startsAt: session.start_time,
+    });
+  } catch (streamError) {
+    console.error(
+      `Failed to ensure Stream call exists for session ${session.id}:`,
+      streamError.message
+    );
+    throw new ErrorClass(
+      "Could not connect to the video call right now. Please try again shortly.",
+      502
+    );
   }
 
   // Generate token (1 hour TTL)

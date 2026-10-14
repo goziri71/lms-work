@@ -3,6 +3,7 @@
  * Real-time messaging between tutors and learners for scheduling
  */
 
+import crypto from "crypto";
 import { AuthService } from "../service/authservice.js";
 import { Config } from "../config/config.js";
 
@@ -245,16 +246,30 @@ export function setupCoachingMessagingSocket(io) {
 
         // Create Stream.io call if not exists
         if (!session.stream_call_id) {
-          const { streamVideoService } = await import("../service/streamVideoService.js");
-          const streamCall = await streamVideoService.createCall({
-            createdBy: String(session.tutor_id),
-            record: false,
-            startsAt: schedulingMessage.proposed_start_time.toISOString(),
-          });
-          
-          const viewLink = `${Config.frontendUrl}coaching/session/${streamCall.id}`;
+          // Was calling streamVideoService.createCall(...), a method that
+          // doesn't exist on that service (only getOrCreateCall does) — this
+          // would have thrown every time this branch ran. Also now uses the
+          // composite Stream identity (formatStreamUserId) instead of a raw
+          // numeric id, consistent with every other call-creation site.
+          const { streamVideoService, formatStreamUserId } = await import(
+            "../service/streamVideoService.js"
+          );
+          const streamCallId = `coaching_${session.tutor_id}_${crypto.randomUUID()}`;
+          try {
+            await streamVideoService.getOrCreateCall("default", streamCallId, {
+              createdBy: formatStreamUserId(session.tutor_type, session.tutor_id),
+              record: false,
+              startsAt: schedulingMessage.proposed_start_time.toISOString(),
+            });
+          } catch (streamError) {
+            console.error("Stream.io call creation failed:", streamError.message);
+          }
+
+          // Meeting page is currently only served from the manage.*
+          // (admin/tutor) frontend, not app.* — see coachingSession.js.
+          const viewLink = `${Config.adminFrontendUrl}coaching/session/${streamCallId}`;
           await session.update({
-            stream_call_id: streamCall.id,
+            stream_call_id: streamCallId,
             view_link: viewLink,
           });
         }
