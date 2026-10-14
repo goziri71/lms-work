@@ -246,10 +246,15 @@ export async function fulfillAcceptedBookingPayment(
 ) {
   const dbTransaction = await db.transaction();
   try {
+    // No `include` here: Postgres rejects `FOR UPDATE` on a query with a
+    // LEFT OUTER JOIN on the nullable side ("FOR UPDATE cannot be applied
+    // to the nullable side of an outer join") — and since student_id is
+    // nullable (guest bookings), the student include would always be on
+    // that nullable side. Not needed anyway: `student` is fetched
+    // separately right below.
     const booking = await CoachingBookingRequest.findByPk(bookingId, {
       lock: Transaction.LOCK.UPDATE,
       transaction: dbTransaction,
-      include: [{ model: Students, as: "student", required: false }],
     });
 
     await assertBookingPayable(booking);
