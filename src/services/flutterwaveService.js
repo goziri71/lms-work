@@ -731,30 +731,50 @@ export async function createOneTimeVirtualAccount({
       }
     );
 
-    const data = response.data?.data;
-    if (response.data?.status !== "success" || !data) {
+    const body = response.data || {};
+    const status = String(body.status || "").toLowerCase();
+    if (status !== "success") {
       throw new ErrorClass(
-        response.data?.message || "Failed to create bank virtual account",
+        body.message || "Failed to create bank virtual account",
         400
       );
     }
 
-    const metaObj = data.meta || {};
-    const authorization = data.authorization || {};
+    // Flutterwave may return charge payload in `data` OR only in top-level `meta.authorization`
+    // (docs: status "success", message "Charge initiated", meta.authorization.transfer_account).
+    const data = body.data || {};
+    const rootMetaAuth = body.meta?.authorization || {};
+    const dataAuth = data.authorization || {};
+    const authorization = {
+      ...rootMetaAuth,
+      ...dataAuth,
+    };
+
+    const accountNumber =
+      data.account_number ||
+      authorization.transfer_account ||
+      null;
+
+    if (!accountNumber) {
+      throw new ErrorClass(
+        body.message ||
+          "Bank transfer account was not returned by Flutterwave. Try again or use card payment.",
+        502
+      );
+    }
+
+    const transferAmount = authorization.transfer_amount ?? data.amount ?? amt;
 
     return {
       provider: "flutterwave_bva",
-      tx_ref: data.tx_ref || txRef,
-      flw_ref: data.flw_ref || null,
-      amount: parseFloat(data.amount || amt).toFixed(2),
+      tx_ref: data.tx_ref || body.tx_ref || txRef,
+      flw_ref: data.flw_ref || body.flw_ref || authorization.transfer_reference || null,
+      amount: parseFloat(transferAmount || amt).toFixed(2),
       currency: "NGN",
-      account_number:
-        data.account_number ||
-        authorization.transfer_account ||
-        metaObj.authorization?.transfer_account ||
-        null,
+      account_number: accountNumber,
       account_name:
         data.account_name ||
+        authorization.account_name ||
         authorization.transfer_bank ||
         "Flutterwave",
       bank_name:
