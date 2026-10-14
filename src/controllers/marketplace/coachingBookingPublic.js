@@ -6,6 +6,7 @@ import { SoleTutor } from "../../models/marketplace/soleTutor.js";
 import { Organization } from "../../models/marketplace/organization.js";
 import {
   assertBookingPayable,
+  assertCanActOnBooking,
   buildBookingTxRef,
   fulfillAcceptedBookingPayment,
   getAgreedBookingTimes,
@@ -18,28 +19,6 @@ import {
   getTransactionAmount,
   getTransactionReference,
 } from "../../services/flutterwaveService.js";
-
-/**
- * Guards initBookingPayment/confirmBookingPayment. Access is granted if
- * EITHER the requester is logged in as the exact student who owns this
- * booking, OR they present the booking's own access_token (every booking,
- * guest or student-owned, gets one — e.g. for the "pay" link in the
- * acceptance email). What this must NOT allow: an unrelated logged-in
- * student reaching someone else's booking just because its student_id
- * happens to be null (a guest booking) — a previous version of this check
- * only verified ownership when student_id was set, which let any logged-in
- * student bypass the access_token requirement entirely for guest bookings.
- */
-function assertCanActOnBooking(booking, studentId, accessToken) {
-  const ownsAsStudent = studentId != null && booking.student_id === studentId;
-  const hasValidToken = !!accessToken && accessToken === booking.access_token;
-  if (!ownsAsStudent && !hasValidToken) {
-    throw new ErrorClass(
-      booking.student_id ? "Forbidden" : "Valid access_token is required",
-      403
-    );
-  }
-}
 
 async function loadBookingByAccessToken(accessToken) {
   const booking = await CoachingBookingRequest.findOne({

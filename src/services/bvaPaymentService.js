@@ -9,6 +9,7 @@ import { CoachingSession } from "../models/marketplace/coachingSession.js";
 import { CoachingBookingRequest } from "../models/marketplace/coachingBookingRequest.js";
 import {
   assertBookingPayable,
+  assertCanActOnBooking,
   buildBookingTxRef,
   fulfillAcceptedBookingPayment,
 } from "./coachingBookingFulfillmentService.js";
@@ -246,13 +247,7 @@ export async function createBvaForCoachingBooking(
     include: [{ model: Students, as: "student", required: false }],
   });
   if (!booking) throw new ErrorClass("Booking not found", 404);
-  if (payerStudentId) {
-    if (booking.student_id && booking.student_id !== payerStudentId) {
-      throw new ErrorClass("Forbidden", 403);
-    }
-  } else if (!accessToken || accessToken !== booking.access_token) {
-    throw new ErrorClass("Valid access_token is required", 403);
-  }
+  assertCanActOnBooking(booking, payerStudentId, accessToken);
   await assertBookingPayable(booking);
 
   const amount = parseFloat(booking.final_price || 0);
