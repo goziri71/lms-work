@@ -117,7 +117,7 @@ export function assertCanActOnBooking(booking, studentId, accessToken) {
   }
 }
 
-export async function assertBookingPayable(booking) {
+export async function assertBookingPayable(booking, { allowFree = false } = {}) {
   if (!booking) throw new ErrorClass("Booking not found", 404);
   if (booking.status !== "accepted") {
     throw new ErrorClass(
@@ -128,12 +128,16 @@ export async function assertBookingPayable(booking) {
   if (booking.session_id) {
     throw new ErrorClass("This booking has already been paid", 400);
   }
-  if (isFreeBooking(booking)) {
+  if (!allowFree && isFreeBooking(booking)) {
     // Free bookings are fulfilled automatically right after acceptance
     // (see acceptBookingRequest/acceptCounterProposal) — there's nothing to
     // pay, so no payment entry point (init-payment, confirm-payment, BVA)
     // should ever reach this far for one. If it's still unfulfilled, the
     // automatic fulfillment hasn't finished yet rather than needing payment.
+    // `allowFree` is set by fulfillAcceptedBookingPayment itself when it's
+    // the one doing that automatic free fulfillment (paymentMethod
+    // "free") — without it, this check would reject its own call and the
+    // free booking would silently never get fulfilled or emailed at all.
     throw new ErrorClass(
       "This is a free booking — no payment is required. The session is being created automatically.",
       400
@@ -293,7 +297,7 @@ export async function fulfillAcceptedBookingPayment(
       transaction: dbTransaction,
     });
 
-    await assertBookingPayable(booking);
+    await assertBookingPayable(booking, { allowFree: paymentMethod === "free" });
 
     const effectiveStudentId = booking.student_id || payerStudentId || null;
     let student = null;
