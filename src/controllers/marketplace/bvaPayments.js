@@ -91,16 +91,39 @@ export const confirmBvaPayment = TryCatchFunction(async (req, res) => {
     throw new ErrorClass("transaction_reference is required", 400);
   }
 
+  // Bank transfers can genuinely take minutes to post on Flutterwave's side
+  // (their own docs say so), but this is a synchronous HTTP request — the
+  // previous maxRetries:12 / 5000ms (up to 60s) held the connection open
+  // long enough to blow past typical client/proxy timeouts, which is what
+  // showed up as a frontend "network error" while the server kept retrying
+  // in the background with nobody left to receive the response. Keep this
+  // check short, and if the transfer hasn't posted yet, say so clearly
+  // instead of erroring — the webhook (flutterwaveWebhook.js) still
+  // fulfills the booking/order asynchronously the moment Flutterwave does
+  // detect it, independent of whether this request is still open.
   const verification = await verifyTransaction(String(verifyId), {
-    maxRetries: 12,
-    retryDelayMs: 5000,
+    maxRetries: 3,
+    retryDelayMs: 2000,
   });
   if (!verification.success || !verification.transaction) {
-    throw new ErrorClass(verification.message || "Payment verification failed", 400);
+    return res.status(202).json({
+      success: true,
+      pending: true,
+      message:
+        "We haven't seen your bank transfer post yet. This can take a few minutes — " +
+        "we'll complete your payment automatically as soon as it arrives, or you can " +
+        "check back and confirm again shortly.",
+      data: { source },
+    });
   }
   const fw = verification.transaction;
   if (!isTransactionSuccessful(fw)) {
-    throw new ErrorClass("Payment was not successful yet", 400);
+    return res.status(202).json({
+      success: true,
+      pending: true,
+      message: "Your transfer was found but hasn't been confirmed successful yet. Please check back shortly.",
+      data: { source },
+    });
   }
   const txRef = getTransactionReference(fw) || transaction_reference;
 

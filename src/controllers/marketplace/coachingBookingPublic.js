@@ -252,16 +252,37 @@ export const confirmBookingPayment = TryCatchFunction(async (req, res) => {
     });
   }
 
+  // Bank transfers (and some card flows) can take a while to post on
+  // Flutterwave's side — but this is a synchronous HTTP request, and a
+  // 12x5000ms (up to 60s) blocking wait here holds the connection open long
+  // enough to blow past typical client/proxy timeouts, which surfaces to
+  // the frontend as a "network error" even though the server is still
+  // working. Keep this short; if it's not confirmed yet, say so plainly
+  // instead of erroring — the webhook (flutterwaveWebhook.js) still
+  // completes the booking asynchronously the moment Flutterwave detects
+  // the payment, independent of this request.
   const verification = await verifyTransaction(String(verifyId), {
-    maxRetries: 12,
-    retryDelayMs: 5000,
+    maxRetries: 3,
+    retryDelayMs: 2000,
   });
   if (!verification.success || !verification.transaction) {
-    throw new ErrorClass(verification.message || "Payment verification failed", 400);
+    return res.status(202).json({
+      success: true,
+      pending: true,
+      message:
+        "We haven't confirmed your payment yet. This can take a minute — " +
+        "we'll complete it automatically once confirmed, or check back shortly.",
+      data: { booking_id: booking.id },
+    });
   }
   const fw = verification.transaction;
   if (!isTransactionSuccessful(fw)) {
-    throw new ErrorClass("Payment was not successful yet", 400);
+    return res.status(202).json({
+      success: true,
+      pending: true,
+      message: "Your payment was found but hasn't been confirmed successful yet. Please check back shortly.",
+      data: { booking_id: booking.id },
+    });
   }
 
   const txRef = getTransactionReference(fw) || booking.transaction_ref;
