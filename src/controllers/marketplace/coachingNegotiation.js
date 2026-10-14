@@ -709,24 +709,27 @@ export const declineCounterProposal = TryCatchFunction(async (req, res) => {
  * Intended to run periodically from app.js.
  */
 export async function expireStaleAcceptedBookings() {
+  // Free bookings (final_price 0/null) have no payment to wait for — they're
+  // fulfilled automatically right after acceptance. If one is still
+  // unfulfilled past expires_at, that's a fulfillment bug, not an unpaid
+  // customer; sweeping it to "expired" here would hide that bug rather than
+  // let it surface (this is exactly what happened to booking 22 before
+  // fulfillAcceptedBookingPayment's free-path bug was fixed).
+  const where = {
+    status: "accepted",
+    session_id: null,
+    expires_at: { [Op.lt]: new Date() },
+    final_price: { [Op.gt]: 0 },
+  };
+
   const stale = await CoachingBookingRequest.findAll({
-    where: {
-      status: "accepted",
-      session_id: null,
-      expires_at: { [Op.lt]: new Date() },
-    },
+    where,
     attributes: ["id"],
   });
 
   const [count] = await CoachingBookingRequest.update(
     { status: "expired" },
-    {
-      where: {
-        status: "accepted",
-        session_id: null,
-        expires_at: { [Op.lt]: new Date() },
-      },
-    }
+    { where }
   );
 
   for (const row of stale) {
