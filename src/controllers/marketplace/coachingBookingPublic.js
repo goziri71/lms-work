@@ -264,9 +264,18 @@ export const confirmBookingPayment = TryCatchFunction(async (req, res) => {
   const verifyId =
     flutterwave_transaction_id || transaction_reference || booking.transaction_ref;
 
+  await booking.reload();
+  if (booking.session_id) {
+    return res.status(200).json({
+      success: true,
+      message: "Already paid",
+      data: { session_id: booking.session_id },
+    });
+  }
+
   const verification = await verifyTransaction(String(verifyId), {
-    maxRetries: 3,
-    retryDelayMs: 1500,
+    maxRetries: 12,
+    retryDelayMs: 5000,
   });
   if (!verification.success || !verification.transaction) {
     throw new ErrorClass(verification.message || "Payment verification failed", 400);

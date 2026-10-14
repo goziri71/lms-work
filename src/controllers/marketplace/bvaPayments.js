@@ -92,8 +92,8 @@ export const confirmBvaPayment = TryCatchFunction(async (req, res) => {
   }
 
   const verification = await verifyTransaction(String(verifyId), {
-    maxRetries: 3,
-    retryDelayMs: 1500,
+    maxRetries: 12,
+    retryDelayMs: 5000,
   });
   if (!verification.success || !verification.transaction) {
     throw new ErrorClass(verification.message || "Payment verification failed", 400);

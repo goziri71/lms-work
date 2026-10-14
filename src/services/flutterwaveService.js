@@ -87,63 +87,88 @@ export const verifyTransaction = async (transactionIdOrRef, options = {}) => {
     );
   }
 
-  // Flutterwave's /transactions/{ref}/verify endpoint works for both:
-  // - Numeric transaction IDs (e.g., 1940774374)
-  // - Transaction references/txRef (e.g., MC-1765991166356-6uv55yefe)
-  // Both use the same GET endpoint
-  const verifyUrl = `${FLUTTERWAVE_BASE_URL}/transactions/${transactionIdOrRef}/verify`;
+  const ref = String(transactionIdOrRef).trim();
+  const isNumericId = /^\d+$/.test(ref);
 
-  // Retry logic: Flutterwave transactions may take a few seconds to be available
+  const headers = {
+    Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+    "Content-Type": "application/json",
+  };
+  const axiosOpts = {
+    headers,
+    timeout: 15000,
+    ...getQuotaGuardAxiosProxyConfig(),
+  };
+
+  async function tryVerifyOnce() {
+    // Merchant tx_ref (e.g. COACHING-BOOKING-15-…) — use query verify (recommended for BVA)
+    if (!isNumericId) {
+      try {
+        const byRef = await axios.get(
+          `${FLUTTERWAVE_BASE_URL}/transactions/verify_by_reference`,
+          { ...axiosOpts, params: { tx_ref: ref } }
+        );
+        if (byRef.data?.status === "success" && byRef.data?.data) {
+          return { ok: true, transaction: byRef.data.data };
+        }
+      } catch (byRefErr) {
+        const msg = byRefErr.response?.data?.message || "";
+        const retryable =
+          byRefErr.response?.status === 404 ||
+          byRefErr.response?.status === 400 ||
+          msg.includes("No transaction was found");
+        if (!retryable) throw byRefErr;
+      }
+    }
+
+    const response = await axios.get(
+      `${FLUTTERWAVE_BASE_URL}/transactions/${encodeURIComponent(ref)}/verify`,
+      axiosOpts
+    );
+    if (response.data?.status === "success" && response.data.data) {
+      return { ok: true, transaction: response.data.data };
+    }
+    return {
+      ok: false,
+      message: response.data?.message || "Transaction verification failed",
+    };
+  }
+
+  // Bank transfers can take minutes before Flutterwave exposes the transaction
   const maxRetries = options.maxRetries ?? 3;
   const retryDelay = options.retryDelayMs ?? 2000;
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const response = await axios.get(verifyUrl, {
-        headers: {
-          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 10000, // 10 second timeout
-      });
-
-      if (response.data.status === "success" && response.data.data) {
+      const result = await tryVerifyOnce();
+      if (result.ok) {
         if (attempt > 1) {
           console.log(
-            `✅ Transaction verified on attempt ${attempt} for: ${transactionIdOrRef}`,
+            `✅ Transaction verified on attempt ${attempt} for: ${ref}`
           );
         }
-        return {
-          success: true,
-          transaction: response.data.data,
-        };
+        return { success: true, transaction: result.transaction };
       }
-
-      // If response is not successful but not an error, return failure
-      return {
-        success: false,
-        message: response.data.message || "Transaction verification failed",
-      };
+      if (result.message) {
+        return { success: false, message: result.message };
+      }
     } catch (error) {
       lastError = error;
 
-      // If it's a 404/400 (transaction not found), retry with delay
-      if (
-        (error.response?.status === 404 || error.response?.status === 400) &&
-        attempt < maxRetries
-      ) {
-        const errorMessage = error.response?.data?.message || "";
-        if (errorMessage.includes("No transaction was found")) {
-          console.log(
-            `⏳ Transaction not found yet (attempt ${attempt}/${maxRetries}), retrying in ${retryDelay}ms...`,
-          );
-          await new Promise((resolve) => setTimeout(resolve, retryDelay));
-          continue; // Retry
-        }
-      }
+      const errorMessage = error.response?.data?.message || "";
+      const notFoundYet =
+        error.response?.status === 404 ||
+        error.response?.status === 400 ||
+        errorMessage.includes("No transaction was found");
 
-      // For other errors or last attempt, break and throw
+      if (notFoundYet && attempt < maxRetries) {
+        console.log(
+          `⏳ Transaction not found yet (attempt ${attempt}/${maxRetries}), retrying in ${retryDelay}ms...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+        continue;
+      }
       break;
     }
   }
@@ -175,10 +200,10 @@ export const verifyTransaction = async (transactionIdOrRef, options = {}) => {
     // Provide helpful message for transaction not found
     if (errorMessage.includes("No transaction was found")) {
       throw new ErrorClass(
-        `Transaction not found with reference: ${transactionIdOrRef} after ${maxRetries} attempts. ` +
-          `This might mean: 1) The transaction hasn't been completed yet (wait a few seconds and try again), ` +
-          `2) The reference is incorrect, or 3) The transaction is from a different Flutterwave account. ` +
-          `Please verify the transaction reference and ensure the payment was completed successfully.`,
+        `Transaction not found with reference: ${ref} after ${maxRetries} attempts. ` +
+          `For bank transfers: Flutterwave may take 2–10 minutes after your transfer before confirm works. ` +
+          `Transfer the exact amount shown (including any fees), use the reference above, then try again or refresh this page — ` +
+          `payment may still complete automatically via webhook.`,
         404,
       );
     }
