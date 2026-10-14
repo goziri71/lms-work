@@ -103,6 +103,17 @@ export async function assertBookingPayable(booking) {
   if (booking.session_id) {
     throw new ErrorClass("This booking has already been paid", 400);
   }
+  if (isFreeBooking(booking)) {
+    // Free bookings are fulfilled automatically right after acceptance
+    // (see acceptBookingRequest/acceptCounterProposal) — there's nothing to
+    // pay, so no payment entry point (init-payment, confirm-payment, BVA)
+    // should ever reach this far for one. If it's still unfulfilled, the
+    // automatic fulfillment hasn't finished yet rather than needing payment.
+    throw new ErrorClass(
+      "This is a free booking — no payment is required. The session is being created automatically.",
+      400
+    );
+  }
   if (booking.expires_at && new Date(booking.expires_at) < new Date()) {
     booking.status = "expired";
     await booking.save();
@@ -268,8 +279,9 @@ export async function fulfillAcceptedBookingPayment(
       });
     }
 
-    const finalPrice = parseFloat(booking.final_price);
-    if (!finalPrice || finalPrice <= 0) {
+    const isFree = paymentMethod === "free";
+    const finalPrice = parseFloat(booking.final_price) || 0;
+    if (!isFree && finalPrice <= 0) {
       throw new ErrorClass("Invalid booking price", 400);
     }
 
@@ -283,7 +295,11 @@ export async function fulfillAcceptedBookingPayment(
     let priceCharged = finalPrice;
     let chargeCurrency = bookingCurrency;
 
-    if (paymentMethod === "wallet") {
+    if (isFree) {
+      // Nothing to charge — skip straight to session creation below.
+      priceCharged = 0;
+      chargeCurrency = bookingCurrency;
+    } else if (paymentMethod === "wallet") {
       if (!student) {
         throw new ErrorClass("Student account required for wallet payment", 400);
       }
@@ -394,7 +410,7 @@ export async function fulfillAcceptedBookingPayment(
         hours_reserved: durationHours,
         hours_used: 0.0,
         student_count: 1,
-        pricing_type: "paid",
+        pricing_type: isFree ? "free" : "paid",
         price: finalPrice,
         currency: booking.currency,
         category: booking.category || null,
@@ -473,7 +489,7 @@ export async function fulfillAcceptedBookingPayment(
       });
     }
 
-    if (tutor) {
+    if (tutor && priceCharged > 0) {
       const tutorCreditCurrency = chargeCurrency;
       let tutorWalletField = "wallet_balance_primary";
       if (tutorCreditCurrency === "USD") tutorWalletField = "wallet_balance_usd";
@@ -564,6 +580,23 @@ export async function fulfillAcceptedBookingPayment(
     await dbTransaction.rollback();
     throw error;
   }
+}
+
+/**
+ * For a booking whose final_price is 0 (free coaching) — there's nothing to
+ * pay, so skip the whole payment-request-email / init-payment / confirm-
+ * payment round trip and go straight to creating the session and sending
+ * the meeting link. Called right after acceptance in coachingNegotiation.js.
+ */
+export async function fulfillFreeAcceptedBooking(bookingId) {
+  return fulfillAcceptedBookingPayment(bookingId, {
+    paymentMethod: "free",
+    txRef: buildBookingTxRef(bookingId),
+  });
+}
+
+export function isFreeBooking(booking) {
+  return !(parseFloat(booking?.final_price) > 0);
 }
 
 export async function fulfillBookingFromWebhook(txRef, transactionData) {

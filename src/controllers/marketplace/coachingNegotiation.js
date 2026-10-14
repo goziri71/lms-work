@@ -9,6 +9,8 @@ import { db } from "../../database/database.js";
 import {
   ACCEPTED_PAYMENT_WINDOW_MS,
   sendBookingAcceptedPaymentEmail,
+  fulfillFreeAcceptedBooking,
+  isFreeBooking,
 } from "../../services/coachingBookingFulfillmentService.js";
 import {
   assertTutorSlotAvailable,
@@ -320,17 +322,33 @@ export const acceptBookingRequest = TryCatchFunction(async (req, res) => {
   await booking.reload({
     include: [{ model: Students, as: "student", required: false }],
   });
-  sendBookingAcceptedPaymentEmail(booking).catch((err) =>
-    console.error(
-      `Booking accept email error (booking ${booking.id}):`,
-      err.message,
-      err.stack
-    )
-  );
+
+  // Free coaching has nothing to pay for — skip the payment-request email
+  // and the whole init-payment/confirm-payment round trip entirely, and go
+  // straight to creating the session and emailing the meeting link.
+  if (isFreeBooking(booking)) {
+    fulfillFreeAcceptedBooking(booking.id).catch((err) =>
+      console.error(
+        `Free booking fulfillment error (booking ${booking.id}):`,
+        err.message,
+        err.stack
+      )
+    );
+  } else {
+    sendBookingAcceptedPaymentEmail(booking).catch((err) =>
+      console.error(
+        `Booking accept email error (booking ${booking.id}):`,
+        err.message,
+        err.stack
+      )
+    );
+  }
 
   res.status(200).json({
     success: true,
-    message: "Booking request accepted. Payment link sent by email.",
+    message: isFreeBooking(booking)
+      ? "Booking request accepted. Meeting link sent by email."
+      : "Booking request accepted. Payment link sent by email.",
     data: {
       booking_id: booking.id,
       status: booking.status,
@@ -598,17 +616,30 @@ export const acceptCounterProposal = TryCatchFunction(async (req, res) => {
   await booking.reload({
     include: [{ model: Students, as: "student", required: false }],
   });
-  sendBookingAcceptedPaymentEmail(booking).catch((err) =>
-    console.error(
-      `Booking counter-accept email error (booking ${booking.id}):`,
-      err.message,
-      err.stack
-    )
-  );
+
+  if (isFreeBooking(booking)) {
+    fulfillFreeAcceptedBooking(booking.id).catch((err) =>
+      console.error(
+        `Free booking fulfillment error (booking ${booking.id}):`,
+        err.message,
+        err.stack
+      )
+    );
+  } else {
+    sendBookingAcceptedPaymentEmail(booking).catch((err) =>
+      console.error(
+        `Booking counter-accept email error (booking ${booking.id}):`,
+        err.message,
+        err.stack
+      )
+    );
+  }
 
   res.status(200).json({
     success: true,
-    message: "Counter-proposal accepted. Payment link sent by email.",
+    message: isFreeBooking(booking)
+      ? "Counter-proposal accepted. Meeting link sent by email."
+      : "Counter-proposal accepted. Payment link sent by email.",
     data: {
       booking_id: booking.id,
       status: booking.status,
