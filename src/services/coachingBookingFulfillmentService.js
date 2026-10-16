@@ -11,6 +11,7 @@ import { Funding } from "../models/payment/funding.js";
 import { GeneralSetup } from "../models/settings/generalSetup.js";
 import { SoleTutor } from "../models/marketplace/soleTutor.js";
 import { Organization } from "../models/marketplace/organization.js";
+import { OrganizationUser } from "../models/marketplace/organizationUser.js";
 import { TutorWalletTransaction } from "../models/marketplace/tutorWalletTransaction.js";
 import { WspCommission } from "../models/marketplace/wspCommission.js";
 import { calculateWalletBalanceFromFunding } from "./walletBalanceService.js";
@@ -94,28 +95,98 @@ export async function resolveBookingRecipient(booking) {
   return { email, name: name || "there" };
 }
 
-export async function resolveTutorRecipient(booking) {
-  if (!booking?.tutor_id || !booking?.tutor_type) {
-    return { email: null, name: "Coach" };
+/**
+ * All inboxes that should receive tutor-side coaching booking emails.
+ * - sole_tutor: SoleTutor.email
+ * - organization: Organization.email + active admin/manager org users (deduped)
+ */
+export async function resolveTutorNotificationRecipients(booking) {
+  const tutorId = booking?.tutor_id;
+  const tutorType = String(booking?.tutor_type || "").trim();
+
+  if (!tutorId || !tutorType) {
+    return [];
   }
-  if (booking.tutor_type === "sole_tutor") {
-    const tutor = await SoleTutor.findByPk(booking.tutor_id, {
+
+  if (tutorType === "sole_tutor") {
+    const tutor = await SoleTutor.findByPk(tutorId, {
       attributes: ["id", "fname", "lname", "email"],
     });
-    if (!tutor?.email) return { email: null, name: "Coach" };
-    return {
-      email: normalizeEmail(tutor.email),
-      name: `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || "Coach",
-    };
+    const email = normalizeEmail(tutor?.email);
+    if (!email) return [];
+    return [
+      {
+        email,
+        name: `${tutor.fname || ""} ${tutor.lname || ""}`.trim() || "Coach",
+      },
+    ];
   }
-  const org = await Organization.findByPk(booking.tutor_id, {
-    attributes: ["id", "name", "email"],
-  });
-  if (!org?.email) return { email: null, name: org?.name || "Organization" };
-  return {
-    email: normalizeEmail(org.email),
-    name: org.name || "Organization",
-  };
+
+  if (tutorType === "organization") {
+    const recipients = [];
+    const seen = new Set();
+
+    const org = await Organization.findByPk(tutorId, {
+      attributes: ["id", "name", "email"],
+    });
+    const orgEmail = normalizeEmail(org?.email);
+    if (orgEmail) {
+      seen.add(orgEmail);
+      recipients.push({
+        email: orgEmail,
+        name: org?.name || "Organization",
+      });
+    }
+
+    const orgUsers = await OrganizationUser.findAll({
+      where: {
+        organization_id: tutorId,
+        status: "active",
+        role: { [Op.in]: ["admin", "manager"] },
+      },
+      attributes: ["email", "fname", "lname"],
+    });
+    for (const user of orgUsers) {
+      const email = normalizeEmail(user.email);
+      if (!email || seen.has(email)) continue;
+      seen.add(email);
+      recipients.push({
+        email,
+        name:
+          `${user.fname || ""} ${user.lname || ""}`.trim() ||
+          org?.name ||
+          "Organization",
+      });
+    }
+
+    return recipients;
+  }
+
+  console.warn(
+    `Booking ${booking?.id}: unknown tutor_type "${tutorType}" — no tutor emails`
+  );
+  return [];
+}
+
+/** @deprecated Prefer resolveTutorNotificationRecipients */
+export async function resolveTutorRecipient(booking) {
+  const list = await resolveTutorNotificationRecipients(booking);
+  return list[0] || { email: null, name: "Coach" };
+}
+
+async function sendNomadaEmailToTutorRecipients(bookingId, recipients, payload) {
+  if (!recipients.length) {
+    console.warn(`Booking ${bookingId}: no tutor notification recipients`);
+    return;
+  }
+  for (const recipient of recipients) {
+    await sendNomadaEmail({
+      to: recipient.email,
+      name: recipient.name,
+      subject: payload.subject,
+      htmlBody: payload.htmlBody(recipient.name),
+    });
+  }
 }
 
 async function buyerSummaryForTutor(booking) {
@@ -144,7 +215,8 @@ export function notifyTutorCoachingEmail(booking, sender) {
   sender(booking).catch((err) =>
     console.error(
       `Tutor coaching email error (booking ${booking?.id}):`,
-      err.message
+      err.message,
+      err.stack
     )
   );
 }
@@ -159,20 +231,17 @@ export async function sendTutorNewBookingRequestEmail(booking) {
       : booking;
   if (!row) return;
 
-  const tutor = await resolveTutorRecipient(row);
-  if (!tutor.email) {
-    console.warn(`Booking ${row.id}: no tutor email for new-request notice`);
-    return;
-  }
-
+  const recipients = await resolveTutorNotificationRecipients(row);
   const buyer = await buyerSummaryForTutor(row);
   const dashboardUrl = buildTutorBookingRequestsUrl(row.id);
   const start = new Date(row.proposed_start_time);
   const end = new Date(row.proposed_end_time);
 
-  const html = `
+  await sendNomadaEmailToTutorRecipients(row.id, recipients, {
+    subject: `New booking request: ${row.topic}`,
+    htmlBody: (tutorName) => `
     <h2>New coaching booking request</h2>
-    <p>Hi ${tutor.name},</p>
+    <p>Hi ${tutorName},</p>
     <p><strong>${buyer.who}</strong> requested a 1-on-1 session.</p>
     <p><strong>Topic:</strong> ${row.topic}</p>
     <p><strong>Proposed time:</strong> ${start.toLocaleString()} – ${end.toLocaleString()}</p>
@@ -180,15 +249,13 @@ export async function sendTutorNewBookingRequestEmail(booking) {
     ${row.student_note ? `<p><strong>Note from buyer:</strong> ${row.student_note}</p>` : ""}
     <p><a href="${dashboardUrl}">Review and respond</a></p>
     <p style="font-size:12px;color:#6b7280">Nomada</p>
-  `;
-
-  await sendNomadaEmail({
-    to: tutor.email,
-    name: tutor.name,
-    subject: `New booking request: ${row.topic}`,
-    htmlBody: html,
+  `,
   });
-  console.log(`✅ Booking ${row.id}: new-request email sent to tutor ${tutor.email}`);
+  if (recipients.length) {
+    console.log(
+      `✅ Booking ${row.id}: new-request email sent to ${recipients.map((r) => r.email).join(", ")}`
+    );
+  }
 }
 
 /** 2) Accepted — waiting for buyer payment */
@@ -201,9 +268,7 @@ export async function sendTutorAwaitingPaymentEmail(booking) {
       : booking;
   if (!row) return;
 
-  const tutor = await resolveTutorRecipient(row);
-  if (!tutor.email) return;
-
+  const recipients = await resolveTutorNotificationRecipients(row);
   const buyer = await buyerSummaryForTutor(row);
   const { startTime, endTime } = getAgreedBookingTimes(row);
   const finalPrice = parseFloat(row.final_price || 0).toFixed(2);
@@ -211,9 +276,11 @@ export async function sendTutorAwaitingPaymentEmail(booking) {
     ? new Date(row.expires_at).toLocaleString()
     : "soon";
 
-  const html = `
+  await sendNomadaEmailToTutorRecipients(row.id, recipients, {
+    subject: `Awaiting payment: ${row.topic}`,
+    htmlBody: (tutorName) => `
     <h2>Booking accepted — awaiting payment</h2>
-    <p>Hi ${tutor.name},</p>
+    <p>Hi ${tutorName},</p>
     <p>You accepted a session with <strong>${buyer.who}</strong>.</p>
     <p><strong>Topic:</strong> ${row.topic}</p>
     <p><strong>When:</strong> ${startTime.toLocaleString()} – ${endTime.toLocaleString()}</p>
@@ -221,15 +288,13 @@ export async function sendTutorAwaitingPaymentEmail(booking) {
     <p>The buyer was emailed a payment link. Payment is due by <strong>${due}</strong>.</p>
     <p><a href="${buildTutorBookingRequestsUrl(row.id)}">View booking</a></p>
     <p style="font-size:12px;color:#6b7280">Nomada</p>
-  `;
-
-  await sendNomadaEmail({
-    to: tutor.email,
-    name: tutor.name,
-    subject: `Awaiting payment: ${row.topic}`,
-    htmlBody: html,
+  `,
   });
-  console.log(`✅ Booking ${row.id}: awaiting-payment email sent to tutor ${tutor.email}`);
+  if (recipients.length) {
+    console.log(
+      `✅ Booking ${row.id}: awaiting-payment email sent to ${recipients.map((r) => r.email).join(", ")}`
+    );
+  }
 }
 
 /** 3) Paid (or free) — session confirmed */
@@ -242,9 +307,7 @@ export async function sendTutorSessionConfirmedEmail(booking, session) {
       : booking;
   if (!row || !session) return;
 
-  const tutor = await resolveTutorRecipient(row);
-  if (!tutor.email) return;
-
+  const recipients = await resolveTutorNotificationRecipients(row);
   const buyer = await buyerSummaryForTutor(row);
   const sessionUrl = buildTutorSessionUrl(session);
   const paidLabel =
@@ -252,24 +315,24 @@ export async function sendTutorSessionConfirmedEmail(booking, session) {
       ? "Free session confirmed"
       : "Payment received — session confirmed";
 
-  const html = `
+  await sendNomadaEmailToTutorRecipients(row.id, recipients, {
+    subject: `Session confirmed: ${session.title}`,
+    htmlBody: (tutorName) => `
     <h2>${paidLabel}</h2>
-    <p>Hi ${tutor.name},</p>
+    <p>Hi ${tutorName},</p>
     <p>Your 1-on-1 with <strong>${buyer.who}</strong> is confirmed.</p>
     <p><strong>Session:</strong> ${session.title}</p>
     <p><strong>Starts:</strong> ${new Date(session.start_time).toLocaleString()}</p>
     <p><a href="${sessionUrl}">Open your session page</a></p>
     <p><a href="${buildTutorBookingRequestsUrl(row.id)}">View booking details</a></p>
     <p style="font-size:12px;color:#6b7280">Nomada</p>
-  `;
-
-  await sendNomadaEmail({
-    to: tutor.email,
-    name: tutor.name,
-    subject: `Session confirmed: ${session.title}`,
-    htmlBody: html,
+  `,
   });
-  console.log(`✅ Booking ${row.id}: session-confirmed email sent to tutor ${tutor.email}`);
+  if (recipients.length) {
+    console.log(
+      `✅ Booking ${row.id}: session-confirmed email sent to ${recipients.map((r) => r.email).join(", ")}`
+    );
+  }
 }
 
 /**

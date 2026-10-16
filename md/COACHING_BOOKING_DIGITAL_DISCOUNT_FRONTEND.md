@@ -125,6 +125,17 @@ No JWT. Required:
 
 On **accept**, buyer gets payment email. UI should show `final_price`, `payment_due_at`.
 
+**Tutor notification emails** (backend): new request, awaiting payment (paid bookings), session confirmed — to **sole tutor account email** or **organization email + active admin/manager org users**.
+
+**Tutor list/detail — buyer profile:** each booking includes `student` (buyer profile, not full account):
+
+| Field | Meaning |
+|--------|---------|
+| `name`, `email`, `phone` | Guest fields or linked student |
+| `description` | Booking description from request |
+| `image` | Student avatar when logged-in |
+| `is_guest` | `true` when no `student_id` |
+
 **Calendar / double-booking:** When a booking becomes **`accepted`**, the backend **holds that time** on the tutor calendar until payment, expiry, or tutor decline. The slot must not be offered to another buyer.
 
 ---

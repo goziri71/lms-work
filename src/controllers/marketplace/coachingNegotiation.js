@@ -19,6 +19,10 @@ import {
   reserveCalendarForAcceptedBooking,
   releaseCalendarHoldForBooking,
 } from "../../services/coachingCalendarService.js";
+import {
+  formatBookingBuyerProfile,
+  serializeTutorBookingRequest,
+} from "../../utils/coachingBookingBuyerProfile.js";
 
 // A tutor's acceptance of a booking is a real-world calendar commitment, so
 // it must be serialized per tutor — otherwise two concurrent "accept"
@@ -168,7 +172,7 @@ export const getTutorBookingRequests = TryCatchFunction(async (req, res) => {
       {
         model: Students,
         as: "student",
-        attributes: ["id", "fname", "lname", "email", "profile_image"],
+        attributes: ["id", "fname", "lname", "email", "phone", "profile_image"],
       },
     ],
     order: [["created_at", "DESC"]],
@@ -198,14 +202,7 @@ export const getTutorBookingRequests = TryCatchFunction(async (req, res) => {
     session_id: r.session_id,
     expires_at: r.expires_at,
     accepted_at: r.accepted_at,
-    student: r.student
-      ? {
-          id: r.student.id,
-          name: `${r.student.fname || ""} ${r.student.lname || ""}`.trim(),
-          email: r.student.email,
-          image: r.student.profile_image || null,
-        }
-      : null,
+    student: formatBookingBuyerProfile(r),
     created_at: r.created_at,
   }));
 
@@ -237,7 +234,7 @@ export const getTutorBookingRequestDetail = TryCatchFunction(async (req, res) =>
       {
         model: Students,
         as: "student",
-        attributes: ["id", "fname", "lname", "email", "profile_image"],
+        attributes: ["id", "fname", "lname", "email", "phone", "profile_image"],
       },
     ],
   });
@@ -248,7 +245,7 @@ export const getTutorBookingRequestDetail = TryCatchFunction(async (req, res) =>
 
   res.status(200).json({
     success: true,
-    data: { booking },
+    data: { booking: serializeTutorBookingRequest(booking) },
   });
 });
 
