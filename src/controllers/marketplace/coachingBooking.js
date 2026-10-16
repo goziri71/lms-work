@@ -11,6 +11,10 @@ import {
   assertTutorSlotAvailable,
   listTutorUnavailableIntervals,
 } from "../../services/coachingCalendarService.js";
+import {
+  notifyTutorCoachingEmail,
+  sendTutorNewBookingRequestEmail,
+} from "../../services/coachingBookingFulfillmentService.js";
 
 /**
  * Browse tutors who offer coaching (public or student)
@@ -421,6 +425,8 @@ export const createBookingRequest = TryCatchFunction(async (req, res) => {
     student_note: student_note?.trim() || null,
     expires_at: expiresAt,
   });
+
+  notifyTutorCoachingEmail(booking, sendTutorNewBookingRequestEmail);
 
   res.status(201).json({
     success: true,

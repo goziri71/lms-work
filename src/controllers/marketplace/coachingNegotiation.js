@@ -11,6 +11,8 @@ import {
   sendBookingAcceptedPaymentEmail,
   fulfillFreeAcceptedBooking,
   isFreeBooking,
+  notifyTutorCoachingEmail,
+  sendTutorAwaitingPaymentEmail,
 } from "../../services/coachingBookingFulfillmentService.js";
 import {
   assertTutorSlotAvailable,
@@ -342,6 +344,7 @@ export const acceptBookingRequest = TryCatchFunction(async (req, res) => {
         err.stack
       )
     );
+    notifyTutorCoachingEmail(booking, sendTutorAwaitingPaymentEmail);
   }
 
   res.status(200).json({
@@ -633,6 +636,7 @@ export const acceptCounterProposal = TryCatchFunction(async (req, res) => {
         err.stack
       )
     );
+    notifyTutorCoachingEmail(booking, sendTutorAwaitingPaymentEmail);
   }
 
   res.status(200).json({
