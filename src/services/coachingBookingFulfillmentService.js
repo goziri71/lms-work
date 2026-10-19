@@ -142,9 +142,8 @@ export async function resolveTutorNotificationRecipients(booking) {
       where: {
         organization_id: tutorId,
         status: "active",
-        role: { [Op.in]: ["admin", "manager"] },
       },
-      attributes: ["email", "fname", "lname"],
+      attributes: ["email", "fname", "lname", "role"],
     });
     for (const user of orgUsers) {
       const email = normalizeEmail(user.email);
@@ -176,7 +175,9 @@ export async function resolveTutorRecipient(booking) {
 
 async function sendNomadaEmailToTutorRecipients(bookingId, recipients, payload) {
   if (!recipients.length) {
-    console.warn(`Booking ${bookingId}: no tutor notification recipients`);
+    console.warn(
+      `Booking ${bookingId}: no tutor notification recipients (check tutor_id / tutor_type and org or sole tutor email)`
+    );
     return;
   }
   for (const recipient of recipients) {
@@ -187,6 +188,12 @@ async function sendNomadaEmailToTutorRecipients(bookingId, recipients, payload) 
       htmlBody: payload.htmlBody(recipient.name),
     });
   }
+}
+
+/** Reload booking row without Sequelize includes (safe before associations init). */
+async function reloadBookingRowForEmail(booking) {
+  if (booking?.id == null) return booking;
+  return CoachingBookingRequest.findByPk(booking.id);
 }
 
 async function buyerSummaryForTutor(booking) {
@@ -223,13 +230,13 @@ export function notifyTutorCoachingEmail(booking, sender) {
 
 /** 1) New pending booking request */
 export async function sendTutorNewBookingRequestEmail(booking) {
-  const row =
-    booking?.id != null
-      ? await CoachingBookingRequest.findByPk(booking.id, {
-          include: [{ model: Students, as: "student", required: false }],
-        })
-      : booking;
-  if (!row) return;
+  const row = await reloadBookingRowForEmail(booking);
+  if (!row) {
+    console.warn(
+      `sendTutorNewBookingRequestEmail: booking not found (id=${booking?.id})`
+    );
+    return;
+  }
 
   const recipients = await resolveTutorNotificationRecipients(row);
   const buyer = await buyerSummaryForTutor(row);
@@ -260,12 +267,7 @@ export async function sendTutorNewBookingRequestEmail(booking) {
 
 /** 2) Accepted — waiting for buyer payment */
 export async function sendTutorAwaitingPaymentEmail(booking) {
-  const row =
-    booking?.id != null
-      ? await CoachingBookingRequest.findByPk(booking.id, {
-          include: [{ model: Students, as: "student", required: false }],
-        })
-      : booking;
+  const row = await reloadBookingRowForEmail(booking);
   if (!row) return;
 
   const recipients = await resolveTutorNotificationRecipients(row);
@@ -299,12 +301,7 @@ export async function sendTutorAwaitingPaymentEmail(booking) {
 
 /** 3) Paid (or free) — session confirmed */
 export async function sendTutorSessionConfirmedEmail(booking, session) {
-  const row =
-    booking?.id != null
-      ? await CoachingBookingRequest.findByPk(booking.id, {
-          include: [{ model: Students, as: "student", required: false }],
-        })
-      : booking;
+  const row = await reloadBookingRowForEmail(booking);
   if (!row || !session) return;
 
   const recipients = await resolveTutorNotificationRecipients(row);

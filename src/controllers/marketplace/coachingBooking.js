@@ -11,10 +11,7 @@ import {
   assertTutorSlotAvailable,
   listTutorUnavailableIntervals,
 } from "../../services/coachingCalendarService.js";
-import {
-  notifyTutorCoachingEmail,
-  sendTutorNewBookingRequestEmail,
-} from "../../services/coachingBookingFulfillmentService.js";
+import { sendTutorNewBookingRequestEmail } from "../../services/coachingBookingFulfillmentService.js";
 
 /**
  * Browse tutors who offer coaching (public or student)
@@ -426,7 +423,15 @@ export const createBookingRequest = TryCatchFunction(async (req, res) => {
     expires_at: expiresAt,
   });
 
-  notifyTutorCoachingEmail(booking, sendTutorNewBookingRequestEmail);
+  try {
+    await sendTutorNewBookingRequestEmail(booking);
+  } catch (err) {
+    console.error(
+      `Booking ${booking.id}: new-request tutor email failed:`,
+      err.message,
+      err.stack
+    );
+  }
 
   res.status(201).json({
     success: true,
