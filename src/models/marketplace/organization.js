@@ -130,8 +130,8 @@ export const Organization = db.define(
     commission_rate: {
       type: DataTypes.DECIMAL(5, 2),
       allowNull: false,
-      defaultValue: 15.0,
-      comment: "WPU commission percentage",
+      defaultValue: 3.5,
+      comment: "WPU commission percentage (default 3.5%, same as sole tutors)",
     },
     rating: {
       type: DataTypes.DECIMAL(3, 2),
