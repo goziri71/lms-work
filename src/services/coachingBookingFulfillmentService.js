@@ -29,6 +29,14 @@ import { generateGuestAccessToken } from "./marketplaceGuestCheckoutService.js";
 import { releaseCalendarHoldAfterPayment } from "./coachingCalendarService.js";
 import { getAgreedBookingTimes } from "../utils/coachingBookingTimes.js";
 
+// Re-exported: coachingBookingPayment.js (and others) import this from here
+// rather than from utils/coachingBookingTimes.js directly — dropping this
+// re-export breaks their import at module-load time (ESM named-export
+// errors crash the whole process on boot, not just the one route), which is
+// exactly what took production down after this line was accidentally
+// removed.
+export { getAgreedBookingTimes };
+
 export const ACCEPTED_PAYMENT_WINDOW_MS = 30 * 60 * 1000;
 
 export function buildBookingTxRef(bookingId) {
