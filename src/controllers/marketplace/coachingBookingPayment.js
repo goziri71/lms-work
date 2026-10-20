@@ -2,6 +2,8 @@ import { TryCatchFunction } from "../../utils/tryCatch/index.js";
 import { ErrorClass } from "../../utils/errorClass/index.js";
 import { CoachingBookingRequest } from "../../models/marketplace/coachingBookingRequest.js";
 import { Students } from "../../models/auth/student.js";
+import { SoleTutor } from "../../models/marketplace/soleTutor.js";
+import { Organization } from "../../models/marketplace/organization.js";
 import { GeneralSetup } from "../../models/settings/generalSetup.js";
 import { getWalletBalance } from "../../services/walletBalanceService.js";
 import {
@@ -115,7 +117,14 @@ export const getBookingPaymentPreview = TryCatchFunction(async (req, res) => {
 
   const { startTime, endTime, durationMinutes } = getAgreedBookingTimes(booking);
 
-  const commissionRate = 15.0;
+  // Use the tutor's own commission_rate (sole tutors default to 3.5%,
+  // organizations to 15%) instead of a flat 15% for everyone, matching
+  // what fulfillAcceptedBookingPayment actually charges at payment time.
+  const tutor =
+    booking.tutor_type === "sole_tutor"
+      ? await SoleTutor.findByPk(booking.tutor_id, { attributes: ["commission_rate"] })
+      : await Organization.findByPk(booking.tutor_id, { attributes: ["commission_rate"] });
+  const commissionRate = parseFloat(tutor?.commission_rate ?? 15.0);
   const platformFee = (priceInStudentCurrency * commissionRate) / 100;
 
   res.status(200).json({

@@ -629,7 +629,26 @@ export async function fulfillAcceptedBookingPayment(
 
     const { startTime, endTime, durationMinutes } = getAgreedBookingTimes(booking);
     const durationHours = durationMinutes / 60;
-    const commissionRate = 15.0;
+
+    let tutor;
+    if (booking.tutor_type === "sole_tutor") {
+      tutor = await SoleTutor.findByPk(booking.tutor_id, {
+        transaction: dbTransaction,
+        lock: Transaction.LOCK.UPDATE,
+      });
+    } else {
+      tutor = await Organization.findByPk(booking.tutor_id, {
+        transaction: dbTransaction,
+        lock: Transaction.LOCK.UPDATE,
+      });
+    }
+
+    // Use the tutor's own commission_rate (sole tutors default to 3.5%,
+    // organizations to 15% — see their model defaults) instead of a flat
+    // 15% for everyone, matching how coachingSessionPurchase.js and
+    // bvaPaymentService.js already compute commission for other coaching
+    // purchase flows.
+    const commissionRate = parseFloat(tutor?.commission_rate ?? 15.0);
     const wspCommission = (priceCharged * commissionRate) / 100;
     const tutorEarnings = priceCharged - wspCommission;
 
@@ -748,19 +767,6 @@ export async function fulfillAcceptedBookingPayment(
         },
         { transaction: dbTransaction }
       );
-    }
-
-    let tutor;
-    if (booking.tutor_type === "sole_tutor") {
-      tutor = await SoleTutor.findByPk(booking.tutor_id, {
-        transaction: dbTransaction,
-        lock: Transaction.LOCK.UPDATE,
-      });
-    } else {
-      tutor = await Organization.findByPk(booking.tutor_id, {
-        transaction: dbTransaction,
-        lock: Transaction.LOCK.UPDATE,
-      });
     }
 
     if (tutor && priceCharged > 0) {
