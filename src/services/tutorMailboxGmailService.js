@@ -11,10 +11,13 @@ import { MailMessage } from "../models/marketplace/mailMessage.js";
 import { storeEncryptedTokens, getDecryptedTokens } from "./tutorMailboxTokenHelper.js";
 import { resolvePublicApiBase } from "../utils/publicApiUrl.js";
 
+// gmail.modify was previously requested but never used (no label/read-state
+// changes anywhere in this service) — dropped to minimize the scopes Google
+// has to review for OAuth verification. Only .send/.list/.get are called,
+// covered by gmail.send + gmail.readonly.
 const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/gmail.readonly",
-  "https://www.googleapis.com/auth/gmail.modify",
 ];
 
 export function getGoogleMailboxOAuthConfig() {
